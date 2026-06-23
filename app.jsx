@@ -723,10 +723,6 @@ function Login({ sb, onLogin, toast, onReconnect, settings }) {
               "Sign in"
             )}
           </Button>
-
-          <button className="link-btn" onClick={onReconnect}>
-            Reconnect to Supabase
-          </button>
         </div>
       </div>
     </div>
