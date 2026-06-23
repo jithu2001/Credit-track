@@ -25,12 +25,16 @@ const todayISO = () => {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 };
 
-const fmtZAR = (n) => {
+const fmtMoney = (n) => {
   const v = Number(n) || 0;
   const neg = v < 0;
   const [intPart, dec] = Math.abs(v).toFixed(2).split(".");
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return "R " + (neg ? "-" : "") + grouped + "." + dec;
+  // Indian numbering: last 3 digits, then groups of 2 (e.g. 12,34,567.00)
+  const last3 = intPart.slice(-3);
+  const rest = intPart.slice(0, -3);
+  const grouped =
+    (rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",") + "," : "") + last3;
+  return "₹ " + (neg ? "-" : "") + grouped + "." + dec;
 };
 
 const fmtDate = (s) => {
@@ -1002,7 +1006,7 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
                       "navlink__bal " + (owes ? "t-danger" : "t-success")
                     }
                   >
-                    {fmtZAR(b.balance)}
+                    {fmtMoney(b.balance)}
                   </span>
                 </button>
               );
@@ -1177,7 +1181,7 @@ function DashboardOverview({
         <StatCard label="Total shops" value={creditors.length} icon="shop" />
         <StatCard
           label="Total owed"
-          value={fmtZAR(totalOwed)}
+          value={fmtMoney(totalOwed)}
           tone="danger"
           icon="alert"
         />
@@ -1252,7 +1256,7 @@ function DashboardOverview({
                         {o.days} days
                       </td>
                       <td data-label="Balance" className="num t-danger strong">
-                        {fmtZAR(o.balance)}
+                        {fmtMoney(o.balance)}
                       </td>
                       <td className="cell-actions">
                         <Button
@@ -1338,7 +1342,7 @@ function DashboardOverview({
                         data-label="Balance"
                         className={"num strong " + (owes ? "t-danger" : "t-success")}
                       >
-                        {fmtZAR(b.balance)}
+                        {fmtMoney(b.balance)}
                       </td>
                       {isAdmin && (
                         <td data-label="Credentials">
@@ -1425,7 +1429,7 @@ function DashboardOverview({
                         (t.type === "invoice" ? "t-danger" : "t-success")
                       }
                     >
-                      {fmtZAR(t.amount)}
+                      {fmtMoney(t.amount)}
                     </td>
                     {isAdmin && (
                       <td className="cell-actions">
@@ -1481,11 +1485,11 @@ function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx, onBack 
       </div>
 
       <div className="stat-grid stat-grid--3">
-        <StatCard label="Total invoiced" value={fmtZAR(invoiced)} tone="danger" />
-        <StatCard label="Total paid" value={fmtZAR(paid)} tone="success" />
+        <StatCard label="Total invoiced" value={fmtMoney(invoiced)} tone="danger" />
+        <StatCard label="Total paid" value={fmtMoney(paid)} tone="success" />
         <StatCard
           label="Balance due"
-          value={fmtZAR(balance)}
+          value={fmtMoney(balance)}
           tone={owes ? "danger" : "success"}
         />
       </div>
@@ -1522,10 +1526,10 @@ function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx, onBack 
                     </td>
                     <td data-label="Description">{t.description}</td>
                     <td data-label="Invoice" className="num t-danger strong">
-                      {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
+                      {t.type === "invoice" ? fmtMoney(t.amount) : "—"}
                     </td>
                     <td data-label="Payment" className="num t-success strong">
-                      {t.type === "payment" ? fmtZAR(t.amount) : "—"}
+                      {t.type === "payment" ? fmtMoney(t.amount) : "—"}
                     </td>
                     {isAdmin && (
                       <td className="cell-actions">
@@ -1710,7 +1714,7 @@ function TxModal({ creditors, presetCreditor, onClose, onSave }) {
           placeholder="e.g. Delivery #102 / Cash payment"
         />
       </Field>
-      <Field label="Amount (R)" required error={errors.amount}>
+      <Field label="Amount (₹)" required error={errors.amount}>
         <Input
           type="number"
           min="0"
@@ -1894,7 +1898,7 @@ function ShopStatement({ sb, user, onLogout, toast }) {
                   (owes ? "is-owed" : "is-clear")
                 }
               >
-                {fmtZAR(balance)}
+                {fmtMoney(balance)}
               </div>
             </div>
           </div>
@@ -1931,10 +1935,10 @@ function ShopStatement({ sb, user, onLogout, toast }) {
                             </td>
                             <td data-label="Description">{t.description}</td>
                             <td data-label="Invoice" className="num t-danger strong">
-                              {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
+                              {t.type === "invoice" ? fmtMoney(t.amount) : "—"}
                             </td>
                             <td data-label="Payment" className="num t-success strong">
-                              {t.type === "payment" ? fmtZAR(t.amount) : "—"}
+                              {t.type === "payment" ? fmtMoney(t.amount) : "—"}
                             </td>
                             <td
                               data-label="Balance"
@@ -1943,7 +1947,7 @@ function ShopStatement({ sb, user, onLogout, toast }) {
                                 (t.running > 0.001 ? "t-danger" : "t-success")
                               }
                             >
-                              {fmtZAR(t.running)}
+                              {fmtMoney(t.running)}
                             </td>
                           </tr>
                         ))}
@@ -1957,7 +1961,7 @@ function ShopStatement({ sb, user, onLogout, toast }) {
                 className={"closing-bar " + (owes ? "is-owed" : "is-clear")}
               >
                 <span>Closing balance</span>
-                <span className="closing-bar__value">{fmtZAR(balance)}</span>
+                <span className="closing-bar__value">{fmtMoney(balance)}</span>
               </div>
 
               <div className="statement-foot">

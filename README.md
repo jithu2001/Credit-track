@@ -104,7 +104,8 @@ shop's `wt_creditors` row — both persist across devices.
 
 ## Notes
 
-- Amounts are formatted as South African Rand (`R X,XXX.XX`).
+- Amounts are formatted as Indian Rupees with Indian digit grouping
+  (`₹ 12,34,567.89`).
 - Balance = sum of invoices − sum of payments per shop.
 - Passwords are stored in plain text in the database to match the brief's
   "admin can see shop credentials" requirement. This is fine for an internal
