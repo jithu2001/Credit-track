@@ -798,9 +798,12 @@ function aging(transactions) {
 }
 
 /* Average turnaround: walk transactions chronologically, matching each
-   payment to the oldest open invoice (FIFO). When an invoice is fully paid,
-   record days from its date to the settling payment's date. Returns the
-   average across all fully-settled invoices (null if none settled yet). */
+   payment to the oldest open invoice (FIFO). An invoice counts as settled
+   once a payment brings its remaining under ₹100 (so tiny underpayment
+   remainders don't keep it "open" and inflate the metric); turnaround = days
+   from its date to that settling payment. Returns the average across all
+   settled invoices (null if none settled yet). */
+const TURNAROUND_CLOSE_BELOW = 100;
 function avgTurnaround(transactions) {
   const txs = sortTx(transactions);
   const queue = []; // open invoices, oldest first
@@ -815,7 +818,7 @@ function avgTurnaround(transactions) {
         const applied = Math.min(pay, inv.remaining);
         inv.remaining -= applied;
         pay -= applied;
-        if (inv.remaining <= 0.001) {
+        if (inv.remaining < TURNAROUND_CLOSE_BELOW) {
           days.push(
             Math.max(
               0,
