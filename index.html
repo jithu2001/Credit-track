@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WholesaleTrack</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #root { height: 100%; margin: 0; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #F7F8FA;
+      color: #111827;
+      -webkit-font-smoothing: antialiased;
+    }
+    #boot {
+      display: flex; align-items: center; justify-content: center;
+      height: 100%; color: #9CA3AF; font-size: 14px;
+    }
+    @keyframes wt-spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <!-- React + ReactDOM + Babel via CDN. No build tools required. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.3.1",
+        "react-dom/client": "https://esm.sh/react-dom@18.3.1/client"
+      }
+    }
+  </script>
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"><div id="boot">Loading WholesaleTrack…</div></div>
+
+  <!-- Single-file React app. Babel transpiles the JSX module in the browser. -->
+  <script type="text/babel" data-type="module" data-presets="react" src="app.jsx"></script>
+</body>
+</html>
