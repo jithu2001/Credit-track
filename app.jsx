@@ -797,6 +797,43 @@ function aging(transactions) {
   };
 }
 
+/* Average turnaround: walk transactions chronologically, matching each
+   payment to the oldest open invoice (FIFO). When an invoice is fully paid,
+   record days from its date to the settling payment's date. Returns the
+   average across all fully-settled invoices (null if none settled yet). */
+function avgTurnaround(transactions) {
+  const txs = sortTx(transactions);
+  const queue = []; // open invoices, oldest first
+  const days = [];
+  for (const t of txs) {
+    if (t.type === "invoice") {
+      queue.push({ date: t.date, remaining: Number(t.amount) });
+    } else {
+      let pay = Number(t.amount);
+      while (pay > 0.001 && queue.length) {
+        const inv = queue[0];
+        const applied = Math.min(pay, inv.remaining);
+        inv.remaining -= applied;
+        pay -= applied;
+        if (inv.remaining <= 0.001) {
+          days.push(
+            Math.max(
+              0,
+              Math.floor((new Date(t.date) - new Date(inv.date)) / 86400000)
+            )
+          );
+          queue.shift();
+        }
+      }
+    }
+  }
+  if (!days.length) return null;
+  return {
+    avgDays: days.reduce((s, d) => s + d, 0) / days.length,
+    settledCount: days.length,
+  };
+}
+
 function TypeBadge({ type }) {
   const inv = type === "invoice";
   return (
@@ -1127,7 +1164,7 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
   );
 }
 
-function StatCard({ label, value, tone, icon }) {
+function StatCard({ label, value, tone, icon, sub }) {
   return (
     <div className="stat">
       <div className="stat__top">
@@ -1139,6 +1176,7 @@ function StatCard({ label, value, tone, icon }) {
         )}
       </div>
       <div className={"stat__value " + (tone ? "t-" + tone : "")}>{value}</div>
+      {sub && <div className="stat__sub">{sub}</div>}
     </div>
   );
 }
@@ -1482,6 +1520,7 @@ function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx, onBack 
     .reduce((s, t) => s + Number(t.amount), 0);
   const balance = invoiced - paid;
   const owes = balance > 0.001;
+  const turn = avgTurnaround(transactions);
 
   return (
     <div className="stack-lg">
@@ -1503,13 +1542,25 @@ function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx, onBack 
         )}
       </div>
 
-      <div className="stat-grid stat-grid--3">
+      <div className="stat-grid">
         <StatCard label="Total invoiced" value={fmtMoney(invoiced)} tone="danger" />
         <StatCard label="Total paid" value={fmtMoney(paid)} tone="success" />
         <StatCard
           label="Balance due"
           value={fmtMoney(balance)}
           tone={owes ? "danger" : "success"}
+        />
+        <StatCard
+          label="Avg. turnaround"
+          icon="clock"
+          value={turn ? turn.avgDays.toFixed(1) + " days" : "—"}
+          sub={
+            turn
+              ? `across ${turn.settledCount} settled invoice${
+                  turn.settledCount === 1 ? "" : "s"
+                }`
+              : "no settled invoices yet"
+          }
         />
       </div>
 
@@ -2240,6 +2291,7 @@ a:hover{text-decoration:underline}
 .stat__value{font-size:24px;font-weight:750;letter-spacing:-.01em;margin-top:10px;
   font-variant-numeric:tabular-nums}
 @media (max-width:420px){.stat__value{font-size:20px}}
+.stat__sub{font-size:11.5px;color:var(--text-3);margin-top:4px}
 
 /* ---- tables ---- */
 .table-wrap{overflow-x:auto}
