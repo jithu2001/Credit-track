@@ -757,10 +757,14 @@ function sortTx(list) {
   });
 }
 
-/* Aging: apply all payments FIFO to invoices (oldest first) and return the
-   date + age (in days) of the oldest invoice still not fully paid. Returns
-   null when the shop owes nothing. */
-function oldestPending(transactions) {
+/* Aging: apply all payments FIFO to invoices (oldest first), then report on
+   the invoices that are still open. Returns:
+     - date / days : the oldest still-unpaid invoice and its age
+     - openAmount  : total unpaid across all open invoices (= the balance)
+     - overdueAmount(thresholdDays) : unpaid amount on invoices older than the
+       threshold — i.e. the genuinely overdue bill amount.
+   Returns null when the shop owes nothing. */
+function aging(transactions) {
   const txs = sortTx(transactions);
   const invoices = txs
     .filter((t) => t.type === "invoice")
@@ -776,13 +780,21 @@ function oldestPending(transactions) {
     pool -= applied;
   }
 
-  const open = invoices.find((inv) => inv.remaining > 0.001);
-  if (!open) return null;
+  const open = invoices.filter((inv) => inv.remaining > 0.001);
+  if (!open.length) return null;
 
-  const days = Math.floor(
-    (new Date(todayISO()) - new Date(open.date)) / 86400000
-  );
-  return { date: open.date, days: Math.max(0, days) };
+  const today = new Date(todayISO());
+  const ageOf = (d) => Math.max(0, Math.floor((today - new Date(d)) / 86400000));
+
+  return {
+    date: open[0].date,
+    days: ageOf(open[0].date),
+    openAmount: open.reduce((s, inv) => s + inv.remaining, 0),
+    overdueAmount: (thresholdDays) =>
+      open
+        .filter((inv) => ageOf(inv.date) > thresholdDays)
+        .reduce((s, inv) => s + inv.remaining, 0),
+  };
 }
 
 function TypeBadge({ type }) {
@@ -1154,18 +1166,17 @@ function DashboardOverview({
 
   const overdueShops = creditors
     .map((c) => {
-      const aging = oldestPending(
-        transactions.filter((t) => t.creditor_id === c.id)
-      );
-      return aging
-        ? {
-            creditor: c,
-            balance: (balances[c.id] || { balance: 0 }).balance,
-            ...aging,
-          }
-        : null;
+      const info = aging(transactions.filter((t) => t.creditor_id === c.id));
+      if (!info || info.days <= Number(overdueDays)) return null;
+      return {
+        creditor: c,
+        date: info.date,
+        days: info.days,
+        balance: (balances[c.id] || { balance: 0 }).balance,
+        overdueAmount: info.overdueAmount(Number(overdueDays)),
+      };
     })
-    .filter((x) => x && x.days > Number(overdueDays))
+    .filter(Boolean)
     .sort((a, b) => b.days - a.days);
 
   const shownShops = creditors.filter((c) =>
@@ -1245,6 +1256,7 @@ function DashboardOverview({
                     <th>Name</th>
                     <th>Oldest unpaid</th>
                     <th className="num">Days</th>
+                    <th className="num">Overdue</th>
                     <th className="num">Balance</th>
                     <th aria-label="Actions"></th>
                   </tr>
@@ -1259,7 +1271,10 @@ function DashboardOverview({
                       <td data-label="Days" className="num t-danger strong">
                         {o.days} days
                       </td>
-                      <td data-label="Balance" className="num t-danger strong">
+                      <td data-label="Overdue" className="num t-danger strong">
+                        {fmtMoney(o.overdueAmount)}
+                      </td>
+                      <td data-label="Balance" className="num strong">
                         {fmtMoney(o.balance)}
                       </td>
                       <td className="cell-actions">
