@@ -27,13 +27,10 @@ const todayISO = () => {
 
 const fmtZAR = (n) => {
   const v = Number(n) || 0;
-  return (
-    "R " +
-    v.toLocaleString("en-ZA", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
+  const neg = v < 0;
+  const [intPart, dec] = Math.abs(v).toFixed(2).split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return "R " + (neg ? "-" : "") + grouped + "." + dec;
 };
 
 const fmtDate = (s) => {
