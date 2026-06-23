@@ -9,8 +9,13 @@ node_modules/
 .env.local
 *.local
 
+# Generated at build time from Vercel env vars (holds the Supabase key)
+config.js
+
 # OS / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+.vercel

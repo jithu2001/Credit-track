@@ -2401,9 +2401,15 @@ function ShopStatement({ sb, user, onLogout, toast }) {
    ============================================================ */
 function App() {
   const [config, setConfig] = useState(() => {
+    // 1) a connection the user entered on this device wins
     const url = localStorage.getItem("wt_url");
     const key = localStorage.getItem("wt_key");
-    return url && key ? { url, key } : null;
+    if (url && key) return { url, key };
+    // 2) otherwise use the build-time config (config.js -> window.WT_CONFIG),
+    //    so every device auto-connects without the setup wizard
+    const w = typeof window !== "undefined" ? window.WT_CONFIG : null;
+    if (w && w.url && w.key) return { url: w.url, key: w.key };
+    return null;
   });
   const [sb, setSb] = useState(() =>
     config ? makeSupabase(config.url, config.key) : null

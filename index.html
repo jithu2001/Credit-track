@@ -34,6 +34,10 @@
 <body>
   <div id="root"><div id="boot">Loading WholesaleTrack…</div></div>
 
+  <!-- Connection config injected at build time from Vercel env vars (optional;
+       absent during local dev, which is fine — the setup wizard handles that). -->
+  <script src="config.js" onerror="this.remove()"></script>
+
   <!-- Single-file React app. Babel transpiles the JSX module in the browser. -->
   <script type="text/babel" data-type="module" data-presets="react" src="app.jsx"></script>
 </body>
