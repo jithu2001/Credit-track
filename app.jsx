@@ -940,19 +940,23 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
               <Button
                 variant="ghost"
                 size="sm"
+                className="btn--has-short"
                 aria-label="Add transaction"
                 onClick={() => setTxModal({})}
               >
                 <Icon name="plus" size={16} />
                 <span className="btn__label">Transaction</span>
+                <span className="btn__label-short">Txn</span>
               </Button>
               <Button
                 size="sm"
+                className="btn--has-short"
                 aria-label="Add shop"
                 onClick={() => setShopModal({ mode: "add", data: null })}
               >
                 <Icon name="plus" size={16} />
                 <span className="btn__label">Add shop</span>
+                <span className="btn__label-short">Shop</span>
               </Button>
             </>
           )}
@@ -2157,6 +2161,7 @@ a:hover{text-decoration:underline}
 .btn--danger-ghost{background:transparent;color:var(--danger);border-color:transparent}
 .btn--danger-ghost:hover:not(:disabled){background:var(--danger-soft)}
 .btn__label{display:inline}
+.btn__label-short{display:none}
 .icon-btn{display:inline-flex;align-items:center;justify-content:center;
   width:40px;height:40px;border-radius:var(--r-sm);border:none;background:transparent;
   color:inherit;cursor:pointer;transition:background .15s}
@@ -2317,7 +2322,13 @@ a:hover{text-decoration:underline}
   .sidebar.is-open{transform:none}
 }
 @media (min-width:901px){.hamburger{display:none}.scrim{display:none}}
-@media (max-width:640px){.btn__label{display:none}.topbar__right .btn{padding:0;width:40px}}
+@media (max-width:640px){
+  .btn__label{display:none}
+  .topbar__right .btn{padding:0;width:40px}
+  .topbar__right .btn--has-short{width:auto;padding:0 12px}
+  .btn--has-short .btn__label-short{display:inline}
+}
+@media (max-width:360px){.topbar .logo__text{display:none}}
 
 /* ---- brand screens (setup / login) ---- */
 .screen-brand{min-height:100%;display:flex;align-items:center;justify-content:center;padding:20px;
