@@ -1,24 +1,21 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createRoot } from "react-dom/client";
 
 /* ============================================================
    WholesaleTrack — single-file wholesale creditor manager
    React (no build tools) + custom Supabase REST client.
+   UI: design-system stylesheet (8px grid) + semantic classes.
    ============================================================ */
 
-/* ---------- Theme ---------- */
+/* ---------- Dynamic colors used inline (match CSS vars) ---------- */
 const C = {
   navy: "#0B1D3A",
   navyMid: "#16346A",
   gold: "#D4930A",
   goldLight: "#F5B829",
-  white: "#FFFFFF",
-  cream: "#F7F8FA",
-  ink: "#111827",
-  muted: "#9CA3AF",
-  border: "#E5E7EB",
   red: "#DC2626",
   green: "#15803D",
+  muted: "#94A3B8",
 };
 
 /* ---------- Helpers ---------- */
@@ -182,237 +179,256 @@ create policy "allow_all_creditors"    on wt_creditors    for all using (true) w
 create policy "allow_all_transactions" on wt_transactions for all using (true) with check (true);
 create policy "allow_all_settings"     on wt_settings     for all using (true) with check (true);`;
 
-/* ---------- Tiny UI atoms ---------- */
-function Spinner({ size = 18, color = C.gold }) {
+/* ============================================================
+   Icons (inline, currentColor stroke)
+   ============================================================ */
+const Ic = {
+  menu: "M3 6h18M3 12h18M3 18h18",
+  close: "M6 6l12 12M18 6L6 18",
+  plus: "M12 5v14M5 12h14",
+  home: "M3 11l9-8 9 8M5 10v10h14V10",
+  shop: "M4 7h16l-1 5H5L4 7zM4 7l-.5-2.5H2M6 21a1 1 0 100-2 1 1 0 000 2zM17 21a1 1 0 100-2 1 1 0 000 2z",
+  logout: "M16 17l5-5-5-5M21 12H9M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4",
+  key: "M21 2l-2 2m-7 7a4 4 0 11-5.66 5.66A4 4 0 0112 11zm0 0l4-4m0 0l3 3m-3-3l2 2",
+  search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.3-4.3",
+  inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
+  alert: "M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z",
+  copy: "M9 9h10a2 2 0 012 2v10a2 2 0 01-2 2H9a2 2 0 01-2-2V11a2 2 0 012-2zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1",
+  check: "M20 6L9 17l-5-5",
+  clock: "M12 22a10 10 0 100-20 10 10 0 000 20zM12 6v6l4 2",
+  chart: "M3 3v18h18M18 9l-5 5-3-3-4 4",
+  users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
+};
+function Icon({ name, size = 18, className = "" }) {
+  return (
+    <svg
+      className={"ic " + className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={Ic[name]} />
+    </svg>
+  );
+}
+
+/* ============================================================
+   UI atoms
+   ============================================================ */
+function Spinner({ size = 18 }) {
   return (
     <span
-      style={{
-        display: "inline-block",
-        width: size,
-        height: size,
-        border: `2.5px solid ${color}33`,
-        borderTopColor: color,
-        borderRadius: "50%",
-        animation: "wt-spin 0.7s linear infinite",
-        verticalAlign: "middle",
-      }}
+      className="spinner"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
     />
   );
 }
 
-const card = {
-  background: C.white,
-  borderRadius: 14,
-  border: `1px solid ${C.border}`,
-  boxShadow: "0 1px 3px rgba(16,24,40,0.06)",
-};
-
-const btn = (kind = "gold") => {
-  const map = {
-    gold: { bg: C.gold, fg: "#fff" },
-    navy: { bg: C.navyMid, fg: "#fff" },
-    ghost: { bg: "transparent", fg: C.ink, border: `1px solid ${C.border}` },
-    red: { bg: C.red, fg: "#fff" },
-    green: { bg: C.green, fg: "#fff" },
-  };
-  const m = map[kind] || map.gold;
-  return {
-    background: m.bg,
-    color: m.fg,
-    border: m.border || "none",
-    borderRadius: 9,
-    padding: "9px 14px",
-    fontWeight: 700,
-    fontSize: 13.5,
-    cursor: "pointer",
-    fontFamily: "inherit",
-  };
-};
-
-const inputStyle = {
-  width: "100%",
-  padding: "10px 12px",
-  border: `1.5px solid ${C.border}`,
-  borderRadius: 8,
-  fontSize: 14,
-  fontFamily: "inherit",
-  outline: "none",
-  background: "#fff",
-};
-
-function Field({ label, children }) {
+function Button({
+  variant = "primary",
+  size,
+  block,
+  className = "",
+  children,
+  ...props
+}) {
+  const cls = [
+    "btn",
+    "btn--" + variant,
+    size === "sm" && "btn--sm",
+    size === "lg" && "btn--lg",
+    block && "btn--block",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <label style={{ display: "block", marginBottom: 12 }}>
-      <span
-        style={{
-          display: "block",
-          fontSize: 12.5,
-          fontWeight: 600,
-          color: "#374151",
-          marginBottom: 5,
-        }}
-      >
-        {label}
-      </span>
+    <button className={cls} {...props}>
       {children}
-    </label>
+    </button>
   );
 }
 
-function Input(props) {
-  const [f, setF] = useState(false);
+function IconButton({ icon, label, className = "", ...props }) {
+  return (
+    <button className={"icon-btn " + className} aria-label={label} {...props}>
+      <Icon name={icon} />
+    </button>
+  );
+}
+
+function Field({ label, error, hint, required, children }) {
+  return (
+    <div className="field">
+      {label && (
+        <label className="field__label">
+          {label} {required && <span className="field__req">*</span>}
+        </label>
+      )}
+      {children}
+      {hint && !error && <span className="field__hint">{hint}</span>}
+      {error && (
+        <span className="field__error" role="alert">
+          <Icon name="alert" size={13} /> {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Input({ invalid, className = "", ...p }) {
   return (
     <input
-      {...props}
-      onFocus={(e) => {
-        setF(true);
-        props.onFocus && props.onFocus(e);
-      }}
-      onBlur={(e) => {
-        setF(false);
-        props.onBlur && props.onBlur(e);
-      }}
-      style={{
-        ...inputStyle,
-        borderColor: f ? C.gold : C.border,
-        boxShadow: f ? `0 0 0 3px ${C.gold}33` : "none",
-        ...(props.style || {}),
-      }}
+      className={"input " + (invalid ? "is-invalid " : "") + className}
+      {...p}
     />
   );
 }
 
-function Toasts({ items }) {
+function Select({ invalid, className = "", children, ...p }) {
   return (
-    <div
-      style={{
-        position: "fixed",
-        right: 18,
-        bottom: 18,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-        zIndex: 9999,
-      }}
+    <select
+      className={"input select " + (invalid ? "is-invalid " : "") + className}
+      {...p}
     >
+      {children}
+    </select>
+  );
+}
+
+function Badge({ tone = "neutral", children, className = "" }) {
+  return (
+    <span className={`badge badge--${tone} ${className}`}>{children}</span>
+  );
+}
+
+function EmptyState({ icon = "inbox", title, hint }) {
+  return (
+    <div className="empty">
+      <div className="empty__icon">
+        <Icon name={icon} size={22} />
+      </div>
+      <div className="empty__title">{title}</div>
+      {hint && <div className="empty__hint">{hint}</div>}
+    </div>
+  );
+}
+
+/* skeleton loaders */
+function Sk({ w = "100%", h = 14, r = 7, className = "", style }) {
+  return (
+    <span
+      className={"sk " + className}
+      style={{ width: w, height: h, borderRadius: r, ...(style || {}) }}
+    />
+  );
+}
+function SkeletonStats() {
+  return (
+    <div className="stat-grid" aria-hidden="true">
+      {[0, 1, 2, 3].map((i) => (
+        <div className="stat" key={i}>
+          <Sk w="55%" h={11} />
+          <Sk w="70%" h={26} style={{ marginTop: 12 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+function SkeletonCard({ rows = 5 }) {
+  return (
+    <div className="card" aria-hidden="true">
+      <div className="card__head">
+        <Sk w={140} h={14} />
+      </div>
+      <div className="card__pad">
+        {Array.from({ length: rows }).map((_, i) => (
+          <div className="sk-row" key={i}>
+            <Sk w="40%" h={13} />
+            <Sk w="20%" h={13} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toasts({ items, onDismiss }) {
+  return (
+    <div className="toast-wrap" role="status" aria-live="polite">
       {items.map((t) => (
         <div
           key={t.id}
-          style={{
-            background: t.kind === "error" ? C.red : C.green,
-            color: "#fff",
-            padding: "12px 16px",
-            borderRadius: 10,
-            fontSize: 13.5,
-            fontWeight: 600,
-            boxShadow: "0 6px 18px rgba(0,0,0,0.18)",
-            maxWidth: 340,
-          }}
+          className={`toast toast--${t.kind === "error" ? "error" : "success"}`}
+          onClick={() => onDismiss(t.id)}
         >
-          {t.msg}
+          <Icon name={t.kind === "error" ? "alert" : "check"} size={16} />
+          <span>{t.msg}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function Modal({ title, onClose, children, footer }) {
+function Modal({ title, onClose, children, footer, size = "md" }) {
+  const panelRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const el = panelRef.current;
+    if (el) {
+      const f = el.querySelector(
+        "input,select,textarea,button:not(.icon-btn)"
+      );
+      f && f.focus();
+    }
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+
   return (
-    <div
-      onMouseDown={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(11,29,58,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        zIndex: 8000,
-      }}
-    >
+    <div className="overlay" onMouseDown={onClose}>
       <div
+        ref={panelRef}
+        className={"modal modal--" + size}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         onMouseDown={(e) => e.stopPropagation()}
-        style={{
-          ...card,
-          width: "100%",
-          maxWidth: 480,
-          maxHeight: "90vh",
-          overflowY: "auto",
-        }}
       >
-        <div
-          style={{
-            padding: "16px 20px",
-            borderBottom: `1px solid ${C.border}`,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: 17, color: C.navy }}>{title}</h3>
-          <button
-            onClick={onClose}
-            style={{
-              border: "none",
-              background: "transparent",
-              fontSize: 22,
-              cursor: "pointer",
-              color: C.muted,
-              lineHeight: 1,
-            }}
-          >
-            ×
-          </button>
+        <div className="modal__head">
+          <h3 className="modal__title">{title}</h3>
+          <IconButton icon="close" label="Close dialog" onClick={onClose} />
         </div>
-        <div style={{ padding: 20 }}>{children}</div>
-        {footer && (
-          <div
-            style={{
-              padding: "14px 20px",
-              borderTop: `1px solid ${C.border}`,
-              display: "flex",
-              gap: 10,
-              justifyContent: "flex-end",
-            }}
-          >
-            {footer}
-          </div>
-        )}
+        <div className="modal__body">{children}</div>
+        {footer && <div className="modal__foot">{footer}</div>}
       </div>
     </div>
   );
 }
 
 /* ---------- Logo ---------- */
-function Logo({ light }) {
+function Logo({ light, size = "md" }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <div
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 8,
-          background: C.goldLight,
-          color: C.navy,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontWeight: 900,
-          fontSize: 16,
-        }}
-      >
+    <div className={"logo " + (light ? "logo--light " : "") + "logo--" + size}>
+      <span className="logo__mark" aria-hidden="true">
         W
-      </div>
-      <span
-        style={{
-          fontWeight: 800,
-          fontSize: 17,
-          color: light ? "#fff" : C.navy,
-          letterSpacing: 0.2,
-        }}
-      >
-        Wholesale<span style={{ color: C.goldLight }}>Track</span>
+      </span>
+      <span className="logo__text">
+        Wholesale<span className="logo__accent">Track</span>
       </span>
     </div>
   );
@@ -462,163 +478,86 @@ function SetupWizard({ onDone, toast }) {
     }
   };
 
-  const StepDot = ({ n }) => (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        opacity: step >= n ? 1 : 0.45,
-      }}
-    >
-      <div
-        style={{
-          width: 26,
-          height: 26,
-          borderRadius: "50%",
-          background: step >= n ? C.gold : C.border,
-          color: step >= n ? "#fff" : C.muted,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontWeight: 700,
-          fontSize: 13,
-        }}
-      >
-        {n}
-      </div>
-    </div>
-  );
-
   return (
-    <div
-      style={{
-        minHeight: "100%",
-        background: C.navy,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div style={{ ...card, width: "100%", maxWidth: 640 }}>
-        <div
-          style={{
-            padding: "20px 24px",
-            borderBottom: `1px solid ${C.border}`,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
+    <div className="screen-brand">
+      <div className="auth-card auth-card--wide">
+        <div className="auth-card__top">
           <Logo />
-          <span style={{ fontSize: 13, color: C.muted }}>First-time setup</span>
+          <span className="muted-sm">First-time setup</span>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 18,
-            padding: "16px 24px",
-            borderBottom: `1px solid ${C.border}`,
-          }}
-        >
-          <StepDot n={1} />
-          <StepDot n={2} />
-          <StepDot n={3} />
+        <div className="stepper">
+          {[1, 2, 3].map((n) => (
+            <div
+              className={"stepper__item " + (step >= n ? "is-done" : "")}
+              key={n}
+            >
+              <span className="stepper__dot">{step > n ? "✓" : n}</span>
+              <span className="stepper__label">
+                {n === 1 ? "Create" : n === 2 ? "Schema" : "Connect"}
+              </span>
+            </div>
+          ))}
         </div>
 
-        <div style={{ padding: 24 }}>
+        <div className="auth-card__body">
           {step === 1 && (
-            <div>
-              <h2 style={{ marginTop: 0, color: C.navy }}>
-                Step 1 — Create a free Supabase project
-              </h2>
-              <ol style={{ lineHeight: 1.8, color: "#374151", fontSize: 14.5 }}>
+            <div className="stack">
+              <h2 className="h2">Create a free Supabase project</h2>
+              <ol className="steps-list">
                 <li>
                   Go to{" "}
                   <a
                     href="https://supabase.com"
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: C.gold, fontWeight: 700 }}
                   >
                     supabase.com
                   </a>{" "}
                   and sign up (free).
                 </li>
-                <li>Click <b>New Project</b> and pick any name &amp; region.</li>
+                <li>
+                  Click <b>New Project</b> and pick any name &amp; region.
+                </li>
                 <li>Wait ~1 minute for the database to be provisioned.</li>
               </ol>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button style={btn("gold")} onClick={() => setStep(2)}>
-                  Next →
-                </button>
+              <div className="row-end">
+                <Button onClick={() => setStep(2)}>Continue</Button>
               </div>
             </div>
           )}
 
           {step === 2 && (
-            <div>
-              <h2 style={{ marginTop: 0, color: C.navy }}>
-                Step 2 — Run the database schema
-              </h2>
-              <p style={{ color: "#374151", fontSize: 14.5 }}>
+            <div className="stack">
+              <h2 className="h2">Run the database schema</h2>
+              <p className="muted">
                 Open the <b>SQL Editor</b> in Supabase, paste the script below,
                 and click <b>Run</b>.
               </p>
-              <div style={{ position: "relative" }}>
-                <pre
-                  style={{
-                    background: C.navy,
-                    color: "#D7E3F4",
-                    padding: 16,
-                    borderRadius: 10,
-                    fontSize: 12,
-                    overflowX: "auto",
-                    maxHeight: 240,
-                    margin: 0,
-                  }}
-                >
-                  {SCHEMA_SQL}
-                </pre>
-                <button
+              <div className="code-block">
+                <pre>{SCHEMA_SQL}</pre>
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  className="code-block__copy"
                   onClick={copySql}
-                  style={{
-                    ...btn("gold"),
-                    position: "absolute",
-                    top: 10,
-                    right: 10,
-                    padding: "6px 10px",
-                    fontSize: 12,
-                  }}
                 >
-                  Copy
-                </button>
+                  <Icon name="copy" size={14} /> Copy
+                </Button>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  marginTop: 16,
-                }}
-              >
-                <button style={btn("ghost")} onClick={() => setStep(1)}>
-                  ← Back
-                </button>
-                <button style={btn("gold")} onClick={() => setStep(3)}>
-                  Next →
-                </button>
+              <div className="row-split">
+                <Button variant="ghost" onClick={() => setStep(1)}>
+                  Back
+                </Button>
+                <Button onClick={() => setStep(3)}>Continue</Button>
               </div>
             </div>
           )}
 
           {step === 3 && (
-            <div>
-              <h2 style={{ marginTop: 0, color: C.navy }}>
-                Step 3 — Connect your project
-              </h2>
-              <p style={{ color: "#374151", fontSize: 14.5 }}>
+            <div className="stack">
+              <h2 className="h2">Connect your project</h2>
+              <p className="muted">
                 In Supabase go to <b>Project Settings → API</b> and copy the
                 values below.
               </p>
@@ -629,55 +568,30 @@ function SetupWizard({ onDone, toast }) {
                   onChange={(e) => setUrl(e.target.value)}
                 />
               </Field>
-              <Field label="anon public key">
+              <Field label="anon public key" error={err}>
                 <Input
                   placeholder="eyJhbGciOi..."
                   value={key}
                   onChange={(e) => setKey(e.target.value)}
                 />
               </Field>
-              {err && (
-                <div
-                  style={{
-                    background: "#FEF2F2",
-                    color: C.red,
-                    border: `1px solid ${C.red}44`,
-                    borderRadius: 8,
-                    padding: "10px 12px",
-                    fontSize: 13,
-                    marginBottom: 12,
-                  }}
-                >
-                  {err}
-                </div>
-              )}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <button
-                  style={btn("ghost")}
+              <div className="row-split">
+                <Button
+                  variant="ghost"
                   onClick={() => setStep(2)}
                   disabled={testing}
                 >
-                  ← Back
-                </button>
-                <button
-                  style={{ ...btn("gold"), opacity: testing ? 0.7 : 1 }}
-                  onClick={connect}
-                  disabled={testing}
-                >
+                  Back
+                </Button>
+                <Button onClick={connect} disabled={testing}>
                   {testing ? (
                     <>
-                      <Spinner size={14} color="#fff" /> &nbsp;Testing…
+                      <Spinner size={15} /> Testing…
                     </>
                   ) : (
                     "Connect & Launch"
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -748,74 +662,39 @@ function Login({ sb, onLogin, toast, onReconnect, settings }) {
   const onKey = (e) => {
     if (e.key === "Enter") submit();
   };
-
   const isShop = portal === "shop";
 
-  const Tab = ({ id, label }) => {
-    const on = portal === id;
-    return (
-      <button
-        onClick={() => switchPortal(id)}
-        style={{
-          flex: 1,
-          padding: "11px 8px",
-          border: "none",
-          cursor: "pointer",
-          fontWeight: 700,
-          fontSize: 13.5,
-          fontFamily: "inherit",
-          background: on ? "#fff" : "transparent",
-          color: on ? C.navy : C.muted,
-          borderBottom: on ? `2.5px solid ${C.gold}` : `2.5px solid transparent`,
-        }}
-      >
-        {label}
-      </button>
-    );
-  };
-
   return (
-    <div
-      style={{
-        minHeight: "100%",
-        background: C.navy,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div style={{ ...card, width: "100%", maxWidth: 400, overflow: "hidden" }}>
-        <div
-          style={{
-            padding: "26px 26px 14px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <Logo />
-          <p style={{ color: C.muted, fontSize: 13, margin: "6px 0 0" }}>
+    <div className="screen-brand">
+      <div className="auth-card">
+        <div className="auth-card__hero">
+          <Logo size="lg" />
+          <p className="auth-card__sub">
             {isShop ? "Shop account login" : "Staff & admin login"}
           </p>
         </div>
 
-        {/* Separate portals */}
-        <div
-          style={{
-            display: "flex",
-            borderTop: `1px solid ${C.border}`,
-            borderBottom: `1px solid ${C.border}`,
-            background: C.cream,
-          }}
-        >
-          <Tab id="staff" label="Staff / Admin" />
-          <Tab id="shop" label="Shop Login" />
-        </div>
+        <div className="auth-card__body">
+          <div className="seg" role="tablist" aria-label="Login type">
+            <button
+              role="tab"
+              aria-selected={!isShop}
+              className={"seg__btn " + (!isShop ? "is-active" : "")}
+              onClick={() => switchPortal("staff")}
+            >
+              Staff / Admin
+            </button>
+            <button
+              role="tab"
+              aria-selected={isShop}
+              className={"seg__btn " + (isShop ? "is-active" : "")}
+              onClick={() => switchPortal("shop")}
+            >
+              Shop
+            </button>
+          </div>
 
-        <div style={{ padding: "18px 26px 24px" }}>
-          <Field label={isShop ? "Shop Username" : "Username"}>
+          <Field label={isShop ? "Shop username" : "Username"}>
             <Input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -825,7 +704,7 @@ function Login({ sb, onLogin, toast, onReconnect, settings }) {
             />
           </Field>
 
-          <Field label="Password">
+          <Field label="Password" error={err}>
             <Input
               type="password"
               value={password}
@@ -836,57 +715,21 @@ function Login({ sb, onLogin, toast, onReconnect, settings }) {
             />
           </Field>
 
-          {err && (
-            <div
-              style={{
-                background: "#FEF2F2",
-                color: C.red,
-                border: `1px solid ${C.red}44`,
-                borderRadius: 8,
-                padding: "10px 12px",
-                fontSize: 13,
-                marginBottom: 12,
-              }}
-            >
-              {err}
-            </div>
-          )}
-
-          <button
-            style={{
-              ...btn(isShop ? "navy" : "gold"),
-              width: "100%",
-              padding: "11px",
-            }}
-            onClick={submit}
-            disabled={busy}
-          >
+          <Button block onClick={submit} disabled={busy}>
             {busy ? (
               <>
-                <Spinner size={14} color="#fff" /> &nbsp;Signing in…
+                <Spinner size={15} /> Signing in…
               </>
             ) : isShop ? (
-              "View My Statement"
+              "View my statement"
             ) : (
-              "Sign In"
+              "Sign in"
             )}
-          </button>
+          </Button>
 
-          <div style={{ textAlign: "center", marginTop: 16 }}>
-            <button
-              onClick={onReconnect}
-              style={{
-                background: "none",
-                border: "none",
-                color: C.muted,
-                fontSize: 12,
-                cursor: "pointer",
-                textDecoration: "underline",
-              }}
-            >
-              Reconnect to Supabase
-            </button>
-          </div>
+          <button className="link-btn" onClick={onReconnect}>
+            Reconnect to Supabase
+          </button>
         </div>
       </div>
     </div>
@@ -948,19 +791,9 @@ function oldestPending(transactions) {
 function TypeBadge({ type }) {
   const inv = type === "invoice";
   return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 9px",
-        borderRadius: 999,
-        fontSize: 11.5,
-        fontWeight: 700,
-        background: inv ? "#FEECEC" : "#E7F4EC",
-        color: inv ? C.red : C.green,
-      }}
-    >
+    <Badge tone={inv ? "danger" : "success"}>
       {inv ? "Invoice" : "Payment"}
-    </span>
+    </Badge>
   );
 }
 
@@ -972,11 +805,12 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
   const [creditors, setCreditors] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState("dashboard"); // "dashboard" | creditorId
+  const [active, setActive] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navQuery, setNavQuery] = useState("");
 
-  const [shopModal, setShopModal] = useState(null); // {mode:'add'|'edit', data}
-  const [txModal, setTxModal] = useState(null); // {creditor_id?}
+  const [shopModal, setShopModal] = useState(null);
+  const [txModal, setTxModal] = useState(null);
   const [pwModal, setPwModal] = useState(false);
 
   const pwKey = isAdmin ? "admin_password" : "staff_password";
@@ -1008,7 +842,6 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
   }, [load]);
 
   const balances = computeBalances(creditors, transactions);
-
   const totalOwed = Object.values(balances).reduce(
     (s, b) => s + Math.max(0, b.balance),
     0
@@ -1077,267 +910,178 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
   const creditorName = (id) =>
     (creditors.find((c) => c.id === id) || {}).name || "—";
 
-  /* ----- UI pieces ----- */
-  const RoleBadge = (
-    <span
-      style={{
-        padding: "3px 10px",
-        borderRadius: 999,
-        background: isAdmin ? C.gold : C.navyMid,
-        color: "#fff",
-        fontSize: 11.5,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: 0.5,
-      }}
-    >
-      {user.role}
-    </span>
-  );
-
-  const StatCard = ({ label, value, color }) => (
-    <div style={{ ...card, padding: 18, flex: "1 1 160px", minWidth: 150 }}>
-      <div style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 24,
-          fontWeight: 800,
-          color: color || C.navy,
-          marginTop: 6,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-
   const activeCreditor =
     active !== "dashboard" ? creditors.find((c) => c.id === active) : null;
 
+  const go = (key) => {
+    setActive(key);
+    setSidebarOpen(false);
+  };
+
+  const filteredNav = creditors.filter((c) =>
+    (c.name + " " + (c.contact || ""))
+      .toLowerCase()
+      .includes(navQuery.trim().toLowerCase())
+  );
+
   return (
-    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
-      {/* Top nav */}
-      <div
-        style={{
-          background: C.navy,
-          color: "#fff",
-          padding: "0 16px",
-          height: 58,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          position: "sticky",
-          top: 0,
-          zIndex: 50,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
+    <div className="app">
+      {/* Top bar */}
+      <header className="topbar">
+        <div className="topbar__left">
+          <IconButton
+            icon="menu"
+            label="Open menu"
+            className="hamburger"
             onClick={() => setSidebarOpen((s) => !s)}
-            className="wt-burger"
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "#fff",
-              fontSize: 22,
-              cursor: "pointer",
-              display: "none",
-            }}
-          >
-            ☰
-          </button>
-          <Logo light />
+          />
+          <Logo />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {RoleBadge}
+        <div className="topbar__right">
           {isAdmin && (
             <>
-              <button style={btn("navy")} onClick={() => setTxModal({})}>
-                + Txn
-              </button>
-              <button
-                style={btn("gold")}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Add transaction"
+                onClick={() => setTxModal({})}
+              >
+                <Icon name="plus" size={16} />
+                <span className="btn__label">Transaction</span>
+              </Button>
+              <Button
+                size="sm"
+                aria-label="Add shop"
                 onClick={() => setShopModal({ mode: "add", data: null })}
               >
-                + Shop
-              </button>
+                <Icon name="plus" size={16} />
+                <span className="btn__label">Add shop</span>
+              </Button>
             </>
           )}
-          <button style={btn("ghost")} onClick={() => setPwModal(true)}>
-            <span style={{ color: "#fff" }}>Password</span>
-          </button>
-          <button style={btn("ghost")} onClick={onLogout}>
-            <span style={{ color: "#fff" }}>Logout</span>
-          </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+      <div className="layout">
         {/* Sidebar */}
-        <div
-          className={"wt-sidebar" + (sidebarOpen ? " wt-open" : "")}
-          style={{
-            width: 256,
-            background: "#fff",
-            borderRight: `1px solid ${C.border}`,
-            padding: 12,
-            overflowY: "auto",
-          }}
-        >
-          <button
-            onClick={() => {
-              setActive("dashboard");
-              setSidebarOpen(false);
-            }}
-            style={{
-              width: "100%",
-              textAlign: "left",
-              padding: "10px 12px",
-              borderRadius: 9,
-              border: "none",
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: 14,
-              marginBottom: 8,
-              background: active === "dashboard" ? C.gold : "transparent",
-              color: active === "dashboard" ? "#fff" : C.ink,
-            }}
-          >
-            ▦ Dashboard
-          </button>
+        <aside className={"sidebar " + (sidebarOpen ? "is-open" : "")}>
+          <div className="sidebar__scroll">
+            <div className="sidebar__search">
+              <Icon name="search" size={15} />
+              <input
+                className="sidebar__search-input"
+                placeholder="Search shops"
+                value={navQuery}
+                onChange={(e) => setNavQuery(e.target.value)}
+                aria-label="Search shops"
+              />
+            </div>
 
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: C.muted,
-              textTransform: "uppercase",
-              letterSpacing: 0.6,
-              padding: "8px 12px 4px",
-            }}
-          >
-            Shops ({creditors.length})
+            <button
+              className={
+                "navlink " + (active === "dashboard" ? "is-active" : "")
+              }
+              onClick={() => go("dashboard")}
+            >
+              <Icon name="home" size={17} />
+              <span className="navlink__name">Dashboard</span>
+            </button>
+
+            <div className="sidebar__section">Shops · {creditors.length}</div>
+
+            {filteredNav.length === 0 && (
+              <div className="sidebar__empty">
+                {creditors.length === 0 ? "No shops yet" : "No matches"}
+              </div>
+            )}
+            {filteredNav.map((c) => {
+              const b = balances[c.id] || { balance: 0 };
+              const owes = b.balance > 0.001;
+              return (
+                <button
+                  key={c.id}
+                  className={"navlink " + (active === c.id ? "is-active" : "")}
+                  onClick={() => go(c.id)}
+                >
+                  <span className="navlink__name">{c.name}</span>
+                  <span
+                    className={
+                      "navlink__bal " + (owes ? "t-danger" : "t-success")
+                    }
+                  >
+                    {fmtZAR(b.balance)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
-          {creditors.map((c) => {
-            const b = balances[c.id] || { balance: 0 };
-            const owes = b.balance > 0.001;
-            const isActive = active === c.id;
-            return (
-              <button
-                key={c.id}
-                onClick={() => {
-                  setActive(c.id);
-                  setSidebarOpen(false);
-                }}
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "9px 12px",
-                  borderRadius: 9,
-                  border: "none",
-                  cursor: "pointer",
-                  marginBottom: 4,
-                  background: isActive ? C.gold : "transparent",
-                  color: isActive ? "#fff" : C.ink,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 8,
-                }}
-              >
-                <span
-                  style={{
-                    fontWeight: 600,
-                    fontSize: 13.5,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
+          <div className="sidebar__foot">
+            <div className="acct">
+              <div className="acct__id">
+                <Badge tone={isAdmin ? "accent" : "brand"}>{user.role}</Badge>
+                <span className="acct__name">{user.name}</span>
+              </div>
+              <div className="acct__actions">
+                <Button
+                  variant="subtle"
+                  size="sm"
+                  onClick={() => setPwModal(true)}
                 >
-                  {c.name}
-                </span>
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: isActive ? "#fff" : owes ? C.red : C.green,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {fmtZAR(b.balance)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <Icon name="key" size={15} /> Password
+                </Button>
+                <Button variant="subtle" size="sm" onClick={onLogout}>
+                  <Icon name="logout" size={15} /> Logout
+                </Button>
+              </div>
+            </div>
+          </div>
+        </aside>
 
-        {/* Overlay for mobile sidebar */}
         {sidebarOpen && (
-          <div
-            className="wt-overlay"
-            onClick={() => setSidebarOpen(false)}
-            style={{
-              position: "fixed",
-              inset: 0,
-              background: "rgba(0,0,0,0.35)",
-              zIndex: 40,
-            }}
-          />
+          <div className="scrim" onClick={() => setSidebarOpen(false)} />
         )}
 
-        {/* Main content */}
-        <div
-          style={{
-            flex: 1,
-            padding: 20,
-            overflowY: "auto",
-            background: C.cream,
-          }}
-        >
-          {loading ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                color: C.muted,
-                padding: 40,
-              }}
-            >
-              <Spinner /> Loading data…
-            </div>
-          ) : active === "dashboard" ? (
-            <DashboardOverview
-              creditors={creditors}
-              transactions={transactions}
-              balances={balances}
-              StatCard={StatCard}
-              totalOwed={totalOwed}
-              shopsWithBalance={shopsWithBalance}
-              isAdmin={isAdmin}
-              creditorName={creditorName}
-              onView={(id) => setActive(id)}
-              onEdit={(c) => setShopModal({ mode: "edit", data: c })}
-              onDelete={deleteShop}
-              onDeleteTx={deleteTx}
-            />
-          ) : activeCreditor ? (
-            <ShopTab
-              creditor={activeCreditor}
-              transactions={transactions.filter(
-                (t) => t.creditor_id === activeCreditor.id
-              )}
-              isAdmin={isAdmin}
-              onAddTx={() => setTxModal({ creditor_id: activeCreditor.id })}
-              onDeleteTx={deleteTx}
-            />
-          ) : (
-            <div style={{ color: C.muted }}>Shop not found.</div>
-          )}
-        </div>
+        {/* Main */}
+        <main className="main">
+          <div className="container">
+            {loading ? (
+              <div className="stack-lg">
+                <SkeletonStats />
+                <SkeletonCard rows={4} />
+                <SkeletonCard rows={5} />
+              </div>
+            ) : active === "dashboard" ? (
+              <DashboardOverview
+                creditors={creditors}
+                transactions={transactions}
+                balances={balances}
+                totalOwed={totalOwed}
+                shopsWithBalance={shopsWithBalance}
+                isAdmin={isAdmin}
+                creditorName={creditorName}
+                onView={(id) => go(id)}
+                onEdit={(c) => setShopModal({ mode: "edit", data: c })}
+                onDelete={deleteShop}
+                onDeleteTx={deleteTx}
+                onAddShop={() => setShopModal({ mode: "add", data: null })}
+              />
+            ) : activeCreditor ? (
+              <ShopTab
+                creditor={activeCreditor}
+                transactions={transactions.filter(
+                  (t) => t.creditor_id === activeCreditor.id
+                )}
+                isAdmin={isAdmin}
+                onAddTx={() => setTxModal({ creditor_id: activeCreditor.id })}
+                onDeleteTx={deleteTx}
+                onBack={() => go("dashboard")}
+              />
+            ) : (
+              <EmptyState title="Shop not found" />
+            )}
+          </div>
+        </main>
       </div>
 
       {shopModal && (
@@ -1358,8 +1102,10 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
       )}
       {pwModal && (
         <ChangePasswordModal
-          title={`Change ${isAdmin ? "Admin" : "Staff"} Password`}
-          verify={(cur) => cur === (settings[pwKey] || (isAdmin ? "0000" : "9999"))}
+          title={`Change ${isAdmin ? "admin" : "staff"} password`}
+          verify={(cur) =>
+            cur === (settings[pwKey] || (isAdmin ? "0000" : "9999"))
+          }
           onSave={changeMyPassword}
           onClose={() => setPwModal(false)}
         />
@@ -1368,11 +1114,26 @@ function Dashboard({ sb, user, onLogout, toast, settings, onSettingsChanged }) {
   );
 }
 
+function StatCard({ label, value, tone, icon }) {
+  return (
+    <div className="stat">
+      <div className="stat__top">
+        <span className="stat__label">{label}</span>
+        {icon && (
+          <span className={"stat__icon stat__icon--" + (tone || "neutral")}>
+            <Icon name={icon} size={16} />
+          </span>
+        )}
+      </div>
+      <div className={"stat__value " + (tone ? "t-" + tone : "")}>{value}</div>
+    </div>
+  );
+}
+
 function DashboardOverview({
   creditors,
   transactions,
   balances,
-  StatCard,
   totalOwed,
   shopsWithBalance,
   isAdmin,
@@ -1381,12 +1142,15 @@ function DashboardOverview({
   onEdit,
   onDelete,
   onDeleteTx,
+  onAddShop,
 }) {
   const recent = [...transactions]
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, 15);
 
   const [overdueDays, setOverdueDays] = useState(30);
+  const [shopQuery, setShopQuery] = useState("");
+
   const overdueShops = creditors
     .map((c) => {
       const aging = oldestPending(
@@ -1403,318 +1167,296 @@ function DashboardOverview({
     .filter((x) => x && x.days > Number(overdueDays))
     .sort((a, b) => b.days - a.days);
 
-  const th = {
-    textAlign: "left",
-    padding: "10px 12px",
-    fontSize: 12,
-    color: C.muted,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    borderBottom: `2px solid ${C.border}`,
-    whiteSpace: "nowrap",
-  };
-  const td = {
-    padding: "11px 12px",
-    fontSize: 13.5,
-    borderBottom: `1px solid ${C.border}`,
-  };
+  const shownShops = creditors.filter((c) =>
+    (c.name + " " + (c.contact || ""))
+      .toLowerCase()
+      .includes(shopQuery.trim().toLowerCase())
+  );
 
   return (
-    <div>
-      <h1 style={{ margin: "0 0 16px", color: C.navy, fontSize: 22 }}>
-        Dashboard
-      </h1>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 22 }}>
-        <StatCard label="Total Shops" value={creditors.length} />
-        <StatCard label="Total Owed" value={fmtZAR(totalOwed)} color={C.red} />
-        <StatCard label="Shops With Balance" value={shopsWithBalance} />
-        <StatCard label="Total Transactions" value={transactions.length} />
+    <div className="stack-lg">
+      <div className="page-head">
+        <h1 className="h1">Dashboard</h1>
+        <p className="muted">Overview of every shop account.</p>
       </div>
 
-      {/* Overdue shops (admin only) */}
+      <div className="stat-grid">
+        <StatCard label="Total shops" value={creditors.length} icon="shop" />
+        <StatCard
+          label="Total owed"
+          value={fmtZAR(totalOwed)}
+          tone="danger"
+          icon="alert"
+        />
+        <StatCard
+          label="Shops with balance"
+          value={shopsWithBalance}
+          icon="users"
+        />
+        <StatCard
+          label="Transactions"
+          value={transactions.length}
+          icon="chart"
+        />
+      </div>
+
+      {/* Overdue (admin only) */}
       {isAdmin && (
-        <div style={{ ...card, marginBottom: 22, overflow: "hidden" }}>
-          <div
-            style={{
-              padding: "14px 16px",
-              borderBottom: `1px solid ${C.border}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 10,
-            }}
-          >
-            <div style={{ fontWeight: 800, color: C.navy }}>
-              Overdue Shops
-              <span
-                style={{
-                  marginLeft: 8,
-                  padding: "2px 9px",
-                  borderRadius: 999,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: overdueShops.length ? "#FEECEC" : "#E7F4EC",
-                  color: overdueShops.length ? C.red : C.green,
-                }}
+        <div className="card">
+          <div className="card__head card__head--split">
+            <div className="card__title">
+              Overdue shops
+              <Badge
+                tone={overdueShops.length ? "danger" : "success"}
+                className="ml-8"
               >
                 {overdueShops.length}
-              </span>
+              </Badge>
             </div>
-            <div
-              style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}
-            >
-              <span style={{ color: C.muted, fontWeight: 600 }}>Pending more than</span>
+            <label className="inline-control">
+              <span className="muted-sm">Pending over</span>
               <input
+                className="input input--xs"
                 type="number"
                 min="0"
+                inputMode="numeric"
                 value={overdueDays}
                 onChange={(e) => setOverdueDays(e.target.value)}
-                style={{
-                  ...inputStyle,
-                  width: 72,
-                  padding: "6px 8px",
-                  textAlign: "center",
-                }}
+                aria-label="Days pending threshold"
               />
-              <span style={{ color: C.muted, fontWeight: 600 }}>days</span>
-            </div>
+              <span className="muted-sm">days</span>
+            </label>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+
+          {overdueShops.length === 0 ? (
+            <div className="card__pad">
+              <EmptyState
+                icon="check"
+                title="Nothing overdue"
+                hint={`No shop has a balance pending more than ${overdueDays} days.`}
+              />
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table table--responsive">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Oldest unpaid</th>
+                    <th className="num">Days</th>
+                    <th className="num">Balance</th>
+                    <th aria-label="Actions"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overdueShops.map((o) => (
+                    <tr key={o.creditor.id}>
+                      <td data-label="Name" className="strong">
+                        {o.creditor.name}
+                      </td>
+                      <td data-label="Oldest unpaid">{fmtDate(o.date)}</td>
+                      <td data-label="Days" className="num t-danger strong">
+                        {o.days} days
+                      </td>
+                      <td data-label="Balance" className="num t-danger strong">
+                        {fmtZAR(o.balance)}
+                      </td>
+                      <td className="cell-actions">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onView(o.creditor.id)}
+                        >
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* All shops */}
+      <div className="card">
+        <div className="card__head card__head--split">
+          <div className="card__title">All shops</div>
+          <label className="inline-control inline-control--grow">
+            <Icon name="search" size={15} className="t-muted" />
+            <input
+              className="input input--sm"
+              placeholder="Filter shops"
+              value={shopQuery}
+              onChange={(e) => setShopQuery(e.target.value)}
+              aria-label="Filter shops"
+            />
+          </label>
+        </div>
+
+        {creditors.length === 0 ? (
+          <div className="card__pad">
+            <EmptyState
+              icon="shop"
+              title="No shops yet"
+              hint={isAdmin ? "Add your first shop to get started." : undefined}
+            />
+            {isAdmin && (
+              <div className="row-center">
+                <Button onClick={onAddShop}>
+                  <Icon name="plus" size={16} /> Add shop
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table table--responsive">
               <thead>
                 <tr>
-                  <th style={th}>Name</th>
-                  <th style={th}>Oldest Unpaid</th>
-                  <th style={{ ...th, textAlign: "right" }}>Days Pending</th>
-                  <th style={{ ...th, textAlign: "right" }}>Balance</th>
-                  <th style={th}></th>
+                  <th>Name</th>
+                  <th>Contact</th>
+                  <th className="num">Balance</th>
+                  {isAdmin && <th>Credentials</th>}
+                  <th aria-label="Actions"></th>
                 </tr>
               </thead>
               <tbody>
-                {overdueShops.length === 0 && (
-                  <tr>
-                    <td style={{ ...td, color: C.muted }} colSpan={5}>
-                      No shops have a balance pending more than {overdueDays} days.
+                {shownShops.length === 0 && (
+                  <tr className="empty-row">
+                    <td colSpan={isAdmin ? 5 : 4}>
+                      <span className="muted">No shops match “{shopQuery}”.</span>
                     </td>
                   </tr>
                 )}
-                {overdueShops.map((o) => (
-                  <tr key={o.creditor.id}>
-                    <td style={{ ...td, fontWeight: 700 }}>{o.creditor.name}</td>
-                    <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDate(o.date)}</td>
-                    <td
-                      style={{
-                        ...td,
-                        textAlign: "right",
-                        fontWeight: 800,
-                        color: C.red,
-                      }}
-                    >
-                      {o.days} days
-                    </td>
-                    <td
-                      style={{
-                        ...td,
-                        textAlign: "right",
-                        fontWeight: 700,
-                        color: C.red,
-                      }}
-                    >
-                      {fmtZAR(o.balance)}
-                    </td>
-                    <td style={{ ...td, textAlign: "right" }}>
-                      <button
-                        style={{ ...btn("ghost"), padding: "5px 10px", fontSize: 12 }}
-                        onClick={() => onView(o.creditor.id)}
+                {shownShops.map((c) => {
+                  const b = balances[c.id] || { balance: 0 };
+                  const owes = b.balance > 0.001;
+                  return (
+                    <tr key={c.id}>
+                      <td data-label="Name" className="strong">
+                        {c.name}
+                      </td>
+                      <td data-label="Contact" className="t-muted">
+                        {c.contact || "—"}
+                      </td>
+                      <td
+                        data-label="Balance"
+                        className={"num strong " + (owes ? "t-danger" : "t-success")}
                       >
-                        View
-                      </button>
+                        {fmtZAR(b.balance)}
+                      </td>
+                      {isAdmin && (
+                        <td data-label="Credentials">
+                          <code className="code-pill">
+                            {c.username} / {c.password}
+                          </code>
+                        </td>
+                      )}
+                      <td className="cell-actions">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onView(c.id)}
+                        >
+                          View
+                        </Button>
+                        {isAdmin && (
+                          <>
+                            <Button
+                              variant="subtle"
+                              size="sm"
+                              onClick={() => onEdit(c)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              variant="danger-ghost"
+                              size="sm"
+                              onClick={() => onDelete(c)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Recent transactions */}
+      <div className="card">
+        <div className="card__head">
+          <div className="card__title">Recent transactions</div>
+        </div>
+        {recent.length === 0 ? (
+          <div className="card__pad">
+            <EmptyState icon="inbox" title="No transactions yet" />
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table table--responsive">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Shop</th>
+                  <th>Description</th>
+                  <th>Type</th>
+                  <th className="num">Amount</th>
+                  {isAdmin && <th aria-label="Actions"></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {recent.map((t) => (
+                  <tr key={t.id}>
+                    <td data-label="Date" className="nowrap">
+                      {fmtDate(t.date)}
                     </td>
+                    <td data-label="Shop" className="strong">
+                      {creditorName(t.creditor_id)}
+                    </td>
+                    <td data-label="Description">{t.description}</td>
+                    <td data-label="Type">
+                      <TypeBadge type={t.type} />
+                    </td>
+                    <td
+                      data-label="Amount"
+                      className={
+                        "num strong " +
+                        (t.type === "invoice" ? "t-danger" : "t-success")
+                      }
+                    >
+                      {fmtZAR(t.amount)}
+                    </td>
+                    {isAdmin && (
+                      <td className="cell-actions">
+                        <Button
+                          variant="danger-ghost"
+                          size="sm"
+                          onClick={() => onDeleteTx(t)}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* All shops */}
-      <div style={{ ...card, marginBottom: 22, overflow: "hidden" }}>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: `1px solid ${C.border}`,
-            fontWeight: 800,
-            color: C.navy,
-          }}
-        >
-          All Shops
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={th}>Name</th>
-                <th style={th}>Contact</th>
-                <th style={th}>Balance</th>
-                {isAdmin && <th style={th}>Credentials</th>}
-                <th style={th}>Manage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {creditors.length === 0 && (
-                <tr>
-                  <td style={{ ...td, color: C.muted }} colSpan={isAdmin ? 5 : 4}>
-                    No shops yet.
-                  </td>
-                </tr>
-              )}
-              {creditors.map((c) => {
-                const b = balances[c.id] || { balance: 0 };
-                const owes = b.balance > 0.001;
-                return (
-                  <tr key={c.id}>
-                    <td style={{ ...td, fontWeight: 700 }}>{c.name}</td>
-                    <td style={{ ...td, color: "#374151" }}>{c.contact || "—"}</td>
-                    <td
-                      style={{
-                        ...td,
-                        fontWeight: 700,
-                        color: owes ? C.red : C.green,
-                      }}
-                    >
-                      {fmtZAR(b.balance)}
-                    </td>
-                    {isAdmin && (
-                      <td style={{ ...td, fontSize: 12.5, color: "#374151" }}>
-                        <code
-                          style={{
-                            background: C.cream,
-                            padding: "2px 6px",
-                            borderRadius: 5,
-                          }}
-                        >
-                          {c.username} / {c.password}
-                        </code>
-                      </td>
-                    )}
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          style={{ ...btn("ghost"), padding: "5px 10px", fontSize: 12 }}
-                          onClick={() => onView(c.id)}
-                        >
-                          View
-                        </button>
-                        {isAdmin && (
-                          <>
-                            <button
-                              style={{
-                                ...btn("navy"),
-                                padding: "5px 10px",
-                                fontSize: 12,
-                              }}
-                              onClick={() => onEdit(c)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              style={{
-                                ...btn("red"),
-                                padding: "5px 10px",
-                                fontSize: 12,
-                              }}
-                              onClick={() => onDelete(c)}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Recent transactions */}
-      <div style={{ ...card, overflow: "hidden" }}>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: `1px solid ${C.border}`,
-            fontWeight: 800,
-            color: C.navy,
-          }}
-        >
-          Recent Transactions
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={th}>Date</th>
-                <th style={th}>Shop</th>
-                <th style={th}>Description</th>
-                <th style={th}>Type</th>
-                <th style={{ ...th, textAlign: "right" }}>Amount</th>
-                {isAdmin && <th style={th}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {recent.length === 0 && (
-                <tr>
-                  <td style={{ ...td, color: C.muted }} colSpan={isAdmin ? 6 : 5}>
-                    No transactions yet.
-                  </td>
-                </tr>
-              )}
-              {recent.map((t) => (
-                <tr key={t.id}>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>
-                    {creditorName(t.creditor_id)}
-                  </td>
-                  <td style={td}>{t.description}</td>
-                  <td style={td}>
-                    <TypeBadge type={t.type} />
-                  </td>
-                  <td
-                    style={{
-                      ...td,
-                      textAlign: "right",
-                      fontWeight: 700,
-                      color: t.type === "invoice" ? C.red : C.green,
-                    }}
-                  >
-                    {fmtZAR(t.amount)}
-                  </td>
-                  {isAdmin && (
-                    <td style={{ ...td, textAlign: "right" }}>
-                      <button
-                        style={{ ...btn("red"), padding: "4px 9px", fontSize: 12 }}
-                        onClick={() => onDeleteTx(t)}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        )}
       </div>
     </div>
   );
 }
 
-function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx }) {
+function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx, onBack }) {
   const sorted = sortTx(transactions);
   const invoiced = transactions
     .filter((t) => t.type === "invoice")
@@ -1725,145 +1467,90 @@ function ShopTab({ creditor, transactions, isAdmin, onAddTx, onDeleteTx }) {
   const balance = invoiced - paid;
   const owes = balance > 0.001;
 
-  const th = {
-    textAlign: "left",
-    padding: "10px 12px",
-    fontSize: 12,
-    color: C.muted,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    borderBottom: `2px solid ${C.border}`,
-    whiteSpace: "nowrap",
-  };
-  const td = {
-    padding: "11px 12px",
-    fontSize: 13.5,
-    borderBottom: `1px solid ${C.border}`,
-  };
-
-  const Stat = ({ label, value, color }) => (
-    <div style={{ ...card, padding: 18, flex: "1 1 160px", minWidth: 150 }}>
-      <div style={{ fontSize: 12.5, color: C.muted, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color, marginTop: 6 }}>
-        {value}
-      </div>
-    </div>
-  );
-
   return (
-    <div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h1 style={{ margin: 0, color: C.navy, fontSize: 22 }}>{creditor.name}</h1>
-          <span
-            style={{
-              padding: "4px 12px",
-              borderRadius: 999,
-              fontSize: 12.5,
-              fontWeight: 700,
-              background: owes ? "#FEECEC" : "#E7F4EC",
-              color: owes ? C.red : C.green,
-            }}
-          >
+    <div className="stack-lg">
+      <button className="link-btn link-btn--back" onClick={onBack}>
+        ← Dashboard
+      </button>
+
+      <div className="page-head page-head--split">
+        <div className="page-head__title">
+          <h1 className="h1">{creditor.name}</h1>
+          <Badge tone={owes ? "danger" : "success"}>
             {owes ? "Owes" : "Settled"}
-          </span>
+          </Badge>
         </div>
         {isAdmin && (
-          <button style={btn("gold")} onClick={onAddTx}>
-            + Add Transaction
-          </button>
+          <Button onClick={onAddTx}>
+            <Icon name="plus" size={16} /> Add transaction
+          </Button>
         )}
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 22 }}>
-        <Stat label="Total Invoiced" value={fmtZAR(invoiced)} color={C.red} />
-        <Stat label="Total Paid" value={fmtZAR(paid)} color={C.green} />
-        <Stat
-          label="Balance Due"
+      <div className="stat-grid stat-grid--3">
+        <StatCard label="Total invoiced" value={fmtZAR(invoiced)} tone="danger" />
+        <StatCard label="Total paid" value={fmtZAR(paid)} tone="success" />
+        <StatCard
+          label="Balance due"
           value={fmtZAR(balance)}
-          color={owes ? C.red : C.green}
+          tone={owes ? "danger" : "success"}
         />
       </div>
 
-      <div style={{ ...card, overflow: "hidden" }}>
-        <div
-          style={{
-            padding: "14px 16px",
-            borderBottom: `1px solid ${C.border}`,
-            fontWeight: 800,
-            color: C.navy,
-          }}
-        >
-          Transactions
+      <div className="card">
+        <div className="card__head">
+          <div className="card__title">Transactions</div>
         </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th style={th}>Date</th>
-                <th style={th}>Description</th>
-                <th style={{ ...th, textAlign: "right" }}>Invoice</th>
-                <th style={{ ...th, textAlign: "right" }}>Payment</th>
-                {isAdmin && <th style={th}></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.length === 0 && (
+        {sorted.length === 0 ? (
+          <div className="card__pad">
+            <EmptyState
+              icon="inbox"
+              title="No transactions yet"
+              hint={isAdmin ? "Add a delivery or payment for this shop." : undefined}
+            />
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table table--responsive">
+              <thead>
                 <tr>
-                  <td style={{ ...td, color: C.muted }} colSpan={isAdmin ? 5 : 4}>
-                    No transactions for this shop yet.
-                  </td>
+                  <th>Date</th>
+                  <th>Description</th>
+                  <th className="num">Invoice</th>
+                  <th className="num">Payment</th>
+                  {isAdmin && <th aria-label="Actions"></th>}
                 </tr>
-              )}
-              {sorted.map((t) => (
-                <tr key={t.id}>
-                  <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDate(t.date)}</td>
-                  <td style={td}>{t.description}</td>
-                  <td
-                    style={{
-                      ...td,
-                      textAlign: "right",
-                      color: C.red,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
-                  </td>
-                  <td
-                    style={{
-                      ...td,
-                      textAlign: "right",
-                      color: C.green,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {t.type === "payment" ? fmtZAR(t.amount) : "—"}
-                  </td>
-                  {isAdmin && (
-                    <td style={{ ...td, textAlign: "right" }}>
-                      <button
-                        style={{ ...btn("red"), padding: "4px 9px", fontSize: 12 }}
-                        onClick={() => onDeleteTx(t)}
-                      >
-                        Delete
-                      </button>
+              </thead>
+              <tbody>
+                {sorted.map((t) => (
+                  <tr key={t.id}>
+                    <td data-label="Date" className="nowrap">
+                      {fmtDate(t.date)}
                     </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <td data-label="Description">{t.description}</td>
+                    <td data-label="Invoice" className="num t-danger strong">
+                      {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
+                    </td>
+                    <td data-label="Payment" className="num t-success strong">
+                      {t.type === "payment" ? fmtZAR(t.amount) : "—"}
+                    </td>
+                    {isAdmin && (
+                      <td className="cell-actions">
+                        <Button
+                          variant="danger-ghost"
+                          size="sm"
+                          onClick={() => onDeleteTx(t)}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1879,13 +1566,17 @@ function ShopModal({ mode, data, onClose, onSave }) {
     password: data?.password || "",
   });
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState({});
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async () => {
-    if (!form.name.trim() || !form.username.trim() || !form.password.trim()) {
-      alert("Name, username and password are required.");
-      return;
-    }
+    const e = {};
+    if (!form.name.trim()) e.name = "Shop name is required.";
+    if (!form.username.trim()) e.username = "Username is required.";
+    if (!form.password.trim()) e.password = "Password is required.";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+
     setBusy(true);
     await onSave(
       {
@@ -1903,34 +1594,44 @@ function ShopModal({ mode, data, onClose, onSave }) {
 
   return (
     <Modal
-      title={mode === "add" ? "Add Shop" : "Edit Shop"}
+      title={mode === "add" ? "Add shop" : "Edit shop"}
       onClose={onClose}
       footer={
         <>
-          <button style={btn("ghost")} onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button style={btn("gold")} onClick={submit} disabled={busy}>
-            {busy ? <Spinner size={14} color="#fff" /> : "Save"}
-          </button>
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <Spinner size={15} /> : "Save"}
+          </Button>
         </>
       }
     >
-      <Field label="Shop Name *">
-        <Input value={form.name} onChange={set("name")} />
+      <Field label="Shop name" required error={errors.name}>
+        <Input value={form.name} onChange={set("name")} invalid={!!errors.name} />
       </Field>
-      <Field label="Contact">
-        <Input value={form.contact} onChange={set("contact")} placeholder="Phone / email" />
+      <Field label="Contact" hint="Phone or email (optional)">
+        <Input value={form.contact} onChange={set("contact")} />
       </Field>
       <Field label="Address">
         <Input value={form.address} onChange={set("address")} />
       </Field>
-      <Field label="Username *">
-        <Input value={form.username} onChange={set("username")} />
-      </Field>
-      <Field label="Password *">
-        <Input value={form.password} onChange={set("password")} />
-      </Field>
+      <div className="grid-2">
+        <Field label="Username" required error={errors.username}>
+          <Input
+            value={form.username}
+            onChange={set("username")}
+            invalid={!!errors.username}
+          />
+        </Field>
+        <Field label="Password" required error={errors.password}>
+          <Input
+            value={form.password}
+            onChange={set("password")}
+            invalid={!!errors.password}
+          />
+        </Field>
+      </div>
     </Modal>
   );
 }
@@ -1945,22 +1646,18 @@ function TxModal({ creditors, presetCreditor, onClose, onSave }) {
     amount: "",
   });
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState({});
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async () => {
-    if (!form.creditor_id) {
-      alert("Select a shop.");
-      return;
-    }
-    if (!form.description.trim()) {
-      alert("Description is required.");
-      return;
-    }
+    const e = {};
+    if (!form.creditor_id) e.creditor_id = "Select a shop.";
+    if (!form.description.trim()) e.description = "Description is required.";
     const amt = Number(form.amount);
-    if (!amt || amt <= 0) {
-      alert("Enter a valid amount greater than zero.");
-      return;
-    }
+    if (!amt || amt <= 0) e.amount = "Enter an amount greater than zero.";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+
     setBusy(true);
     await onSave({
       creditor_id: form.creditor_id,
@@ -1974,24 +1671,24 @@ function TxModal({ creditors, presetCreditor, onClose, onSave }) {
 
   return (
     <Modal
-      title="Add Transaction"
+      title="Add transaction"
       onClose={onClose}
       footer={
         <>
-          <button style={btn("ghost")} onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button style={btn("gold")} onClick={submit} disabled={busy}>
-            {busy ? <Spinner size={14} color="#fff" /> : "Save"}
-          </button>
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <Spinner size={15} /> : "Save"}
+          </Button>
         </>
       }
     >
-      <Field label="Shop *">
-        <select
+      <Field label="Shop" required error={errors.creditor_id}>
+        <Select
           value={form.creditor_id}
           onChange={set("creditor_id")}
-          style={{ ...inputStyle, appearance: "auto" }}
+          invalid={!!errors.creditor_id}
         >
           {creditors.length === 0 && <option value="">No shops available</option>}
           {creditors.map((c) => (
@@ -1999,35 +1696,36 @@ function TxModal({ creditors, presetCreditor, onClose, onSave }) {
               {c.name}
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
-      <Field label="Type *">
-        <select
-          value={form.type}
-          onChange={set("type")}
-          style={{ ...inputStyle, appearance: "auto" }}
-        >
-          <option value="invoice">Invoice (delivery — increases balance)</option>
-          <option value="payment">Payment (received — reduces balance)</option>
-        </select>
-      </Field>
-      <Field label="Date *">
-        <Input type="date" value={form.date} onChange={set("date")} />
-      </Field>
-      <Field label="Description *">
+      <div className="grid-2">
+        <Field label="Type" required>
+          <Select value={form.type} onChange={set("type")}>
+            <option value="invoice">Invoice (delivery)</option>
+            <option value="payment">Payment (received)</option>
+          </Select>
+        </Field>
+        <Field label="Date" required>
+          <Input type="date" value={form.date} onChange={set("date")} />
+        </Field>
+      </div>
+      <Field label="Description" required error={errors.description}>
         <Input
           value={form.description}
           onChange={set("description")}
+          invalid={!!errors.description}
           placeholder="e.g. Delivery #102 / Cash payment"
         />
       </Field>
-      <Field label="Amount (R) *">
+      <Field label="Amount (R)" required error={errors.amount}>
         <Input
           type="number"
           min="0"
           step="0.01"
+          inputMode="decimal"
           value={form.amount}
           onChange={set("amount")}
+          invalid={!!errors.amount}
           placeholder="0.00"
         />
       </Field>
@@ -2069,34 +1767,34 @@ function ChangePasswordModal({ title, verify, onSave, onClose }) {
 
   return (
     <Modal
-      title={title || "Change Password"}
+      title={title || "Change password"}
       onClose={onClose}
       footer={
         <>
-          <button style={btn("ghost")} onClick={onClose} disabled={busy}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
-          </button>
-          <button style={btn("gold")} onClick={submit} disabled={busy}>
-            {busy ? <Spinner size={14} color="#fff" /> : "Update Password"}
-          </button>
+          </Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? <Spinner size={15} /> : "Update password"}
+          </Button>
         </>
       }
     >
-      <Field label="Current Password">
+      <Field label="Current password">
         <Input
           type="password"
           value={cur}
           onChange={(e) => setCur(e.target.value)}
         />
       </Field>
-      <Field label="New Password">
+      <Field label="New password" hint="At least 4 characters">
         <Input
           type="password"
           value={n1}
           onChange={(e) => setN1(e.target.value)}
         />
       </Field>
-      <Field label="Confirm New Password">
+      <Field label="Confirm new password" error={err}>
         <Input
           type="password"
           value={n2}
@@ -2104,20 +1802,6 @@ function ChangePasswordModal({ title, verify, onSave, onClose }) {
           onKeyDown={(e) => e.key === "Enter" && submit()}
         />
       </Field>
-      {err && (
-        <div
-          style={{
-            background: "#FEF2F2",
-            color: C.red,
-            border: `1px solid ${C.red}44`,
-            borderRadius: 8,
-            padding: "10px 12px",
-            fontSize: 13,
-          }}
-        >
-          {err}
-        </div>
-      )}
     </Modal>
   );
 }
@@ -2170,108 +1854,52 @@ function ShopStatement({ sb, user, onLogout, toast }) {
   const balance = running;
   const owes = balance > 0.001;
 
-  const th = {
-    textAlign: "left",
-    padding: "11px 12px",
-    fontSize: 12,
-    color: C.muted,
-    fontWeight: 700,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-    borderBottom: `2px solid ${C.border}`,
-    whiteSpace: "nowrap",
-  };
-  const td = {
-    padding: "11px 12px",
-    fontSize: 13.5,
-    borderBottom: `1px solid ${C.border}`,
-  };
-
   return (
-    <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>
-      <div
-        style={{
-          background: C.navy,
-          color: "#fff",
-          height: 58,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 18px",
-        }}
-      >
-        <Logo light />
-        <div style={{ display: "flex", gap: 10 }}>
-          <button style={btn("ghost")} onClick={() => setPwModal(true)}>
-            <span style={{ color: "#fff" }}>Password</span>
-          </button>
-          <button style={btn("ghost")} onClick={onLogout}>
-            <span style={{ color: "#fff" }}>Logout</span>
-          </button>
+    <div className="app">
+      <header className="topbar">
+        <Logo />
+        <div className="topbar__right">
+          <Button variant="ghost" size="sm" onClick={() => setPwModal(true)}>
+            <Icon name="key" size={15} />
+            <span className="btn__label">Password</span>
+          </Button>
+          <Button variant="subtle" size="sm" onClick={onLogout}>
+            <Icon name="logout" size={15} />
+            <span className="btn__label">Logout</span>
+          </Button>
         </div>
-      </div>
+      </header>
 
       {pwModal && (
         <ChangePasswordModal
-          title="Change Password"
-          verify={(cur) => cur === currentPass}
+          title="Change password"
+          verify={(c) => c === currentPass}
           onSave={changePassword}
           onClose={() => setPwModal(false)}
         />
       )}
 
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: 20,
-          display: "flex",
-          justifyContent: "center",
-        }}
-      >
-        <div style={{ width: "100%", maxWidth: 860 }}>
-          {/* Header card */}
-          <div
-            style={{
-              background: C.navy,
-              color: "#fff",
-              borderRadius: 14,
-              padding: 24,
-              marginBottom: 20,
-              display: "flex",
-              justifyContent: "space-between",
-              flexWrap: "wrap",
-              gap: 16,
-            }}
-          >
+      <main className="main">
+        <div className="container container--narrow stack-lg">
+          <div className="statement-hero">
             <div>
-              <div style={{ fontSize: 12, color: C.goldLight, fontWeight: 700, letterSpacing: 0.5 }}>
-                ACCOUNT STATEMENT
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>
-                {creditor.name}
-              </div>
+              <div className="statement-hero__eyebrow">Account statement</div>
+              <div className="statement-hero__name">{creditor.name}</div>
               {creditor.address && (
-                <div style={{ fontSize: 13, color: "#C7D2E4", marginTop: 4 }}>
-                  {creditor.address}
-                </div>
+                <div className="statement-hero__meta">{creditor.address}</div>
               )}
-              <div style={{ fontSize: 13, color: "#C7D2E4", marginTop: 8 }}>
+              <div className="statement-hero__meta">
                 {transactions.length} transaction
                 {transactions.length === 1 ? "" : "s"}
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 12, color: "#C7D2E4", fontWeight: 600 }}>
-                Balance Due
-              </div>
+            <div className="statement-hero__balance">
+              <div className="statement-hero__balance-label">Balance due</div>
               <div
-                style={{
-                  fontSize: 30,
-                  fontWeight: 900,
-                  color: owes ? "#FCA5A5" : "#86EFAC",
-                  marginTop: 4,
-                }}
+                className={
+                  "statement-hero__balance-value " +
+                  (owes ? "is-owed" : "is-clear")
+                }
               >
                 {fmtZAR(balance)}
               </div>
@@ -2279,119 +1907,73 @@ function ShopStatement({ sb, user, onLogout, toast }) {
           </div>
 
           {loading ? (
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                color: C.muted,
-                padding: 30,
-                justifyContent: "center",
-              }}
-            >
-              <Spinner /> Loading statement…
-            </div>
+            <SkeletonCard rows={6} />
           ) : (
             <>
-              <div style={{ ...card, overflow: "hidden" }}>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr>
-                        <th style={th}>Date</th>
-                        <th style={th}>Description</th>
-                        <th style={{ ...th, textAlign: "right" }}>Invoice</th>
-                        <th style={{ ...th, textAlign: "right" }}>Payment</th>
-                        <th style={{ ...th, textAlign: "right" }}>Balance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.length === 0 && (
+              <div className="card">
+                {rows.length === 0 ? (
+                  <div className="card__pad">
+                    <EmptyState
+                      icon="inbox"
+                      title="No transactions on record yet"
+                    />
+                  </div>
+                ) : (
+                  <div className="table-wrap table-wrap--tall">
+                    <table className="table table--responsive">
+                      <thead>
                         <tr>
-                          <td style={{ ...td, color: C.muted }} colSpan={5}>
-                            No transactions on record yet.
-                          </td>
+                          <th>Date</th>
+                          <th>Description</th>
+                          <th className="num">Invoice</th>
+                          <th className="num">Payment</th>
+                          <th className="num">Balance</th>
                         </tr>
-                      )}
-                      {rows.map((t) => (
-                        <tr key={t.id}>
-                          <td style={{ ...td, whiteSpace: "nowrap" }}>
-                            {fmtDate(t.date)}
-                          </td>
-                          <td style={td}>{t.description}</td>
-                          <td
-                            style={{
-                              ...td,
-                              textAlign: "right",
-                              color: C.red,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
-                          </td>
-                          <td
-                            style={{
-                              ...td,
-                              textAlign: "right",
-                              color: C.green,
-                              fontWeight: 700,
-                            }}
-                          >
-                            {t.type === "payment" ? fmtZAR(t.amount) : "—"}
-                          </td>
-                          <td
-                            style={{
-                              ...td,
-                              textAlign: "right",
-                              fontWeight: 800,
-                              color: t.running > 0.001 ? C.red : C.green,
-                            }}
-                          >
-                            {fmtZAR(t.running)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Closing balance bar */}
-              <div
-                style={{
-                  marginTop: 18,
-                  borderRadius: 12,
-                  padding: "16px 22px",
-                  background: owes ? C.red : C.green,
-                  color: "#fff",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                  gap: 8,
-                }}
-              >
-                <span style={{ fontSize: 15, fontWeight: 700 }}>
-                  Closing Balance
-                </span>
-                <span style={{ fontSize: 22, fontWeight: 900 }}>
-                  {fmtZAR(balance)}
-                </span>
+                      </thead>
+                      <tbody>
+                        {rows.map((t) => (
+                          <tr key={t.id}>
+                            <td data-label="Date" className="nowrap">
+                              {fmtDate(t.date)}
+                            </td>
+                            <td data-label="Description">{t.description}</td>
+                            <td data-label="Invoice" className="num t-danger strong">
+                              {t.type === "invoice" ? fmtZAR(t.amount) : "—"}
+                            </td>
+                            <td data-label="Payment" className="num t-success strong">
+                              {t.type === "payment" ? fmtZAR(t.amount) : "—"}
+                            </td>
+                            <td
+                              data-label="Balance"
+                              className={
+                                "num strong " +
+                                (t.running > 0.001 ? "t-danger" : "t-success")
+                              }
+                            >
+                              {fmtZAR(t.running)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div
-                style={{
-                  textAlign: "center",
-                  color: C.muted,
-                  fontSize: 12,
-                  marginTop: 14,
-                }}
+                className={"closing-bar " + (owes ? "is-owed" : "is-clear")}
               >
+                <span>Closing balance</span>
+                <span className="closing-bar__value">{fmtZAR(balance)}</span>
+              </div>
+
+              <div className="statement-foot">
                 Statement generated {fmtDate(todayISO())}
               </div>
             </>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -2401,12 +1983,9 @@ function ShopStatement({ sb, user, onLogout, toast }) {
    ============================================================ */
 function App() {
   const [config, setConfig] = useState(() => {
-    // 1) a connection the user entered on this device wins
     const url = localStorage.getItem("wt_url");
     const key = localStorage.getItem("wt_key");
     if (url && key) return { url, key };
-    // 2) otherwise use the build-time config (config.js -> window.WT_CONFIG),
-    //    so every device auto-connects without the setup wizard
     const w = typeof window !== "undefined" ? window.WT_CONFIG : null;
     if (w && w.url && w.key) return { url: w.url, key: w.key };
     return null;
@@ -2421,13 +2000,18 @@ function App() {
     staff_password: "9999",
   });
 
-  const toast = useCallback((msg, kind = "success") => {
-    const id = Math.random().toString(36).slice(2) + Date.now();
-    setToasts((t) => [...t, { id, msg, kind }]);
-    setTimeout(() => {
-      setToasts((t) => t.filter((x) => x.id !== id));
-    }, 3000);
-  }, []);
+  const dismissToast = useCallback(
+    (id) => setToasts((t) => t.filter((x) => x.id !== id)),
+    []
+  );
+  const toast = useCallback(
+    (msg, kind = "success") => {
+      const id = Math.random().toString(36).slice(2) + Date.now();
+      setToasts((t) => [...t, { id, msg, kind }]);
+      setTimeout(() => dismissToast(id), 3000);
+    },
+    [dismissToast]
+  );
 
   const loadSettings = useCallback(async () => {
     if (!sb) return;
@@ -2496,27 +2080,364 @@ function App() {
   return (
     <>
       {screen}
-      <Toasts items={toasts} />
+      <Toasts items={toasts} onDismiss={dismissToast} />
     </>
   );
 }
 
-/* ---------- Responsive sidebar styles (injected once) ---------- */
-const styleTag = document.createElement("style");
-styleTag.textContent = `
-  @media (max-width: 640px) {
-    .wt-burger { display: inline-block !important; }
-    .wt-sidebar {
-      position: fixed; top: 58px; bottom: 0; left: 0; z-index: 45;
-      transform: translateX(-100%); transition: transform 0.2s ease;
-      box-shadow: 0 0 30px rgba(0,0,0,0.2);
-    }
-    .wt-sidebar.wt-open { transform: translateX(0); }
-  }
-  @media (min-width: 641px) {
-    .wt-overlay { display: none !important; }
-  }
+/* ============================================================
+   Design system stylesheet (injected once)
+   ============================================================ */
+const STYLES = `
+:root{
+  --bg:#F4F6F8; --surface:#FFFFFF; --surface-2:#F7F9FB;
+  --text:#0F172A; --text-2:#475569; --text-3:#94A3B8;
+  --border:#E8ECF1; --border-2:#DCE2EA;
+  --brand:#0B1D3A; --brand-2:#16346A;
+  --accent:#D4930A; --accent-2:#B97E06; --accent-soft:#FBF1DD;
+  --danger:#DC2626; --danger-soft:#FEF2F2;
+  --success:#15803D; --success-soft:#ECFDF3;
+  --r-xs:8px; --r-sm:10px; --r:12px; --r-lg:16px; --r-pill:999px;
+  --sh-sm:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.05);
+  --sh-md:0 4px 14px rgba(16,24,40,.08);
+  --sh-lg:0 16px 40px rgba(16,24,40,.16);
+  --topbar-h:60px;
+  --focus:0 0 0 3px rgba(212,147,10,.32);
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;}
+a{color:var(--accent-2);font-weight:600;text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:none;box-shadow:var(--focus);border-radius:8px}
+.ic{flex:none;display:inline-block;vertical-align:middle}
+
+/* ---- typography ---- */
+.h1{font-size:22px;font-weight:700;letter-spacing:-.01em;margin:0;color:var(--text)}
+.h2{font-size:18px;font-weight:700;margin:0;color:var(--text)}
+.muted{color:var(--text-2);margin:0}
+.muted-sm{color:var(--text-3);font-size:12.5px}
+.t-muted{color:var(--text-3)}
+.t-danger{color:var(--danger)}
+.t-success{color:var(--success)}
+.strong{font-weight:650}
+.nowrap{white-space:nowrap}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.ml-8{margin-left:8px}
+
+/* ---- layout primitives ---- */
+.stack{display:flex;flex-direction:column;gap:14px}
+.stack-lg{display:flex;flex-direction:column;gap:20px}
+.row-end{display:flex;justify-content:flex-end}
+.row-split{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.row-center{display:flex;justify-content:center;margin-top:14px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media (max-width:520px){.grid-2{grid-template-columns:1fr}}
+
+/* ---- buttons ---- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-family:inherit;font-size:13.5px;font-weight:600;line-height:1;
+  min-height:40px;padding:0 16px;border-radius:var(--r-sm);border:1px solid transparent;
+  cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s,box-shadow .15s,transform .05s,color .15s}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.btn--sm{min-height:34px;padding:0 12px;font-size:13px;border-radius:9px}
+.btn--lg{min-height:46px;padding:0 20px;font-size:15px}
+.btn--block{width:100%}
+.btn--primary{background:var(--brand);color:#fff}
+.btn--primary:hover:not(:disabled){background:#0e2a55}
+.btn--accent{background:var(--accent);color:#fff}
+.btn--accent:hover:not(:disabled){background:var(--accent-2)}
+.btn--ghost{background:var(--surface);color:var(--text);border-color:var(--border-2)}
+.btn--ghost:hover:not(:disabled){background:var(--surface-2);border-color:var(--text-3)}
+.btn--subtle{background:var(--surface-2);color:var(--text-2);border-color:transparent}
+.btn--subtle:hover:not(:disabled){background:#eef1f5;color:var(--text)}
+.btn--danger{background:var(--danger);color:#fff}
+.btn--danger:hover:not(:disabled){background:#b91c1c}
+.btn--danger-ghost{background:transparent;color:var(--danger);border-color:transparent}
+.btn--danger-ghost:hover:not(:disabled){background:var(--danger-soft)}
+.btn__label{display:inline}
+.icon-btn{display:inline-flex;align-items:center;justify-content:center;
+  width:40px;height:40px;border-radius:var(--r-sm);border:none;background:transparent;
+  color:inherit;cursor:pointer;transition:background .15s}
+.icon-btn:hover{background:rgba(15,23,42,.06)}
+.link-btn{background:none;border:none;color:var(--text-3);font-size:12.5px;
+  font-weight:600;cursor:pointer;padding:6px;align-self:center;font-family:inherit}
+.link-btn:hover{color:var(--text-2);text-decoration:underline}
+.link-btn--back{align-self:flex-start;color:var(--text-2);padding:0}
+
+/* ---- inputs ---- */
+.input{width:100%;min-height:40px;padding:9px 12px;border:1px solid var(--border-2);
+  border-radius:var(--r-sm);font-size:14px;font-family:inherit;color:var(--text);
+  background:var(--surface);outline:none;transition:border-color .15s,box-shadow .15s}
+.input::placeholder{color:var(--text-3)}
+.input:hover{border-color:var(--text-3)}
+.input:focus{border-color:var(--accent);box-shadow:var(--focus)}
+.input.is-invalid{border-color:var(--danger)}
+.input.is-invalid:focus{box-shadow:0 0 0 3px rgba(220,38,38,.18)}
+.input--sm{min-height:34px;padding:6px 10px;font-size:13px}
+.input--xs{min-height:32px;width:64px;padding:5px 8px;text-align:center;font-size:13px}
+.select{appearance:auto;background-image:none}
+.field{margin-bottom:14px}
+.field__label{display:block;font-size:12.5px;font-weight:600;color:var(--text-2);margin-bottom:6px}
+.field__req{color:var(--accent-2)}
+.field__hint{display:block;font-size:12px;color:var(--text-3);margin-top:5px}
+.field__error{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--danger);
+  font-weight:600;margin-top:6px}
+.inline-control{display:inline-flex;align-items:center;gap:7px}
+.inline-control--grow{flex:1;max-width:280px}
+.inline-control--grow .input{min-height:34px}
+
+/* ---- badges ---- */
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:var(--r-pill);
+  font-size:11.5px;font-weight:700;letter-spacing:.02em;text-transform:capitalize;line-height:1.6}
+.badge--neutral{background:var(--surface-2);color:var(--text-2)}
+.badge--danger{background:var(--danger-soft);color:var(--danger)}
+.badge--success{background:var(--success-soft);color:var(--success)}
+.badge--accent{background:var(--accent-soft);color:var(--accent-2)}
+.badge--brand{background:#E7ECF5;color:var(--brand-2)}
+
+/* ---- cards ---- */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--sh-sm);overflow:hidden}
+.card__head{padding:16px 18px;border-bottom:1px solid var(--border)}
+.card__head--split{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.card__title{font-size:15px;font-weight:700;color:var(--text);display:inline-flex;align-items:center}
+.card__pad{padding:18px}
+
+/* ---- stat grid ---- */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.stat-grid--3{grid-template-columns:repeat(3,1fr)}
+@media (max-width:900px){.stat-grid,.stat-grid--3{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:420px){.stat-grid{grid-template-columns:1fr 1fr;gap:10px}}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);
+  box-shadow:var(--sh-sm);padding:16px}
+.stat__top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stat__label{font-size:12px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em}
+.stat__icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  border-radius:8px;background:var(--surface-2);color:var(--text-3)}
+.stat__icon--danger{background:var(--danger-soft);color:var(--danger)}
+.stat__value{font-size:24px;font-weight:750;letter-spacing:-.01em;margin-top:10px;
+  font-variant-numeric:tabular-nums}
+@media (max-width:420px){.stat__value{font-size:20px}}
+
+/* ---- tables ---- */
+.table-wrap{overflow-x:auto}
+.table-wrap--tall{max-height:62vh;overflow-y:auto}
+.table{width:100%;border-collapse:collapse;font-size:14px}
+.table th{position:relative;text-align:left;padding:11px 16px;font-size:11.5px;font-weight:600;
+  color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;
+  border-bottom:1px solid var(--border);background:var(--surface)}
+.table-wrap--tall thead th{position:sticky;top:0;z-index:2}
+.table th.num{text-align:right}
+.table td{padding:13px 16px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+.table tbody tr:last-child td{border-bottom:none}
+.table tbody tr{transition:background .12s}
+.table tbody tr:hover{background:var(--surface-2)}
+.cell-actions{text-align:right;white-space:nowrap}
+.cell-actions .btn{margin-left:6px}
+.code-pill{background:var(--surface-2);border:1px solid var(--border);padding:3px 8px;
+  border-radius:7px;font-size:12.5px;color:var(--text-2);font-family:ui-monospace,Menlo,Consolas,monospace}
+
+/* responsive table -> cards */
+@media (max-width:720px){
+  .table--responsive thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .table--responsive tbody{display:block}
+  .table--responsive tr{display:block;background:var(--surface);border:1px solid var(--border);
+    border-radius:14px;padding:6px 14px;margin-bottom:10px;box-shadow:var(--sh-sm)}
+  .table--responsive tr:hover{background:var(--surface)}
+  .table--responsive td{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:9px 0;border-bottom:1px solid var(--border)!important;text-align:right!important}
+  .table--responsive tr td:last-child{border-bottom:none!important}
+  .table--responsive td[data-label]::before{content:attr(data-label);text-align:left;
+    color:var(--text-3);font-weight:600;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;flex:none}
+  .table--responsive td.cell-actions{justify-content:flex-end;flex-wrap:wrap;gap:8px;padding-top:11px}
+  .table--responsive td.cell-actions .btn{margin-left:0}
+  .table--responsive .empty-row td{display:block;text-align:center!important;border:none!important;padding:14px 0}
+  .table-wrap--tall{max-height:none}
+}
+
+/* ---- empty state ---- */
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:26px 16px;gap:6px}
+.empty__icon{width:46px;height:46px;border-radius:50%;background:var(--surface-2);
+  display:flex;align-items:center;justify-content:center;color:var(--text-3);margin-bottom:4px}
+.empty__title{font-weight:650;color:var(--text)}
+.empty__hint{font-size:13px;color:var(--text-3);max-width:340px}
+
+/* ---- app shell ---- */
+.app{display:flex;flex-direction:column;height:100%}
+.topbar{flex:none;height:var(--topbar-h);display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:0 16px;padding-top:env(safe-area-inset-top,0);
+  background:var(--surface);border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:50}
+.topbar__left{display:flex;align-items:center;gap:8px;min-width:0}
+.topbar__right{display:flex;align-items:center;gap:8px}
+.layout{flex:1;display:flex;min-height:0}
+.sidebar{flex:none;width:264px;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;min-height:0}
+.sidebar__scroll{flex:1;overflow-y:auto;padding:12px}
+.sidebar__search{display:flex;align-items:center;gap:8px;padding:0 10px;margin-bottom:10px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text-3)}
+.sidebar__search-input{flex:1;border:none;background:transparent;outline:none;padding:9px 0;
+  font-size:13.5px;font-family:inherit;color:var(--text)}
+.sidebar__section{font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;
+  letter-spacing:.06em;padding:14px 10px 6px}
+.sidebar__empty{padding:6px 10px;color:var(--text-3);font-size:13px}
+.navlink{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;
+  border-radius:var(--r-sm);border:none;background:transparent;color:var(--text);
+  font-weight:500;font-size:13.5px;cursor:pointer;transition:background .12s,color .12s;margin-bottom:2px}
+.navlink:hover{background:var(--surface-2)}
+.navlink.is-active{background:var(--accent-soft);color:var(--brand);font-weight:650;
+  box-shadow:inset 3px 0 0 var(--accent)}
+.navlink__name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navlink__bal{font-variant-numeric:tabular-nums;font-weight:650;font-size:12.5px;white-space:nowrap}
+.navlink.is-active .navlink__bal{color:var(--brand)}
+.sidebar__foot{flex:none;border-top:1px solid var(--border);padding:12px}
+.acct{display:flex;flex-direction:column;gap:10px}
+.acct__id{display:flex;align-items:center;gap:8px;min-width:0}
+.acct__name{font-size:12.5px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct__actions{display:flex;gap:8px}
+.acct__actions .btn{flex:1}
+.scrim{position:fixed;inset:0;background:rgba(11,29,58,.4);z-index:45;
+  animation:wt-fade .15s ease}
+.main{flex:1;min-width:0;overflow-y:auto;
+  padding-bottom:env(safe-area-inset-bottom,0)}
+.container{max-width:1180px;margin:0 auto;padding:22px;animation:wt-rise .22s ease}
+.container--narrow{max-width:880px}
+@media (max-width:600px){.container{padding:16px}}
+.page-head{display:flex;flex-direction:column;gap:2px}
+.page-head--split{flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.page-head__title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* sidebar drawer on small screens */
+@media (max-width:900px){
+  .sidebar{position:fixed;top:var(--topbar-h);bottom:0;left:0;width:282px;z-index:60;
+    transform:translateX(-100%);transition:transform .22s cubic-bezier(.4,0,.2,1);box-shadow:var(--sh-lg)}
+  .sidebar.is-open{transform:none}
+}
+@media (min-width:901px){.hamburger{display:none}.scrim{display:none}}
+@media (max-width:640px){.btn__label{display:none}.topbar__right .btn{padding:0;width:40px}}
+
+/* ---- brand screens (setup / login) ---- */
+.screen-brand{min-height:100%;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:radial-gradient(120% 120% at 50% 0%,#16346A 0%,#0B1D3A 60%)}
+.auth-card{width:100%;max-width:400px;background:var(--surface);border-radius:var(--r-lg);
+  box-shadow:var(--sh-lg);overflow:hidden;animation:wt-rise .25s ease}
+.auth-card--wide{max-width:640px}
+.auth-card__top{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 22px;border-bottom:1px solid var(--border)}
+.auth-card__hero{display:flex;flex-direction:column;align-items:center;gap:8px;padding:30px 26px 8px}
+.auth-card__sub{color:var(--text-3);font-size:13px;margin:0}
+.auth-card__body{padding:22px 26px 26px;display:flex;flex-direction:column;gap:2px}
+.auth-card__body .btn--block{margin-top:6px}
+.seg{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--r);padding:4px;margin-bottom:18px}
+.seg__btn{flex:1;border:none;background:transparent;border-radius:9px;padding:9px;font-weight:600;
+  font-size:13.5px;color:var(--text-2);cursor:pointer;font-family:inherit;transition:background .15s,color .15s,box-shadow .15s}
+.seg__btn.is-active{background:var(--surface);color:var(--brand);box-shadow:var(--sh-sm)}
+
+/* stepper */
+.stepper{display:flex;gap:8px;padding:16px 24px;border-bottom:1px solid var(--border)}
+.stepper__item{display:flex;align-items:center;gap:8px;flex:1;opacity:.5}
+.stepper__item.is-done{opacity:1}
+.stepper__dot{width:24px;height:24px;border-radius:50%;background:var(--border);color:var(--text-3);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none}
+.stepper__item.is-done .stepper__dot{background:var(--accent);color:#fff}
+.stepper__label{font-size:12.5px;font-weight:600;color:var(--text-2)}
+@media (max-width:520px){.stepper__label{display:none}}
+.steps-list{margin:0;padding-left:18px;line-height:1.9;color:var(--text-2)}
+.code-block{position:relative}
+.code-block pre{margin:0;background:var(--brand);color:#D7E3F4;padding:16px;border-radius:var(--r);
+  font-size:12px;line-height:1.55;overflow:auto;max-height:240px;
+  font-family:ui-monospace,Menlo,Consolas,monospace}
+.code-block__copy{position:absolute;top:10px;right:10px}
+
+/* ---- logo ---- */
+.logo{display:inline-flex;align-items:center;gap:9px;min-width:0}
+.logo__mark{width:30px;height:30px;border-radius:9px;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:none;
+  box-shadow:0 2px 6px rgba(212,147,10,.4)}
+.logo__text{font-weight:750;font-size:16.5px;color:var(--brand);letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logo__accent{color:var(--accent)}
+.logo--light .logo__text{color:#fff}
+.logo--lg .logo__mark{width:38px;height:38px;font-size:20px;border-radius:11px}
+.logo--lg .logo__text{font-size:20px}
+
+/* ---- statement ---- */
+.statement-hero{display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;
+  background:radial-gradient(120% 140% at 100% 0%,#16346A 0%,#0B1D3A 70%);
+  color:#fff;border-radius:var(--r-lg);padding:24px;box-shadow:var(--sh-md)}
+.statement-hero__eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--accent)}
+.statement-hero__name{font-size:24px;font-weight:750;margin-top:4px}
+.statement-hero__meta{font-size:13px;color:#C7D2E4;margin-top:5px}
+.statement-hero__balance{text-align:right}
+.statement-hero__balance-label{font-size:12px;color:#C7D2E4;font-weight:600}
+.statement-hero__balance-value{font-size:30px;font-weight:800;margin-top:4px;font-variant-numeric:tabular-nums}
+.statement-hero__balance-value.is-owed{color:#FCA5A5}
+.statement-hero__balance-value.is-clear{color:#86EFAC}
+.closing-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  border-radius:var(--r);padding:16px 22px;color:#fff;font-size:15px;font-weight:700}
+.closing-bar.is-owed{background:var(--danger)}
+.closing-bar.is-clear{background:var(--success)}
+.closing-bar__value{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.statement-foot{text-align:center;color:var(--text-3);font-size:12px}
+
+/* ---- spinner / skeleton ---- */
+.spinner{display:inline-block;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;
+  border-radius:50%;animation:wt-spin .7s linear infinite;vertical-align:middle}
+.btn--ghost .spinner,.btn--subtle .spinner{border-color:rgba(15,23,42,.2);border-top-color:var(--text)}
+.sk{display:block;background:linear-gradient(90deg,#EaEef3 25%,#F3F6F9 37%,#EaEef3 63%);
+  background-size:400% 100%;animation:wt-shimmer 1.4s ease infinite;border-radius:7px}
+.sk-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;
+  border-bottom:1px solid var(--border)}
+.sk-row:last-child{border-bottom:none}
+
+/* ---- toasts ---- */
+.toast-wrap{position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;flex-direction:column;
+  gap:10px;padding-bottom:env(safe-area-inset-bottom,0);max-width:calc(100vw - 32px)}
+.toast{display:flex;align-items:center;gap:9px;padding:12px 15px;border-radius:var(--r);
+  color:#fff;font-size:13.5px;font-weight:600;box-shadow:var(--sh-lg);cursor:pointer;
+  animation:wt-toast .25s cubic-bezier(.2,.8,.2,1);max-width:360px}
+.toast--success{background:var(--success)}
+.toast--error{background:var(--danger)}
+
+/* ---- modal ---- */
+.overlay{position:fixed;inset:0;background:rgba(11,29,58,.5);backdrop-filter:blur(2px);
+  display:flex;align-items:flex-end;justify-content:center;padding:0;z-index:8000;animation:wt-fade .15s ease}
+@media (min-width:560px){.overlay{align-items:center;padding:20px}}
+.modal{width:100%;max-width:480px;background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;
+  box-shadow:var(--sh-lg);max-height:92vh;display:flex;flex-direction:column;
+  animation:wt-sheet .26s cubic-bezier(.2,.9,.2,1)}
+@media (min-width:560px){.modal{border-radius:var(--r-lg);animation:wt-pop .2s ease}}
+.modal--md{max-width:480px}
+.modal__head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:16px 18px;border-bottom:1px solid var(--border)}
+.modal__title{margin:0;font-size:16px;font-weight:700;color:var(--text)}
+.modal__body{padding:18px;overflow-y:auto}
+.modal__foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;border-top:1px solid var(--border)}
+.modal__foot .btn{min-width:96px}
+
+/* ---- motion ---- */
+@keyframes wt-spin{to{transform:rotate(360deg)}}
+@keyframes wt-shimmer{0%{background-position:100% 50%}100%{background-position:0 50%}}
+@keyframes wt-fade{from{opacity:0}to{opacity:1}}
+@keyframes wt-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes wt-pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes wt-sheet{from{transform:translateY(100%)}to{transform:none}}
+@keyframes wt-toast{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+}
 `;
+const styleTag = document.createElement("style");
+styleTag.textContent = STYLES;
 document.head.appendChild(styleTag);
 
 /* ---------- Mount ---------- */
