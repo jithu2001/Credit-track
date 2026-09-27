@@ -1,0 +1,35 @@
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../auth/presentation/session_controller.dart';
+import '../company/presentation/company_providers.dart';
+import '../dashboard/presentation/dashboard_providers.dart';
+import '../outstanding/presentation/outstanding_screen.dart';
+import '../shop_detail/presentation/shop_detail_providers.dart';
+import '../shops/presentation/shop_list_controller.dart';
+
+/// Pull-to-refresh, app resume and the dashboard timer all come here: re-check
+/// the account (a disabled user is signed out), reload the visible companies
+/// (an owner may have changed this staff member's assignments) and every
+/// company-scoped list.
+Future<void> refreshCompanyData(WidgetRef ref) async {
+  unawaited(ref.read(sessionControllerProvider.notifier).revalidate());
+  ref
+    ..invalidate(companiesProvider)
+    ..invalidate(myAccessProvider)
+    ..invalidate(companyAreasProvider)
+    ..invalidate(companySummaryProvider)
+    ..invalidate(companySyncStateProvider)
+    ..invalidate(topDuesProvider)
+    ..invalidate(shopListProvider)
+    ..invalidate(outstandingReportProvider)
+    ..invalidate(shopDetailProvider)
+    ..invalidate(shopStatementProvider);
+  try {
+    final company = await ref.read(activeCompanyProvider.future);
+    if (company != null) await ref.read(companySummaryProvider(company.id).future);
+  } catch (_) {
+    // Screens show their own error states.
+  }
+}

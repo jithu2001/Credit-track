@@ -146,6 +146,36 @@ from transactions where shop_id = $1 and deleted_at is null order by transaction
 select last_successful_sync_at, status, error_code from sync_state where company_id = $1 and entity_type = 'company';
 ```
 
+## Mobile app additions (migration 0002)
+
+Migration: `supabase/migrations/0002_mobile_app.sql` (additive; the sync service is unaffected). Checks: `supabase/tests/rls_mobile.sql` (rolled back).
+
+### staff_company_access
+Which companies each STAFF user works for. **No row, no data:** a staff member sees only the companies the owner assigned, and a newly synced company stays hidden from staff until assigned. Owners always see every company of their business and have no rows here.
+
+| Column | Notes |
+|---|---|
+| user_id, company_id | primary key; both cascade on delete |
+| business_id | must equal the user's and the company's business (trigger) |
+| areas | `text[]`; empty = every area of this company; matched case-insensitively against `shops.area`; trimmed and de-duplicated by the trigger |
+| can_view_transactions | false hides that company's `transactions` |
+| created_by | the owner who granted it |
+
+A trigger rejects rows for non-STAFF users and for companies of another business. There are no write policies: the `manage-staff` Edge Function writes through two service-role-only functions, `admin_insert_staff` (users row + assignments) and `admin_set_staff_companies` (replaces the whole set in one transaction). `users.permissions` is left untouched and reserved.
+
+### Policy changes
+
+| Table | Read policy after 0002 |
+|---|---|
+| tally_companies | business match **and** `can_see_company(id)` |
+| shops | business match **and** `can_see_area(company_id, area)` |
+| transactions | business match **and** `can_see_transactions(company_id)` **and** `can_see_shop(shop_id)` |
+| sync_state, sync_logs | business match **and** `can_see_company(company_id)` (run-level `sync_logs` rows with no company: owners only) |
+| users | own row (even when disabled), or all users of the business for an owner |
+| staff_company_access | owners: all rows of the business; staff: their own |
+
+The helpers are `security definer`. They return true for an active owner, and for an active staff member only through a matching assignment. The views are `security_invoker`, so `v_company_summary` for a staff member lists only their companies, with totals covering only their shops.
+
 ## Future backends
 
 The sync engine only depends on `internal/cloud.Provider`. A different PostgreSQL host, a custom REST API or another database can reuse this schema shape; the identity columns (`tally_company_id`, `tally_ledger_id`, `tally_voucher_id` + `tally_ledger_id`) and the soft-delete convention are what the engine relies on.
