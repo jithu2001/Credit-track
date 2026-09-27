@@ -1,0 +1,189 @@
+// Package auth implements the developer login for the local setup interface.
+// It is deliberately separate from the owner/staff accounts, which live in
+// the cloud (Supabase Auth) and never touch this service.
+package auth
+
+import (
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+)
+
+const (
+	pbkdf2Iterations = 600_000
+	saltBytes        = 16
+	keyBytes         = 32
+	MinPasswordLen   = 10
+)
+
+var ErrWeakPassword = fmt.Errorf("password must be at least %d characters", MinPasswordLen)
+
+// HashPassword returns "pbkdf2-sha256$<iter>$<salt>$<hash>".
+func HashPassword(password string) (string, error) {
+	if utf8.RuneCountInString(password) < MinPasswordLen {
+		return "", ErrWeakPassword
+	}
+	salt := make([]byte, saltBytes)
+	if _, err := rand.Read(salt); err != nil {
+		return "", err
+	}
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iterations, keyBytes)
+	if err != nil {
+		return "", err
+	}
+	return "pbkdf2-sha256$" + strconv.Itoa(pbkdf2Iterations) + "$" +
+		base64.RawStdEncoding.EncodeToString(salt) + "$" + base64.RawStdEncoding.EncodeToString(key), nil
+}
+
+// VerifyPassword is constant-time in the comparison; a malformed hash never verifies.
+func VerifyPassword(encoded, password string) bool {
+	parts := strings.Split(encoded, "$")
+	if len(parts) != 4 || parts[0] != "pbkdf2-sha256" {
+		return false
+	}
+	iter, err := strconv.Atoi(parts[1])
+	if err != nil || iter < 1000 {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	want, err := base64.RawStdEncoding.DecodeString(parts[3])
+	if err != nil {
+		return false
+	}
+	got, err := pbkdf2.Key(sha256.New, password, salt, iter, len(want))
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+// ---------------------------------------------------------------- sessions
+
+type session struct {
+	user    string
+	expires time.Time
+}
+
+// Sessions is an in-memory session table: restarting the service logs
+// everyone out, which is fine for a local admin tool.
+type Sessions struct {
+	mu   sync.Mutex
+	ttl  time.Duration
+	toks map[string]session
+}
+
+func NewSessions(ttl time.Duration) *Sessions {
+	return &Sessions{ttl: ttl, toks: map[string]session{}}
+}
+
+func (s *Sessions) Create(user string) (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	tok := base64.RawURLEncoding.EncodeToString(b)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for k, v := range s.toks {
+		if now.After(v.expires) {
+			delete(s.toks, k)
+		}
+	}
+	s.toks[tok] = session{user: user, expires: now.Add(s.ttl)}
+	return tok, nil
+}
+
+// Validate returns the user for a live token and slides its expiry.
+func (s *Sessions) Validate(tok string) (string, bool) {
+	if tok == "" {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.toks[tok]
+	if !ok || time.Now().After(v.expires) {
+		delete(s.toks, tok)
+		return "", false
+	}
+	v.expires = time.Now().Add(s.ttl)
+	s.toks[tok] = v
+	return v.user, true
+}
+
+func (s *Sessions) Revoke(tok string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.toks, tok)
+}
+
+// ---------------------------------------------------------------- login throttling
+
+// Limiter slows brute force: after maxFailures within window the account is
+// locked for lockout.
+type Limiter struct {
+	mu          sync.Mutex
+	maxFailures int
+	window      time.Duration
+	lockout     time.Duration
+	fails       map[string][]time.Time
+	locked      map[string]time.Time
+	now         func() time.Time
+}
+
+func NewLimiter(maxFailures int, window, lockout time.Duration) *Limiter {
+	return &Limiter{maxFailures: maxFailures, window: window, lockout: lockout,
+		fails: map[string][]time.Time{}, locked: map[string]time.Time{}, now: time.Now}
+}
+
+var ErrLocked = errors.New("too many failed logins; try again later")
+
+// Allow reports whether a login attempt for user may proceed.
+func (l *Limiter) Allow(user string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if until, ok := l.locked[user]; ok {
+		if l.now().Before(until) {
+			return ErrLocked
+		}
+		delete(l.locked, user)
+		delete(l.fails, user)
+	}
+	return nil
+}
+
+func (l *Limiter) Failure(user string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	var recent []time.Time
+	for _, t := range l.fails[user] {
+		if now.Sub(t) < l.window {
+			recent = append(recent, t)
+		}
+	}
+	recent = append(recent, now)
+	l.fails[user] = recent
+	if len(recent) >= l.maxFailures {
+		l.locked[user] = now.Add(l.lockout)
+	}
+}
+
+func (l *Limiter) Success(user string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.fails, user)
+	delete(l.locked, user)
+}
