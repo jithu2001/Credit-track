@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../analytics/presentation/analytics_providers.dart';
 import '../auth/presentation/session_controller.dart';
 import '../company/presentation/company_providers.dart';
 import '../dashboard/presentation/dashboard_providers.dart';
@@ -22,10 +23,12 @@ Future<void> refreshCompanyData(WidgetRef ref) async {
     ..invalidate(companySummaryProvider)
     ..invalidate(companySyncStateProvider)
     ..invalidate(topDuesProvider)
+    ..invalidate(monthSalesProvider)
     ..invalidate(shopListProvider)
     ..invalidate(outstandingReportProvider)
     ..invalidate(shopDetailProvider)
-    ..invalidate(shopStatementProvider);
+    ..invalidate(shopStatementProvider)
+    ..invalidate(analyticsDataProvider);
   try {
     final company = await ref.read(activeCompanyProvider.future);
     if (company != null) await ref.read(companySummaryProvider(company.id).future);

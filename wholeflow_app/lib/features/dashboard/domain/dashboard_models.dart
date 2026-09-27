@@ -39,6 +39,16 @@ abstract class SyncState with _$SyncState {
   static const columns = 'last_successful_sync_at,last_attempt_at,status,error_code,error_message';
 }
 
+/// Sales bills to shops dated in one calendar month.
+class MonthSales {
+  const MonthSales({required this.month, required this.amount, required this.bills});
+
+  /// First day of the month.
+  final DateTime month;
+  final Money amount;
+  final int bills;
+}
+
 enum FreshnessLevel { fresh, warning }
 
 /// What the freshness banner says.

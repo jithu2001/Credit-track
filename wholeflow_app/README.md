@@ -67,6 +67,19 @@ cd WholeFlow/supabase/functions && deno test manage-staff/handler_test.ts
 - New staff and password resets set `must_change_password`, so the app asks for a new password at the next sign-in.
 - Disabling an account sets `users.is_active = false` and bans the Auth user. RLS hides all data immediately. The app notices on the next refresh or resume and signs the user out.
 
+## Payment analytics (owner only)
+
+The **Analytics** tab and the dashboard's **Overdue** card show how each shop pays, computed on the phone from the synced data. Nothing is stored, and Tally isn't touched.
+
+- **Credit period** is a filter on the Analytics screen (15/30/45/60/90 days or custom). It's kept in memory only. A bill is late once it's more than that many days old.
+- **Oldest bill first (FIFO):** every receipt settles the oldest unpaid bill first. Returns (credit notes) and credit adjustments also settle the oldest bill, but don't count as *paying* in the timing figures.
+- **Opening balance** counts as one bill dated where the synced vouchers begin (the current Tally period). A Cr opening balance, or a payment that arrives before any bill, is held as an advance and settles the next bills.
+- **Per shop:** overdue amount, oldest late bill (days past due), share of paid bills paid on time, receipt-weighted average days to pay and days paid after the due date, last payment, unpaid bills with due dates, and how each paid bill was paid.
+- **Whole business:** total overdue and number of shops, unpaid bills by age (not due / 1–30 / 31–60 / 61–90 / 90+ days late), on-time share, and average days to pay.
+- **Check:** for every shop, unpaid bills minus advances must equal the Tally balance. A shop that doesn't reconcile shows a warning.
+
+Settings is opened from the avatar at the top right of every tab. Material 3 allows at most five tabs, and owners now have five: Dashboard, Shops, Outstanding, Analytics and Staff.
+
 ## Code layout
 
 ```
@@ -80,6 +93,7 @@ lib/
     shops/                   paged list with search/filter/sort
     shop_detail/             details, contact actions, statement with running balance + reconciliation
     outstanding/             area-grouped report, share as text or PDF
+    analytics/               FIFO payment analysis (owner): credit-days filter, ageing, per-shop bills
     staff/                   staff list/form/detail → manage-staff Edge Function
     sync_health/             Tally PC, per-company status, recent sync logs (owner)
     settings/                theme, change password, sign out

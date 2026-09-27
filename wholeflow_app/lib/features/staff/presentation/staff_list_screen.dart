@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/domain/company.dart';
 import '../../company/presentation/company_providers.dart';
+import '../../home/account_button.dart';
 import '../domain/staff.dart';
 import 'staff_providers.dart';
 
@@ -26,7 +27,7 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
     final companies = ref.watch(companiesProvider).value ?? const <Company>[];
     final names = {for (final c in companies) c.id: c.companyName};
     return Scaffold(
-      appBar: AppBar(title: const Text('Staff')),
+      appBar: AppBar(title: const Text('Staff'), actions: const [AccountButton()]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/staff/new'),
         icon: const Icon(Icons.person_add_alt_1_rounded),

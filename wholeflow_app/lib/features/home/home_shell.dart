@@ -10,6 +10,7 @@ import '../auth/domain/app_user.dart';
 import '../auth/presentation/session_controller.dart';
 import '../company/presentation/company_providers.dart';
 import '../shops/presentation/shop_list_controller.dart';
+import 'account_button.dart';
 import 'refresh.dart';
 
 /// Shell branch indices, in router order.
@@ -17,8 +18,8 @@ abstract final class Branch {
   static const dashboard = 0;
   static const shops = 1;
   static const outstanding = 2;
-  static const staff = 3;
-  static const settings = 4;
+  static const analytics = 3;
+  static const staff = 4;
 }
 
 class NavItem {
@@ -30,13 +31,16 @@ class NavItem {
   final IconData selectedIcon;
 }
 
-/// The navigation destinations a role gets. Staff never see the Staff tab.
+/// The navigation destinations a role gets. Analytics and Staff are owner-only.
+/// Settings is behind the avatar in every app bar (M3: at most five tabs).
 List<NavItem> navItemsFor(UserRole role) => [
   const NavItem(Branch.dashboard, 'Dashboard', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded),
   const NavItem(Branch.shops, 'Shops', Icons.storefront_outlined, Icons.storefront_rounded),
   const NavItem(Branch.outstanding, 'Outstanding', Icons.request_quote_outlined, Icons.request_quote_rounded),
-  if (role == UserRole.owner) const NavItem(Branch.staff, 'Staff', Icons.group_outlined, Icons.group_rounded),
-  const NavItem(Branch.settings, 'Settings', Icons.settings_outlined, Icons.settings_rounded),
+  if (role == UserRole.owner) ...const [
+    NavItem(Branch.analytics, 'Analytics', Icons.insights_outlined, Icons.insights_rounded),
+    NavItem(Branch.staff, 'Staff', Icons.group_outlined, Icons.group_rounded),
+  ],
 ];
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -75,11 +79,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final companies = ref.watch(companiesProvider);
     final shell = widget.navigationShell;
     final items = navItemsFor(user.role);
-    // Settings stays reachable even without a company, so users can sign out.
-    final onSettings = shell.currentIndex == Branch.settings;
-
     final Widget body = switch (companies) {
-      _ when onSettings => shell,
       AsyncValue(:final value?) when value.isEmpty => NoCompanyView(isOwner: user.isOwner),
       AsyncValue(:final value?) when value.isNotEmpty => shell,
       AsyncValue(:final error?) => Scaffold(
@@ -141,7 +141,7 @@ class NoCompanyView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('WholeFlow')),
+      appBar: AppBar(title: const Text('WholeFlow'), actions: const [AccountButton()]),
       body: RefreshIndicator(
         onRefresh: () => refreshCompanyData(ref),
         child: LayoutBuilder(

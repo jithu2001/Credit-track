@@ -3,13 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 
+import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/domain/company.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
+import '../../../core/errors/app_failure.dart';
+import '../../analytics/presentation/analytics_providers.dart';
+import '../../analytics/presentation/analytics_widgets.dart';
+import '../../auth/presentation/session_controller.dart';
+import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../../shops/presentation/shop_tile.dart';
 import 'dashboard_providers.dart';
@@ -48,7 +55,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget build(BuildContext context) {
     final company = ref.watch(activeCompanyProvider).value;
     return Scaffold(
-      appBar: AppBar(title: const CompanyTitle(screen: 'Dashboard')),
+      appBar: AppBar(
+        title: const CompanyTitle(screen: 'Dashboard'),
+        actions: const [AccountButton()],
+      ),
       body: company == null
           ? const SizedBox.shrink()
           : RefreshIndicator(
@@ -68,6 +78,8 @@ class _DashboardBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(companySummaryProvider(company.id));
     final top = ref.watch(topDuesProvider(company.id));
+    final showSales = ref.watch(canViewTransactionsProvider(company.id));
+    final sales = showSales ? ref.watch(monthSalesProvider(company.id)).value : null;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(Insets.l),
@@ -83,8 +95,15 @@ class _DashboardBody extends ConsumerWidget {
                 formatInr(value.totalOutstanding),
                 tone: _Tone.owed,
               ),
+              if (showSales)
+                _Stat(
+                  'Sales this month',
+                  sales == null ? '—' : formatInrCompact(sales.amount),
+                  sales == null
+                      ? 'Loading…'
+                      : '${formatInr(sales.amount)} · ${plural(sales.bills, 'bill')} in ${DateFormat('MMMM').format(sales.month)}',
+                ),
               _Stat('Shops with dues', '${value.shopsWithDues}', 'of ${value.shops} shops'),
-              _Stat('In credit', formatInrCompact(value.totalCredit), formatInr(value.totalCredit), tone: _Tone.credit),
               _Stat('Shops', '${value.shops}', 'active in Tally'),
             ],
           ),
@@ -96,6 +115,10 @@ class _DashboardBody extends ConsumerWidget {
           ),
           _ => const _StatGrid(tiles: null),
         },
+        if (ref.watch(currentUserProvider)?.isOwner ?? false) ...[
+          const SizedBox(height: Insets.m),
+          _OverdueCard(companyId: company.id),
+        ],
         const SizedBox(height: Insets.xl),
         Row(
           children: [
@@ -127,7 +150,71 @@ class _DashboardBody extends ConsumerWidget {
   }
 }
 
-enum _Tone { neutral, owed, credit }
+/// Owner-only: overdue under the current credit period, linking to Analytics.
+class _OverdueCard extends ConsumerWidget {
+  const _OverdueCard({required this.companyId});
+
+  final String companyId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final summary = ref.watch(paymentSummaryProvider(companyId));
+    final s = context.semantic;
+    final value = summary.value;
+    final overdue = value != null && value.overdue.isPositive;
+    final (bg, fg) = overdue
+        ? (s.warningContainer, s.onWarningContainer)
+        : (context.colors.surfaceContainerHigh, context.colors.onSurface);
+    return Card.filled(
+      color: bg,
+      child: InkWell(
+        onTap: () => context.go('/analytics'),
+        child: Padding(
+          padding: const EdgeInsets.all(Insets.l),
+          child: Row(
+            children: [
+              Icon(overdue ? Icons.schedule_rounded : Icons.verified_outlined, color: fg),
+              const SizedBox(width: Insets.m),
+              Expanded(
+                child: switch (summary) {
+                  AsyncValue(value: final v?) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        v.overdue.isPositive ? '${formatInr(v.overdue)} overdue' : 'Nothing overdue',
+                        style: context.text.titleMedium?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${plural(v.overdueShops, 'shop')} past ${plural(v.creditDays, 'day')} · '
+                        '${formatPercent(v.onTimeRate)} of bills paid on time',
+                        style: context.text.bodySmall?.copyWith(color: fg),
+                      ),
+                    ],
+                  ),
+                  AsyncValue(:final error?) => Text(
+                    AppFailure.from(error).message,
+                    style: context.text.bodySmall?.copyWith(color: fg),
+                  ),
+                  _ => const Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SkeletonBox(width: 160, height: 18),
+                      SizedBox(height: Insets.xs),
+                      SkeletonBox(width: 220, height: 12),
+                    ],
+                  ),
+                },
+              ),
+              Icon(Icons.chevron_right_rounded, color: fg),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _Tone { neutral, owed }
 
 class _Stat {
   const _Stat(this.label, this.value, this.detail, {this.tone = _Tone.neutral});
@@ -148,14 +235,21 @@ class _StatGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 720 ? 4 : 2;
-        final width = (constraints.maxWidth - Insets.m * (columns - 1)) / columns;
+        // Four tiles: 2×2 on phones, one row on tablets. Three tiles (staff
+        // without transactions): the first spans the phone width.
+        final count = tiles?.length ?? 4;
+        final full = constraints.maxWidth;
+        final columns = full >= 720 ? count : 2;
+        final cell = (full - Insets.m * (columns - 1)) / columns;
         return Wrap(
           spacing: Insets.m,
           runSpacing: Insets.m,
           children: [
-            for (var i = 0; i < 4; i++)
-              SizedBox(width: width, child: tiles == null ? const _StatCardSkeleton() : _StatCard(tiles![i])),
+            for (var i = 0; i < count; i++)
+              SizedBox(
+                width: columns == 2 && count.isOdd && i == 0 ? full : cell,
+                child: tiles == null ? const _StatCardSkeleton() : _StatCard(tiles![i]),
+              ),
           ],
         );
       },
@@ -173,7 +267,6 @@ class _StatCard extends StatelessWidget {
     final semantic = context.semantic;
     final (bg, fg) = switch (stat.tone) {
       _Tone.owed => (semantic.owedContainer, semantic.onOwedContainer),
-      _Tone.credit => (semantic.creditContainer, semantic.onCreditContainer),
       _Tone.neutral => (context.colors.surfaceContainerHigh, context.colors.onSurface),
     };
     return Semantics(

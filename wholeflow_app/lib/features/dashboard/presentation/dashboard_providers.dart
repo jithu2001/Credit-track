@@ -14,4 +14,8 @@ Future<CompanySummary?> companySummary(Ref ref, String companyId) => ref.watch(d
 Future<SyncState?> companySyncState(Ref ref, String companyId) => ref.watch(dashboardRepositoryProvider).syncState(companyId);
 
 @riverpod
+Future<MonthSales> monthSales(Ref ref, String companyId) =>
+    ref.watch(dashboardRepositoryProvider).monthSales(companyId, DateTime.now());
+
+@riverpod
 Future<List<ShopSummary>> topDues(Ref ref, String companyId) => ref.watch(shopRepositoryProvider).topDues(companyId);

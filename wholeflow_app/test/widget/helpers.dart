@@ -6,7 +6,10 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
+import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
+import 'package:wholeflow_app/features/analytics/data/analytics_repository.dart';
+import 'package:wholeflow_app/features/analytics/domain/payment_analysis.dart';
 import 'package:wholeflow_app/features/auth/data/auth_repository.dart';
 import 'package:wholeflow_app/features/auth/domain/app_user.dart';
 import 'package:wholeflow_app/features/company/data/company_repository.dart';
@@ -128,4 +131,53 @@ class FakeDashboardRepository implements DashboardRepository {
   Future<CompanySummary?> summary(String companyId) async => summaryRow;
   @override
   Future<SyncState?> syncState(String companyId) async => state;
+  @override
+  Future<MonthSales> monthSales(String companyId, DateTime now) async =>
+      MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12);
+}
+
+/// Two shops relative to today: one 20 days overdue, one paid on time.
+class FakeAnalyticsRepository implements AnalyticsRepository {
+  @override
+  Future<AnalyticsData> load(String companyId) async {
+    final today = DateTime.now();
+    final d = DateTime(today.year, today.month, today.day);
+    return AnalyticsData(
+      booksFrom: d.subtract(const Duration(days: 365)),
+      shops: const [
+        ShopOpening(
+          id: 's1',
+          name: 'PRINCE TYRES -- RAJAKKAD',
+          area: 'Rajakkad',
+          opening: Money.zero,
+          receivable: Money(1000000),
+        ),
+        ShopOpening(id: 's2', name: 'KERALA AUTO -- PALA', area: 'Pala', opening: Money.zero, receivable: Money.zero),
+      ],
+      txns: [
+        PaymentTxn(
+          shopId: 's1',
+          date: d.subtract(const Duration(days: 50)),
+          category: TxnCategory.sales,
+          debit: const Money(1000000),
+          credit: Money.zero,
+          voucher: 'Sales · 101',
+        ),
+        PaymentTxn(
+          shopId: 's2',
+          date: d.subtract(const Duration(days: 40)),
+          category: TxnCategory.sales,
+          debit: const Money(500000),
+          credit: Money.zero,
+        ),
+        PaymentTxn(
+          shopId: 's2',
+          date: d.subtract(const Duration(days: 30)),
+          category: TxnCategory.receipts,
+          debit: Money.zero,
+          credit: const Money(500000),
+        ),
+      ],
+    );
+  }
 }

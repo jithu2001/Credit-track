@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../features/analytics/presentation/analytics_screen.dart';
+import '../../features/analytics/presentation/shop_payments_screen.dart';
 import '../../features/auth/presentation/auth_screens.dart';
 import '../../features/auth/presentation/session_controller.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
@@ -31,7 +33,7 @@ String? redirectFor(AsyncValue<Session> session, String location) {
     case SignedIn(:final user, :final mustChangePassword):
       if (mustChangePassword) return location == '/change-password' ? null : '/change-password';
       if (_authRoutes.contains(location)) return '/dashboard';
-      final ownerOnly = location.startsWith('/staff') || location.startsWith('/sync-health');
+      final ownerOnly = location.startsWith('/staff') || location.startsWith('/sync-health') || location.startsWith('/analytics');
       if (ownerOnly && !user.isOwner) return '/dashboard';
       return null;
   }
@@ -66,6 +68,11 @@ GoRouter router(Ref ref) {
         builder: (context, state) => StaffFormScreen(userId: state.pathParameters['id']!),
       ),
       GoRoute(path: '/sync-health', builder: (context, state) => const SyncHealthScreen()),
+      GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+      GoRoute(
+        path: '/analytics/shop/:id',
+        builder: (context, state) => ShopPaymentsScreen(shopId: state.pathParameters['id']!),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => HomeShell(navigationShell: shell),
         branches: [
@@ -79,10 +86,10 @@ GoRouter router(Ref ref) {
             routes: [GoRoute(path: '/outstanding', builder: (context, state) => const OutstandingScreen())],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/staff', builder: (context, state) => const StaffListScreen())],
+            routes: [GoRoute(path: '/analytics', builder: (context, state) => const AnalyticsScreen())],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen())],
+            routes: [GoRoute(path: '/staff', builder: (context, state) => const StaffListScreen())],
           ),
         ],
       ),

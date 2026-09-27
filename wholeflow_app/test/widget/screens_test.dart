@@ -7,6 +7,8 @@ import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/providers.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
 import 'package:wholeflow_app/core/widgets/balance_text.dart';
+import 'package:wholeflow_app/features/analytics/data/analytics_repository.dart';
+import 'package:wholeflow_app/features/analytics/presentation/analytics_screen.dart';
 import 'package:wholeflow_app/features/auth/data/auth_repository.dart';
 import 'package:wholeflow_app/features/auth/domain/app_user.dart';
 import 'package:wholeflow_app/features/auth/presentation/auth_screens.dart';
@@ -53,6 +55,7 @@ Future<List<Override>> baseOverrides({
     ),
     shopRepositoryProvider.overrideWithValue(shopRepo ?? FakeShopRepository(shops: shops)),
     dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository()),
+    analyticsRepositoryProvider.overrideWithValue(FakeAnalyticsRepository()),
   ];
 }
 
@@ -251,6 +254,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  group('analytics', () {
+    testWidgets('shows overdue under the credit period and reacts to the filter', (tester) async {
+      await pumpScreen(tester, const AnalyticsScreen(), overrides: await baseOverrides(), size: const Size(900, 1600));
+      await tester.pumpAndSettle();
+      // 30 days: the ₹10,000 bill from 50 days ago is 20 days late.
+      expect(find.text('₹10,000.00'), findsWidgets);
+      expect(find.textContaining('oldest 20 days late'), findsOneWidget);
+      expect(find.text('Overdue only (1)'), findsOneWidget);
+
+      // 60 days: nothing is late any more; the data is not fetched again.
+      await tester.tap(find.widgetWithText(ChoiceChip, '60 days'));
+      await tester.pumpAndSettle();
+      expect(find.text('No shop is overdue'), findsOneWidget);
+    });
+
+    testWidgets('dashboard shows the overdue card to owners only', (tester) async {
+      await pumpScreen(tester, const DashboardScreen(), overrides: await baseOverrides());
+      await tester.pumpAndSettle();
+      expect(find.text('₹10,000.00 overdue'), findsOneWidget);
+    });
+
+    testWidgets('staff dashboard has no overdue card', (tester) async {
+      await pumpScreen(tester, const DashboardScreen(), overrides: await baseOverrides(user: staffUser));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('overdue'), findsNothing);
+      // Staff without transaction access for the company don't get the sales tile.
+      expect(find.text('Sales this month'), findsNothing);
+    });
+  });
+
   group('dashboard golden', () {
     for (final dark in [false, true]) {
       testWidgets(dark ? 'dark' : 'light', (tester) async {
@@ -275,6 +308,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('₹36 L'), findsOneWidget);
         expect(find.text('₹35,95,244.95'), findsOneWidget);
+        expect(find.text('In credit'), findsNothing);
+        expect(find.text('Sales this month'), findsOneWidget);
+        expect(find.text('₹45.7 K'), findsOneWidget);
         expect(find.text('Updated 4 min ago'), findsOneWidget);
         await expectLater(find.byType(DashboardScreen), matchesGoldenFile('goldens/dashboard_${dark ? 'dark' : 'light'}.png'));
       });

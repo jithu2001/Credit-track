@@ -136,6 +136,57 @@ final class CompanySyncStateFamily extends $Family with $FunctionalFamilyOverrid
   String toString() => r'companySyncStateProvider';
 }
 
+@ProviderFor(monthSales)
+final monthSalesProvider = MonthSalesFamily._();
+
+final class MonthSalesProvider extends $FunctionalProvider<AsyncValue<MonthSales>, MonthSales, FutureOr<MonthSales>>
+    with $FutureModifier<MonthSales>, $FutureProvider<MonthSales> {
+  MonthSalesProvider._({required MonthSalesFamily super.from, required String super.argument})
+    : super(retry: null, name: r'monthSalesProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+
+  @override
+  String debugGetCreateSourceHash() => _$monthSalesHash();
+
+  @override
+  String toString() {
+    return r'monthSalesProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  $FutureProviderElement<MonthSales> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<MonthSales> create(Ref ref) {
+    final argument = this.argument as String;
+    return monthSales(ref, argument);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is MonthSalesProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$monthSalesHash() => r'b1b4edad75eed8694d2628b780c301b04bf53d85';
+
+final class MonthSalesFamily extends $Family with $FunctionalFamilyOverride<FutureOr<MonthSales>, String> {
+  MonthSalesFamily._()
+    : super(retry: null, name: r'monthSalesProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+
+  MonthSalesProvider call(String companyId) => MonthSalesProvider._(argument: companyId, from: this);
+
+  @override
+  String toString() => r'monthSalesProvider';
+}
+
 @ProviderFor(topDues)
 final topDuesProvider = TopDuesFamily._();
 

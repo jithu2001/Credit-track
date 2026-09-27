@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
+import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../domain/shop.dart';
 import 'shop_list_controller.dart';
@@ -45,7 +46,10 @@ class _ShopsScreenState extends ConsumerState<ShopsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const CompanyTitle(screen: 'Shops'),
-        actions: [IconButton(tooltip: 'Sort', icon: const Icon(Icons.sort_rounded), onPressed: () => _showSort(context))],
+        actions: [
+          IconButton(tooltip: 'Sort', icon: const Icon(Icons.sort_rounded), onPressed: () => _showSort(context)),
+          const AccountButton(),
+        ],
       ),
       body: company == null
           ? const SizedBox.shrink()
@@ -192,69 +196,78 @@ class _AreaPickerSheetState extends ConsumerState<AreaPickerSheet> {
   Widget build(BuildContext context) {
     final areas = ref.watch(companyAreasProvider(widget.companyId));
     final q = _query.trim().toLowerCase();
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: 0.6,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
-      builder: (context, scroll) => Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.s, 0),
-            child: Row(
-              children: [
-                Expanded(child: Text(widget.title, style: context.text.titleMedium)),
-                TextButton(onPressed: () => setState(_selected.clear), child: const Text('Clear')),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(Insets.l, Insets.xs, Insets.l, Insets.s),
-            child: TextField(
-              decoration: const InputDecoration(hintText: 'Search areas', prefixIcon: Icon(Icons.search_rounded), isDense: true),
-              onChanged: (v) => setState(() => _query = v),
-            ),
-          ),
-          Expanded(
-            child: switch (areas) {
-              AsyncValue(:final value?) when value.isEmpty => const EmptyState(
-                icon: Icons.place_outlined,
-                title: 'No areas found',
-              ),
-              AsyncValue(:final value?) => ListView(
-                controller: scroll,
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+    // Keep the list above the keyboard while searching.
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboard),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scroll) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.s, 0),
+              child: Row(
                 children: [
-                  for (final a in value)
-                    if (q.isEmpty || a.toLowerCase().contains(q) || _selected.contains(a))
-                      CheckboxListTile(
-                        value: _selected.contains(a),
-                        title: Text(areaLabel(a)),
-                        onChanged: (on) => setState(() => on == true ? _selected.add(a) : _selected.remove(a)),
-                      ),
+                  Expanded(child: Text(widget.title, style: context.text.titleMedium)),
+                  TextButton(onPressed: () => setState(_selected.clear), child: const Text('Clear')),
                 ],
               ),
-              AsyncValue(:final error?) => ErrorState(
-                error: error,
-                onRetry: () => ref.invalidate(companyAreasProvider(widget.companyId)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Insets.l, Insets.xs, Insets.l, Insets.s),
+              child: TextField(
+                decoration: const InputDecoration(
+                  hintText: 'Search areas',
+                  prefixIcon: Icon(Icons.search_rounded),
+                  isDense: true,
+                ),
+                onChanged: (v) => setState(() => _query = v),
               ),
-              _ => const SkeletonList(),
-            },
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.all(Insets.l),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(_selected),
-                  child: Text(_selected.isEmpty ? 'Show all areas' : 'Apply (${_selected.length})'),
+            ),
+            Expanded(
+              child: switch (areas) {
+                AsyncValue(:final value?) when value.isEmpty => const EmptyState(
+                  icon: Icons.place_outlined,
+                  title: 'No areas found',
+                ),
+                AsyncValue(:final value?) => ListView(
+                  controller: scroll,
+                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                  children: [
+                    for (final a in value)
+                      if (q.isEmpty || a.toLowerCase().contains(q) || _selected.contains(a))
+                        CheckboxListTile(
+                          value: _selected.contains(a),
+                          title: Text(areaLabel(a)),
+                          onChanged: (on) => setState(() => on == true ? _selected.add(a) : _selected.remove(a)),
+                        ),
+                  ],
+                ),
+                AsyncValue(:final error?) => ErrorState(
+                  error: error,
+                  onRetry: () => ref.invalidate(companyAreasProvider(widget.companyId)),
+                ),
+                _ => const SkeletonList(),
+              },
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.all(Insets.l),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: () => Navigator.of(context).pop(_selected),
+                    child: Text(_selected.isEmpty ? 'Show all areas' : 'Apply (${_selected.length})'),
+                  ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

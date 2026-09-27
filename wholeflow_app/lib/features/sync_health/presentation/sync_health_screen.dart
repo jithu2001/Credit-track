@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/domain/company.dart';
 import '../../company/presentation/company_providers.dart';
+import '../../dashboard/domain/dashboard_models.dart' show staleAfter;
 import '../data/sync_health_repository.dart';
 
 class SyncHealthScreen extends ConsumerWidget {
@@ -67,11 +68,11 @@ class SyncHealthScreen extends ConsumerWidget {
                     children: [
                       for (final c in value)
                         ListTile(
-                          leading: _StatusDot(ok: c.syncStatus == 'SYNCED'),
+                          leading: _StatusDot(ok: _isFresh(c)),
                           title: Text(c.companyName),
                           subtitle: Text(
                             [
-                              _statusLabel(c.syncStatus),
+                              _isFresh(c) || c.syncStatus != 'SYNCED' ? _statusLabel(c.syncStatus) : 'Not synced recently',
                               if (c.lastSyncAt != null) 'last success ${timeAgo(c.lastSyncAt!)}',
                             ].join(' · '),
                           ),
@@ -112,6 +113,10 @@ const _liveWindow = Duration(minutes: 15);
 
 bool _isLive(TallyConnection c) =>
     c.status == 'online' && c.lastSeenAt != null && DateTime.now().difference(c.lastSeenAt!) < _liveWindow;
+
+/// Same rule as the dashboard banner: synced within the last hour.
+bool _isFresh(Company c) =>
+    c.syncStatus == 'SYNCED' && c.lastSyncAt != null && DateTime.now().difference(c.lastSyncAt!) <= staleAfter;
 
 String _statusLabel(String s) => switch (s) {
   'SYNCED' => 'Synced',

@@ -44,7 +44,7 @@ final class SessionControllerProvider extends $AsyncNotifierProvider<SessionCont
   SessionController create() => SessionController();
 }
 
-String _$sessionControllerHash() => r'20ac1dc8f02269d1b0e8c39e64390b0849d90012';
+String _$sessionControllerHash() => r'4f748e5f5513e9f6c6fc40a918047ae92fdc7fb5';
 
 /// The app's single source of truth for who is signed in.
 ///

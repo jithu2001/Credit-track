@@ -10,6 +10,7 @@ import '../../../core/widgets/states.dart';
 import '../../company/domain/company.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
+import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../../shops/data/shop_repository.dart';
 import '../../shops/presentation/shop_tile.dart';
@@ -41,6 +42,7 @@ class OutstandingScreen extends ConsumerWidget {
             icon: const Icon(Icons.share_rounded),
             onPressed: loaded == null || loaded.groups.isEmpty ? null : () => _share(context, loaded),
           ),
+          const AccountButton(),
         ],
       ),
       body: report == null

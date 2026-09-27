@@ -54,9 +54,9 @@ void main() {
   });
 
   group('navigation by role', () {
-    test('staff never get the Staff tab', () {
-      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Staff', 'Settings']);
-      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Settings']);
+    test('Analytics and Staff tabs are owner-only', () {
+      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Analytics', 'Staff']);
+      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding']);
     });
 
     test('redirects', () {
@@ -70,6 +70,10 @@ void main() {
       expect(redirectFor(const AsyncData(SignedIn(staff)), '/staff/abc/edit'), '/dashboard');
       expect(redirectFor(const AsyncData(SignedIn(staff)), '/sync-health'), '/dashboard');
       expect(redirectFor(const AsyncData(SignedIn(staff)), '/shop/1'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/analytics'), '/dashboard');
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/analytics/shop/1'), '/dashboard');
+      expect(redirectFor(const AsyncData(SignedIn(owner)), '/analytics'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/settings'), isNull);
     });
   });
 }

@@ -19,3 +19,6 @@ String timeAgo(DateTime then, {DateTime? now}) {
 
 /// "Rajakkad" for null/blank-safe display of derived areas.
 String areaLabel(String? area) => (area == null || area.trim().isEmpty) ? 'No area' : area.trim();
+
+/// "1 day", "3 days", "1 shop", "0 bills".
+String plural(int n, String one, [String? many]) => '$n ${n == 1 ? one : (many ?? '${one}s')}';
