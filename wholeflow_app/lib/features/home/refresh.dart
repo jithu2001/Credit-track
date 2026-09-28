@@ -6,9 +6,12 @@ import '../analytics/presentation/analytics_providers.dart';
 import '../auth/presentation/session_controller.dart';
 import '../company/presentation/company_providers.dart';
 import '../dashboard/presentation/dashboard_providers.dart';
+import '../inventory/presentation/inventory_providers.dart';
 import '../outstanding/presentation/outstanding_screen.dart';
+import '../purchases/presentation/purchase_providers.dart';
 import '../shop_detail/presentation/shop_detail_providers.dart';
 import '../shops/presentation/shop_list_controller.dart';
+import '../suppliers/presentation/supplier_providers.dart';
 
 /// Pull-to-refresh, app resume and the dashboard timer all come here: re-check
 /// the account (a disabled user is signed out), reload the visible companies
@@ -28,7 +31,16 @@ Future<void> refreshCompanyData(WidgetRef ref) async {
     ..invalidate(outstandingReportProvider)
     ..invalidate(shopDetailProvider)
     ..invalidate(shopStatementProvider)
-    ..invalidate(analyticsDataProvider);
+    ..invalidate(analyticsDataProvider)
+    ..invalidate(stockItemsProvider)
+    ..invalidate(stockItemProvider)
+    ..invalidate(itemPurchasesProvider)
+    ..invalidate(purchaseListProvider)
+    ..invalidate(purchaseDetailProvider)
+    ..invalidate(recentMonthsProvider)
+    ..invalidate(supplierMonthsProvider)
+    ..invalidate(suppliersProvider)
+    ..invalidate(supplierDetailProvider);
   try {
     final company = await ref.read(activeCompanyProvider.future);
     if (company != null) await ref.read(companySummaryProvider(company.id).future);

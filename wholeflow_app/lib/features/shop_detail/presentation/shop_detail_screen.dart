@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
-import '../../../core/phone.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/balance_text.dart';
+import '../../../core/widgets/phone_tile.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../shops/domain/shop.dart';
@@ -107,7 +106,7 @@ class _DetailsTab extends StatelessWidget {
                 ),
                 if (phones.isEmpty)
                   const ListTile(leading: Icon(Icons.phone_disabled_outlined), title: Text('No phone number in Tally')),
-                for (final p in phones) _PhoneTile(phone: p, fromAddress: shop.phoneSource == 'address' && p == shop.phone),
+                for (final p in phones) PhoneTile(phone: p, fromAddress: shop.phoneSource == 'address' && p == shop.phone),
                 if (shop.contactPerson?.trim().isNotEmpty ?? false)
                   ListTile(leading: const Icon(Icons.person_outline), title: Text(shop.contactPerson!.trim())),
                 if (shop.email?.trim().isNotEmpty ?? false)
@@ -175,40 +174,6 @@ class _BalanceCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PhoneTile extends StatelessWidget {
-  const _PhoneTile({required this.phone, required this.fromAddress});
-
-  final String phone;
-  final bool fromAddress;
-
-  Future<void> _open(BuildContext context, Uri uri) async {
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) showMessage(context, "Couldn't open ${uri.scheme == 'tel' ? 'the dialer' : 'WhatsApp'}.");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final wa = whatsAppUri(phone);
-    return ListTile(
-      leading: const Icon(Icons.phone_outlined),
-      title: Text(phone),
-      subtitle: fromAddress ? const Text('Found in address') : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Call $phone',
-            icon: const Icon(Icons.call_rounded),
-            onPressed: () => _open(context, telUri(phone)),
-          ),
-          if (wa != null)
-            IconButton(tooltip: 'WhatsApp $phone', icon: const Icon(Icons.chat_rounded), onPressed: () => _open(context, wa)),
-        ],
       ),
     );
   }

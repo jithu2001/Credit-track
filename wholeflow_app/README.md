@@ -13,7 +13,7 @@ TallyPrime ─▶ wholeflow.exe (Tally PC) ─▶ Supabase (Postgres + RLS) ─�
 ## Prerequisites
 
 - Flutter stable (built with 3.47 / Dart 3.13)
-- The Supabase project with `WholeFlow/supabase/migrations/0001_init.sql` **and** `0002_mobile_app.sql` applied, and the `manage-staff` Edge Function deployed (see below)
+- The Supabase project with `WholeFlow/supabase/migrations/0001_init.sql`, `0002_mobile_app.sql` **and** `0003_purchasing.sql` applied, and the `manage-staff` Edge Function deployed (see below)
 - An owner account created from the WholeFlow **Cloud Sync** page ("Business owner & staff accounts")
 
 ## Configure and run
@@ -78,7 +78,19 @@ The **Analytics** tab and the dashboard's **Overdue** card show how each shop pa
 - **Whole business:** total overdue and number of shops, unpaid bills by age (not due / 1–30 / 31–60 / 61–90 / 90+ days late), on-time share, and average days to pay.
 - **Check:** for every shop, unpaid bills minus advances must equal the Tally balance. A shop that doesn't reconcile shows a warning.
 
-Settings is opened from the avatar at the top right of every tab. Material 3 allows at most five tabs, and owners now have five: Dashboard, Shops, Outstanding, Analytics and Staff.
+Settings is opened from the avatar at the top right of every tab. Material 3 allows at most five tabs, so owners have Dashboard, Shops, Outstanding, Analytics and Stock, and open **Staff** from Settings. Staff have Dashboard, Shops, Outstanding and Inventory.
+
+## Stock: inventory, purchases and suppliers
+
+The sync service fills `stock_items`, `purchases`, `purchase_lines` and `suppliers` (`0003_purchasing.sql`). The app only reads them.
+
+- **Owners** get a **Stock** tab with three sub-tabs:
+  - **Inventory:** quantity, status, stock value, valuation rate, last purchase rate and supplier, and recent bills for each item.
+  - **Purchases:** bills grouped by month (newest first), totals for this month and last month, and each bill's item lines, taxes and total.
+  - **Suppliers:** amount owed or advance paid, contact details, GSTIN, and the last 12 months of purchases with their bills.
+- **Staff** get an **Inventory** tab: quantities and stock status for the companies they are assigned to. RLS returns suppliers, purchases and purchase lines to the owner only. The router also sends staff away from `/purchases` and `/suppliers`.
+- For staff, the app reads only the quantity columns of `stock_items`, so it never loads purchase prices or stock values. RLS still lets staff read those columns. Blocking them in the database would need a column-limited view or grant.
+- Supplier `payable` has the opposite sign from shops. Positive means you owe the supplier (shown as Cr). Negative means you paid an advance (Dr).
 
 ## Code layout
 
@@ -94,7 +106,11 @@ lib/
     shop_detail/             details, contact actions, statement with running balance + reconciliation
     outstanding/             area-grouped report, share as text or PDF
     analytics/               FIFO payment analysis (owner): credit-days filter, ageing, per-shop bills
-    staff/                   staff list/form/detail → manage-staff Edge Function
+    stock/                   Stock tab: Inventory | Purchases | Suppliers for owners, Inventory only for staff
+    inventory/               stock items: search, status/group filters, item detail with recent purchases (owner)
+    purchases/               paged purchase bills, month totals, bill detail (owner)
+    suppliers/               supplier list and detail with their bills (owner)
+    staff/                   staff list/form/detail → manage-staff Edge Function (owner, from Settings)
     sync_health/             Tally PC, per-company status, recent sync logs (owner)
     settings/                theme, change password, sign out
     home/                    navigation shell (NavigationBar / NavigationRail ≥ 600 dp), refresh

@@ -19,7 +19,7 @@ abstract final class Branch {
   static const shops = 1;
   static const outstanding = 2;
   static const analytics = 3;
-  static const staff = 4;
+  static const stock = 4;
 }
 
 class NavItem {
@@ -31,16 +31,19 @@ class NavItem {
   final IconData selectedIcon;
 }
 
-/// The navigation destinations a role gets. Analytics and Staff are owner-only.
-/// Settings is behind the avatar in every app bar (M3: at most five tabs).
+/// The navigation destinations a role gets. Analytics is owner-only; the
+/// Stock tab is "Inventory" for staff, who see only that part of it.
+/// Settings (and, for owners, Staff) is behind the avatar in every app bar
+/// (M3: at most five tabs).
 List<NavItem> navItemsFor(UserRole role) => [
   const NavItem(Branch.dashboard, 'Dashboard', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded),
   const NavItem(Branch.shops, 'Shops', Icons.storefront_outlined, Icons.storefront_rounded),
   const NavItem(Branch.outstanding, 'Outstanding', Icons.request_quote_outlined, Icons.request_quote_rounded),
   if (role == UserRole.owner) ...const [
     NavItem(Branch.analytics, 'Analytics', Icons.insights_outlined, Icons.insights_rounded),
-    NavItem(Branch.staff, 'Staff', Icons.group_outlined, Icons.group_rounded),
-  ],
+    NavItem(Branch.stock, 'Stock', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
+  ] else
+    const NavItem(Branch.stock, 'Inventory', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
 ];
 
 class HomeShell extends ConsumerStatefulWidget {

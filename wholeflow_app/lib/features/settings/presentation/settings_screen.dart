@@ -69,6 +69,14 @@ class SettingsScreen extends ConsumerWidget {
             const Divider(),
             if (user.isOwner)
               ListTile(
+                leading: const Icon(Icons.group_outlined),
+                title: const Text('Staff'),
+                subtitle: const Text('Accounts, companies and areas'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/staff'),
+              ),
+            if (user.isOwner)
+              ListTile(
                 leading: const Icon(Icons.sync_rounded),
                 title: const Text('Sync health'),
                 subtitle: const Text('Tally PC, companies and recent sync runs'),

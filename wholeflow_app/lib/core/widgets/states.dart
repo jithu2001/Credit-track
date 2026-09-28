@@ -121,6 +121,23 @@ class ErrorState extends StatelessWidget {
   }
 }
 
+/// A one-row error with Retry, for a section inside a screen.
+class ErrorTile extends StatelessWidget {
+  const ErrorTile({super.key, required this.error, required this.onRetry});
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: const Icon(Icons.error_outline_rounded),
+      title: Text(AppFailure.from(error).message),
+      trailing: TextButton(onPressed: onRetry, child: const Text('Retry')),
+    );
+  }
+}
+
 /// Centers content and caps its width on tablets.
 class ContentWidth extends StatelessWidget {
   const ContentWidth({super.key, required this.child});

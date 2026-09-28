@@ -9,13 +9,17 @@ import '../../features/auth/presentation/auth_screens.dart';
 import '../../features/auth/presentation/session_controller.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/home/home_shell.dart';
+import '../../features/inventory/presentation/stock_item_screen.dart';
 import '../../features/outstanding/presentation/outstanding_screen.dart';
+import '../../features/purchases/presentation/purchase_detail_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
 import '../../features/shops/presentation/shops_screen.dart';
 import '../../features/staff/presentation/staff_detail_screen.dart';
 import '../../features/staff/presentation/staff_form_screen.dart';
 import '../../features/staff/presentation/staff_list_screen.dart';
+import '../../features/stock/stock_screen.dart';
+import '../../features/suppliers/presentation/supplier_detail_screen.dart';
 import '../../features/sync_health/presentation/sync_health_screen.dart';
 
 part 'app_router.g.dart';
@@ -33,7 +37,9 @@ String? redirectFor(AsyncValue<Session> session, String location) {
     case SignedIn(:final user, :final mustChangePassword):
       if (mustChangePassword) return location == '/change-password' ? null : '/change-password';
       if (_authRoutes.contains(location)) return '/dashboard';
-      final ownerOnly = location.startsWith('/staff') || location.startsWith('/sync-health') || location.startsWith('/analytics');
+      // Staff may open /stock (Inventory only) and /stock/item/..., but not
+      // purchase bills or suppliers.
+      final ownerOnly = const ['/staff', '/sync-health', '/analytics', '/purchases', '/suppliers'].any(location.startsWith);
       if (ownerOnly && !user.isOwner) return '/dashboard';
       return null;
   }
@@ -58,6 +64,8 @@ GoRouter router(Ref ref) {
         path: '/shop/:id',
         builder: (context, state) => ShopDetailScreen(shopId: state.pathParameters['id']!),
       ),
+      // Opened from Settings; the fifth tab is Stock.
+      GoRoute(path: '/staff', builder: (context, state) => const StaffListScreen()),
       GoRoute(path: '/staff/new', builder: (context, state) => const StaffFormScreen()),
       GoRoute(
         path: '/staff/:id',
@@ -72,6 +80,18 @@ GoRouter router(Ref ref) {
       GoRoute(
         path: '/analytics/shop/:id',
         builder: (context, state) => ShopPaymentsScreen(shopId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/stock/item/:id',
+        builder: (context, state) => StockItemScreen(itemId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/purchases/:id',
+        builder: (context, state) => PurchaseDetailScreen(purchaseId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/suppliers/:id',
+        builder: (context, state) => SupplierDetailScreen(supplierId: state.pathParameters['id']!),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => HomeShell(navigationShell: shell),
@@ -89,7 +109,7 @@ GoRouter router(Ref ref) {
             routes: [GoRoute(path: '/analytics', builder: (context, state) => const AnalyticsScreen())],
           ),
           StatefulShellBranch(
-            routes: [GoRoute(path: '/staff', builder: (context, state) => const StaffListScreen())],
+            routes: [GoRoute(path: '/stock', builder: (context, state) => const StockScreen())],
           ),
         ],
       ),

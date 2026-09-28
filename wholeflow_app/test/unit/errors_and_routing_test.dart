@@ -54,9 +54,10 @@ void main() {
   });
 
   group('navigation by role', () {
-    test('Analytics and Staff tabs are owner-only', () {
-      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Analytics', 'Staff']);
-      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding']);
+    test('Analytics is owner-only; staff get the Stock tab as Inventory', () {
+      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Analytics', 'Stock']);
+      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Inventory']);
+      expect(navItemsFor(UserRole.staff).last.branch, Branch.stock);
     });
 
     test('redirects', () {
@@ -74,6 +75,14 @@ void main() {
       expect(redirectFor(const AsyncData(SignedIn(staff)), '/analytics/shop/1'), '/dashboard');
       expect(redirectFor(const AsyncData(SignedIn(owner)), '/analytics'), isNull);
       expect(redirectFor(const AsyncData(SignedIn(staff)), '/settings'), isNull);
+      // Stock: staff see inventory only.
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/stock'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/stock/item/1'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/purchases/1'), '/dashboard');
+      expect(redirectFor(const AsyncData(SignedIn(staff)), '/suppliers/1'), '/dashboard');
+      expect(redirectFor(const AsyncData(SignedIn(owner)), '/purchases/1'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(owner)), '/suppliers/1'), isNull);
+      expect(redirectFor(const AsyncData(SignedIn(owner)), '/staff'), isNull);
     });
   });
 }
