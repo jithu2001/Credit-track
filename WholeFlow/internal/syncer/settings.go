@@ -59,6 +59,11 @@ type SyncSettings struct {
 	IntervalSeconds    int  `json:"intervalSeconds"`
 	Transactions       bool `json:"transactions"`
 	FullReconcileHours int  `json:"fullReconcileHours"`
+	// Suppliers, Purchases and Inventory switch the purchasing sync steps.
+	// They default to on, also for config files written before they existed.
+	Suppliers bool `json:"suppliers"`
+	Purchases bool `json:"purchases"`
+	Inventory bool `json:"inventory"`
 }
 
 func (s SyncSettings) Interval() time.Duration { return time.Duration(s.IntervalSeconds) * time.Second }
@@ -89,7 +94,8 @@ func defaultSettings() Settings {
 	return Settings{
 		Version: settingsFileVersion,
 		Cloud:   CloudSettings{Provider: ProviderSupabase},
-		Sync:    SyncSettings{Enabled: false, IntervalSeconds: DefaultInterval, Transactions: true, FullReconcileHours: DefaultReconcileHrs},
+		Sync: SyncSettings{Enabled: false, IntervalSeconds: DefaultInterval, Transactions: true, FullReconcileHours: DefaultReconcileHrs,
+			Suppliers: true, Purchases: true, Inventory: true},
 	}
 }
 
@@ -175,6 +181,7 @@ func LoadSettings(dataDir string, sec secrets.Store) (*SettingsStore, error) {
 			return nil, fmt.Errorf("%s: %w", st.path, err)
 		}
 		st.s = merge(defaultSettings(), loaded)
+		defaultNewSyncOptions(b, &st.s)
 	case errors.Is(err, os.ErrNotExist):
 		// first run: keep defaults
 	default:
@@ -226,6 +233,9 @@ func (st *SettingsStore) applyEnv() {
 	})
 	set("SYNC_TRANSACTIONS", func(v string) { st.s.Sync.Transactions = isTrue(v) })
 	set("SYNC_ENABLED", func(v string) { st.s.Sync.Enabled = isTrue(v) })
+	set("SYNC_SUPPLIERS", func(v string) { st.s.Sync.Suppliers = isTrue(v) })
+	set("SYNC_PURCHASES", func(v string) { st.s.Sync.Purchases = isTrue(v) })
+	set("SYNC_INVENTORY", func(v string) { st.s.Sync.Inventory = isTrue(v) })
 	set("DEVELOPER_USERNAME", func(v string) { st.s.Developer.Username = v })
 	// DEVELOPER_PASSWORD is handled by the caller (it must be hashed): see SetDeveloperPasswordFromEnv.
 	set("SYNC_COMPANIES", func(v string) {
@@ -323,4 +333,20 @@ func writeJSONAtomic(path string, v any) error {
 		}
 	}
 	return nil
+}
+
+// defaultNewSyncOptions turns on sync options that a config file written by an
+// older version does not mention (absent keys unmarshal as false).
+func defaultNewSyncOptions(raw []byte, s *Settings) {
+	var probe struct {
+		Sync map[string]json.RawMessage `json:"sync"`
+	}
+	if json.Unmarshal(raw, &probe) != nil {
+		return
+	}
+	for key, field := range map[string]*bool{"suppliers": &s.Sync.Suppliers, "purchases": &s.Sync.Purchases, "inventory": &s.Sync.Inventory} {
+		if _, present := probe.Sync[key]; !present {
+			*field = true
+		}
+	}
 }

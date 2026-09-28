@@ -35,6 +35,9 @@ type Store struct {
 	states       map[string]cloud.SyncState  // by companyID|entity
 	Logs         []cloud.SyncLog
 	users        map[string]*userRow
+	suppliers    table[cloud.Supplier]
+	stockItems   table[cloud.StockItem]
+	purchases    table[cloud.Purchase]
 	seq          int
 }
 

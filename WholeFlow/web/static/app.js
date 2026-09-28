@@ -461,6 +461,10 @@ async function renderSyncMain() {
         <label><span class="l">Sync interval</span><select id="interval">${intervals.map((v) => `<option value="${v}" ${s.sync.intervalSeconds === v ? "selected" : ""}>${v < 3600 ? v / 60 + " min" : "1 hour"}</option>`).join("")}${intervals.includes(s.sync.intervalSeconds) ? "" : `<option value="${s.sync.intervalSeconds}" selected>${s.sync.intervalSeconds} s</option>`}</select></label>
         <label class="check"><input type="checkbox" checked disabled> Shops &amp; current balances (always)</label>
         <label class="check"><input type="checkbox" id="txns" ${s.sync.transactions ? "checked" : ""}> Transactions (vouchers, incremental)</label>
+        <label class="check"><input type="checkbox" id="syncSuppliers" ${s.sync.suppliers ? "checked" : ""}> Suppliers &amp; payables (Sundry Creditors)</label>
+        <label class="check"><input type="checkbox" id="syncPurchases" ${s.sync.purchases ? "checked" : ""}> Purchase bills with item lines (incremental)</label>
+        <label class="check"><input type="checkbox" id="syncInventory" ${s.sync.inventory ? "checked" : ""}> Inventory (stock items, qty &amp; value)</label>
+        <p class="small muted">Suppliers, purchases and inventory need the <code>0003_purchasing.sql</code> migration in Supabase. If it is missing, shops still sync and these show a warning.</p>
         <label><span class="l">Check for deleted vouchers every (hours)</span><input id="reconcile" type="number" min="1" max="720" value="${s.sync.fullReconcileHours}"></label>
         <label class="check"><input type="checkbox" id="enabled" ${s.sync.enabled ? "checked" : ""}> <strong>Background synchronisation enabled</strong></label>
         <div class="row"><button id="save" class="primary">Save settings</button><span id="saveResult" class="small"></span></div>
@@ -525,14 +529,14 @@ function renderSyncStatus() {
         ${st.configured ? "" : `<dt>Configuration</dt><dd><span class="tag warn">${esc(st.configMessage)}</span></dd>`}
       </dl>
       <div class="table-wrap"><table>
-        <thead><tr><th>Company</th><th>Status</th><th>Last successful sync</th><th class="num">Shops</th><th class="num">Transactions</th></tr></thead>
-        <tbody>${(st.companies || []).map((c) => `<tr><td>${esc(c.name || c.tallyId)}</td><td>${syncTag(c.status)}${c.lastError ? `<div class="small muted">${esc(c.lastErrorCode)}: ${esc(c.lastError)}</div>` : ""}</td><td>${fmtTime(c.lastSuccessAt)}</td><td class="num">${c.shopCount ?? 0}</td><td class="num">${c.transactionCount ?? 0}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No company selected yet.</td></tr>`}</tbody>
+        <thead><tr><th>Company</th><th>Status</th><th>Last successful sync</th><th class="num">Shops</th><th class="num">Transactions</th><th class="num">Suppliers</th><th class="num">Stock items</th><th class="num">Purchase bills</th></tr></thead>
+        <tbody>${(st.companies || []).map((c) => `<tr><td>${esc(c.name || c.tallyId)}</td><td>${syncTag(c.status)}${c.lastError ? `<div class="small muted">${esc(c.lastErrorCode)}: ${esc(c.lastError)}</div>` : ""}</td><td>${fmtTime(c.lastSuccessAt)}</td><td class="num">${c.shopCount ?? 0}</td><td class="num">${c.transactionCount ?? 0}</td><td class="num">${c.supplierCount ?? 0}</td><td class="num">${c.stockItemCount ?? 0}</td><td class="num">${c.purchaseCount ?? 0}</td></tr>${(c.warnings || []).map((w) => `<tr><td></td><td colspan="7"><div class="alert warn small" style="margin:0">Warning — ${esc(w)}</div></td></tr>`).join("")}`).join("") || `<tr><td colspan="8" class="empty">No company selected yet.</td></tr>`}</tbody>
       </table></div>
     </div>`;
   if ($("#lastRun") && last) {
-    $("#lastRun").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Company</th><th>Result</th><th>Mode</th><th class="num">Shops +/~/−</th><th class="num">Txns +/~/−</th><th class="num">Time</th></tr></thead>
+    $("#lastRun").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Company</th><th>Result</th><th>Mode</th><th class="num">Shops +/~/−</th><th class="num">Txns +/~/−</th><th class="num">Suppliers +/~/−</th><th class="num">Items +/~/−</th><th class="num">Bills +/~/−</th><th class="num">Time</th></tr></thead>
       <tbody>${(last.companies || []).map((c) => `<tr><td>${esc(c.name)}</td><td>${syncTag(c.status)}${c.errorCode ? `<div class="small muted">${esc(c.errorCode)}: ${esc(c.errorMessage)}</div>` : ""}</td><td>${esc(c.mode || "")}</td>
-        <td class="num">${c.shops.created}/${c.shops.updated}/${c.shops.deleted}</td><td class="num">${c.transactions.created}/${c.transactions.updated}/${c.transactions.deleted}</td><td class="num">${(c.durationMs / 1000).toFixed(1)}s</td></tr>`).join("") || `<tr><td colspan="6" class="empty">${esc(last.status)}${last.errorMessage ? ": " + esc(last.errorMessage) : ""}</td></tr>`}</tbody></table></div>`;
+        <td class="num">${c.shops.created}/${c.shops.updated}/${c.shops.deleted}</td><td class="num">${c.transactions.created}/${c.transactions.updated}/${c.transactions.deleted}</td>${[c.suppliers, c.stockItems, c.purchases].map((x) => `<td class="num">${x ? `${x.created}/${x.updated}/${x.deleted}` : "—"}</td>`).join("")}<td class="num">${(c.durationMs / 1000).toFixed(1)}s</td></tr>`).join("") || `<tr><td colspan="9" class="empty">${esc(last.status)}${last.errorMessage ? ": " + esc(last.errorMessage) : ""}</td></tr>`}</tbody></table></div>`;
   }
 }
 
@@ -567,7 +571,8 @@ function collectSyncSettings() {
   return {
     business: { id: $("#bizId").value, name: $("#bizName").value },
     cloud: { provider: $("#provider").value, supabaseUrl: $("#sbUrl").value, supabaseKey: $("#sbKey").value },
-    sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, fullReconcileHours: +$("#reconcile").value },
+    sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, fullReconcileHours: +$("#reconcile").value,
+            suppliers: $("#syncSuppliers").checked, purchases: $("#syncPurchases").checked, inventory: $("#syncInventory").checked },
     companies: [...document.querySelectorAll("input.cmp")].map((el) => ({ tallyId: el.dataset.id, name: el.dataset.name, enabled: el.checked })),
   };
 }
@@ -649,6 +654,416 @@ async function loadSyncLog() {
   catch (e) { el.textContent = "Could not load log: " + e.message; }
 }
 
+// ------------------------------------------------------------ suppliers, purchases, inventory
+//
+// Suppliers are ledgers under SUPPLIER_GROUPS (default Sundry Creditors):
+// for them a Cr balance is money we owe (payable), a Dr balance an advance.
+// Purchases and stock items are read from Tally once per company and kept
+// until "Refresh from Tally".
+
+const qtyFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 3 });
+const qty = (n, unit) => `${qtyFmt.format(n || 0)}${unit ? ` <span class="muted small">${esc(unit)}</span>` : ""}`;
+const payTag = (b) => (b && b.type === "CR" ? `<span class="tag cr">Payable</span>` : b && b.type === "DR" ? `<span class="tag dr">Advance</span>` : "");
+const STOCK_STATUS = { in_stock: ["ok", "In stock"], low: ["warn", "Low"], zero: ["neutral", "Out of stock"], negative: ["bad", "Negative"] };
+const stockTag = (s) => { const [c, l] = STOCK_STATUS[s] || ["neutral", s]; return `<span class="tag ${c}">${esc(l)}</span>`; };
+const SUPPLIER_CATEGORY_LABEL = { purchases: "Total Purchases", payments: "Total Payments", purchase_returns: "Total Purchase Returns (Debit Notes)", adjustments: "Total Adjustments (Journal / other)" };
+const hashWith = (base, p) => base + "?" + new URLSearchParams(Object.entries(p).filter(([, v]) => v !== "" && v != null)).toString();
+const pager = (r, what) => `
+  <div class="pager">
+    <span class="muted">${r.total} ${what}${r.total === 1 ? "" : "s"} · page ${r.total ? r.page : 0} of ${r.pages}</span>
+    <select id="pageSize">${opts([[25, "25 / page"], [50, "50 / page"], [100, "100 / page"], [500, "500 / page"]], String(r.pageSize))}</select>
+    <button id="prev" ${r.page <= 1 ? "disabled" : ""}>‹ Prev</button>
+    <button id="next" ${r.page >= r.pages ? "disabled" : ""}>Next ›</button>
+  </div>`;
+const bindPager = (q, load) => {
+  $("#prev").onclick = () => { q.page--; load(); };
+  $("#next").onclick = () => { q.page++; load(); };
+  $("#pageSize").onchange = (e) => { q.pageSize = +e.target.value; q.page = 1; load(); };
+};
+
+// ---- suppliers
+
+async function viewSuppliers(params) {
+  if (needCompany()) return;
+  const q = { q: params.get("q") || "", type: params.get("type") || "", sort: params.get("sort") || "balance_desc" };
+  view.innerHTML = `
+    <h1>Suppliers</h1>
+    <div id="kpis" class="grid kpis"></div>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Search suppliers…" value="${esc(q.q)}">
+        <select id="type">${opts([["", "All balances"], ["cr", "Payable (Cr)"], ["dr", "Advance (Dr)"], ["zero", "Settled"]], q.type)}</select>
+        <select id="sort">${opts([["balance_desc", "Highest payable first"], ["balance_asc", "Highest advance first"], ["name_asc", "Name A→Z"], ["name_desc", "Name Z→A"]], q.sort)}</select>
+        <span class="spacer"></span>
+        <a id="csv"><button>Export CSV</button></a>
+        <a id="xlsx"><button>Export Excel</button></a>
+      </div>
+      <div id="results"><div class="loading">Loading from Tally…</div></div>
+    </div>`;
+  const load = async () => {
+    const p = { q: $("#q").value.trim(), type: $("#type").value, sort: $("#sort").value, pageSize: 500 };
+    history.replaceState(null, "", hashWith("#/suppliers", { q: p.q, type: p.type, sort: p.sort }));
+    $("#csv").href = exportUrl("suppliers", "csv", p);
+    $("#xlsx").href = exportUrl("suppliers", "xlsx", p);
+    let r;
+    try { r = await api("/api/suppliers", p); } catch (e) { $("#results").innerHTML = errorBox(e); return; }
+    $("#kpis").innerHTML = `
+      ${kpi("Suppliers", r.totalSuppliers, esc(r.groups.join(", ")))}
+      ${kpi("Total payable", money(r.totalPayable), `${r.suppliersPayable} supplier(s) with a Cr balance`, "cr")}
+      ${kpi("Advances paid", money(r.totalAdvance), `${r.suppliersAdvance} supplier(s) with a Dr balance`, "dr")}
+      ${kpi("Net", `${money(r.netPayable.amount)} ${drcr(r.netPayable.type)}`, r.netPayable.type === "CR" ? "We owe suppliers overall" : r.netPayable.type === "DR" ? "Suppliers owe us / advances exceed dues" : "Settled")}`;
+    $("#results").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Supplier</th><th>GSTIN</th><th>Phone</th><th>Tally group</th><th class="num">Balance</th><th></th></tr></thead>
+        <tbody>${r.items.map((c) => `<tr>
+          <td><a href="#/suppliers/${encodeURIComponent(c.id)}">${esc(c.name)}</a></td>
+          <td class="small">${esc(c.gstin)}</td>
+          <td>${esc((c.phones || []).join(", "))}</td>
+          <td class="small muted">${esc(c.group)}</td>
+          <td class="num">${bal(c.currentBalance)}</td>
+          <td>${payTag(c.currentBalance)}</td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">No suppliers match.</td></tr>`}</tbody>
+      </table></div>
+      <p class="muted small">${r.total} supplier${r.total === 1 ? "" : "s"}. Cr = we owe the supplier; Dr = advance paid or excess payment.</p>`;
+  };
+  $("#q").addEventListener("input", debounce(load));
+  for (const id of ["type", "sort"]) $("#" + id).addEventListener("change", load);
+  load();
+}
+
+async function viewSupplier(id) {
+  if (needCompany()) return;
+  view.innerHTML = `<div class="loading">Loading from Tally…</div>`;
+  let r;
+  try { r = await api(`/api/suppliers/${encodeURIComponent(id)}`); } catch (e) { view.innerHTML = `<p><a href="#/suppliers">← Suppliers</a></p>` + errorBox(e); return; }
+  const c = r.supplier;
+  const row = (k, v) => (v ? `<dt>${k}</dt><dd>${v}</dd>` : "");
+  const b = c.currentBalance;
+  view.innerHTML = `
+    <p><a href="javascript:history.back()">← Back</a></p>
+    <h1>${esc(c.name)} ${payTag(b)}</h1>
+    ${c.parseWarnings ? `<div class="alert warn">Some values from Tally could not be read: ${esc(c.parseWarnings.join("; "))}</div>` : ""}
+    <div class="grid two">
+      <section class="panel"><h2>Contact</h2><dl class="kv">
+        ${row("Phone", esc((c.phones || []).join(", ")))}
+        ${row("Contact person", esc(c.contactPerson))}
+        ${row("Email", esc(c.email))}
+        ${row("Address", (c.address || []).map(esc).join("<br>"))}
+        ${row("State", esc(c.state))}
+        ${row("Pincode", esc(c.pincode))}
+        ${row("GSTIN", esc(c.gstin))}
+        ${row("GST registration", esc(c.gstRegistrationType))}
+        ${row("Alias", esc((c.aliases || []).join(", ")))}
+        ${row("Tally group", esc(c.group))}
+      </dl></section>
+      <section class="panel"><h2>Account summary <span class="muted small">live from Tally · ${fmtTime(r.fetchedAt)}</span></h2><dl class="kv">
+        <dt>Opening balance</dt><dd>${bal(c.openingBalance)}</dd>
+        <dt>Current balance</dt><dd style="font-size:18px;font-weight:650">${bal(b)}</dd>
+        <dt>Meaning</dt><dd>${b.type === "CR" ? "Cr — amount we owe this supplier" : b.type === "DR" ? "Dr — advance paid / the supplier owes us" : "Settled (zero balance)"}</dd>
+      </dl>
+      <p class="small"><a href="${hashWith("#/purchases", { supplier: c.name })}">Purchase bills from this supplier →</a></p></section>
+    </div>
+    <section class="panel" id="txn"><h2>Transaction summary</h2><div class="loading">Reading vouchers from Tally…</div></section>`;
+
+  let t;
+  try { t = await api(`/api/suppliers/${encodeURIComponent(id)}/transactions`); } catch (e) { $("#txn").innerHTML = `<h2>Transaction summary</h2>` + errorBox(e); return; }
+  const ex = t.excluded, exN = ex.optional + ex.cancelled + ex.postDated;
+  $("#txn").innerHTML = `
+    <h2>Transaction summary <span class="muted small">${fmtDate(t.from)} – ${fmtDate(t.to)}</span></h2>
+    ${t.reconciled
+      ? `<div class="alert ok small">Checked: opening balance + these transactions = Tally's current balance (${bal(t.tallyClosing)}).</div>`
+      : `<div class="alert warn small">These transactions do not add up to Tally's balance: opening ${bal(t.opening)} + movement ${bal(t.movement)} = ${bal(t.computedClosing)}, but Tally reports ${bal(t.tallyClosing)}. The <strong>current balance above is Tally's own figure</strong>.</div>`}
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th class="num">Vouchers</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Net</th></tr></thead>
+      <tbody>${t.totals.map((x) => `<tr><td>${SUPPLIER_CATEGORY_LABEL[x.category] || esc(x.category)}</td><td class="num">${x.count}</td><td class="num">${money(x.debit)}</td><td class="num">${money(x.credit)}</td><td class="num">${bal(x.net)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    ${exN ? `<p class="muted small">Not counted (as in Tally's balance): ${ex.optional} optional, ${ex.cancelled} cancelled, ${ex.postDated} post-dated voucher(s).</p>` : ""}
+    <h2 style="margin-top:20px">Transactions (${t.transactions.length})</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Voucher type</th><th>No.</th><th>Narration</th><th class="num">Amount</th></tr></thead>
+      <tbody id="txrows"></tbody>
+    </table></div>
+    <div class="pager"><button id="more" hidden>Show all</button></div>`;
+  const rows = t.transactions.map((x) => `<tr><td>${fmtDate(x.date)}</td><td>${esc(x.voucherType)}</td><td>${esc(x.number)}</td><td class="small">${esc(x.narration)}</td><td class="num">${bal(x.amount)}</td></tr>`);
+  const show = (n) => { $("#txrows").innerHTML = rows.slice(0, n).join("") || `<tr><td colspan="5" class="empty">No transactions.</td></tr>`; $("#more").hidden = rows.length <= n; };
+  show(25);
+  $("#more").onclick = () => show(rows.length);
+}
+
+// ---- purchases
+
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+function quickRanges() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const fyStart = new Date(m >= 3 ? y : y - 1, 3, 1);
+  return [
+    ["month", "This month", isoDay(new Date(y, m, 1)), isoDay(now)],
+    ["lastmonth", "Last month", isoDay(new Date(y, m - 1, 1)), isoDay(new Date(y, m, 0))],
+    ["fy", "This FY", isoDay(fyStart), isoDay(new Date(fyStart.getFullYear() + 1, 2, 31))],
+    ["all", "All", "", ""],
+  ];
+}
+
+async function viewPurchases(params) {
+  if (needCompany()) return;
+  const q = { tab: params.get("tab") || "bills", from: params.get("from") || "", to: params.get("to") || "", supplier: params.get("supplier") || "",
+              q: params.get("q") || "", page: +params.get("page") || 1, pageSize: +params.get("pageSize") || 50 };
+  view.innerHTML = `
+    <h1>Purchases</h1>
+    <div class="panel">
+      <div class="toolbar">
+        <span class="tabs">
+          <button data-tab="bills" class="${q.tab === "bills" ? "primary" : ""}">Bills</button>
+          <button data-tab="items" class="${q.tab === "items" ? "primary" : ""}">By item</button>
+        </span>
+        <label class="small">From <input type="date" id="from" value="${esc(q.from)}"></label>
+        <label class="small">To <input type="date" id="to" value="${esc(q.to)}"></label>
+        ${quickRanges().map(([k, l]) => `<button data-range="${k}">${l}</button>`).join("")}
+      </div>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="${q.tab === "items" ? "Search items…" : "Search supplier, bill no., item…"}" value="${esc(q.q)}">
+        <select id="supplier"><option value="">All suppliers</option>${q.supplier ? `<option selected>${esc(q.supplier)}</option>` : ""}</select>
+        <span class="spacer"></span>
+        <a id="csv"><button>Export CSV</button></a>
+        <a id="xlsx"><button>Export Excel</button></a>
+        ${q.tab === "bills" ? `<a id="lines"><button title="One row per item line">Export lines (Excel)</button></a>` : ""}
+      </div>
+    </div>
+    <div id="kpis" class="grid kpis"></div>
+    <div id="results"><div class="loading">Reading purchase vouchers from Tally…</div></div>`;
+
+  const params_ = () => ({ from: $("#from").value, to: $("#to").value, supplier: $("#supplier").value, q: $("#q").value.trim() });
+  const load = async () => {
+    const f = params_();
+    history.replaceState(null, "", hashWith("#/purchases", { tab: q.tab === "bills" ? "" : q.tab, ...f, page: q.page > 1 ? q.page : "" }));
+    const report = q.tab === "items" ? "purchase-items" : "purchases";
+    $("#csv").href = exportUrl(report, "csv", f);
+    $("#xlsx").href = exportUrl(report, "xlsx", f);
+    if ($("#lines")) $("#lines").href = exportUrl("purchase-lines", "xlsx", f);
+    try {
+      if (q.tab === "items") await loadItems(f); else await loadBills(f);
+    } catch (e) { $("#results").innerHTML = errorBox(e); }
+  };
+
+  const fillSuppliers = (names) => {
+    const sel = $("#supplier"), cur = sel.value;
+    if (sel.options.length > 2 || !names) return;
+    sel.innerHTML = `<option value="">All suppliers</option>` + names.map((n) => `<option ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("");
+  };
+
+  const loadBills = async (f) => {
+    const r = await api("/api/purchases", { ...f, page: q.page, pageSize: q.pageSize });
+    fillSuppliers(r.suppliers);
+    const t = r.totals;
+    $("#kpis").innerHTML = `
+      ${kpi("Bills", t.bills, r.firstDate ? `Tally has bills from ${fmtDate(r.firstDate)} to ${fmtDate(r.lastDate)}` : "")}
+      ${kpi("Taxable value", money(t.taxable), "Sum of item lines")}
+      ${kpi("Tax & other", money(t.other), "GST, TCS, freight, round off")}
+      ${kpi("Purchase total", money(t.total), "Bill amounts credited to suppliers")}
+      ${kpi("Quantity", qtyFmt.format(t.qty), "All units added together")}`;
+    const ex = r.excluded;
+    $("#results").innerHTML = `
+      <div class="grid" style="grid-template-columns:minmax(0,3fr) minmax(260px,1fr)">
+        <section class="panel">
+          <div class="table-wrap"><table>
+            <thead><tr><th>Date</th><th>Voucher no.</th><th>Supplier</th><th>Supplier bill</th><th class="num">Items</th><th class="num">Qty</th><th class="num">Taxable</th><th class="num">Tax &amp; other</th><th class="num">Total</th></tr></thead>
+            <tbody>${r.items.map((p) => `<tr>
+              <td>${fmtDate(p.date)}</td>
+              <td><a href="#/purchases/${encodeURIComponent(p.id)}">${esc(p.number || "(no number)")}</a><div class="small muted">${esc(p.voucherType)}</div></td>
+              <td>${esc(p.supplier)}</td><td class="small">${esc(p.reference)}</td>
+              <td class="num">${p.lineCount}</td><td class="num">${qtyFmt.format(p.qty)}</td>
+              <td class="num">${money(p.taxable)}</td><td class="num">${money(p.other)}</td><td class="num"><strong>${money(p.total)}</strong></td>
+            </tr>`).join("") || `<tr><td colspan="9" class="empty">No purchase bills match.</td></tr>`}</tbody>
+          </table></div>
+          ${pager(r, "bill")}
+          ${ex.cancelled + ex.optional ? `<p class="muted small">Not included: ${ex.cancelled} cancelled, ${ex.optional} optional voucher(s).</p>` : ""}
+        </section>
+        <section class="panel"><h2>By supplier</h2>
+          <table><tbody>${r.bySupplier.map((s) => `<tr><td><a href="#" data-sup="${esc(s.supplier)}">${esc(s.supplier)}</a><div class="small muted">${s.bills} bill${s.bills === 1 ? "" : "s"}</div></td><td class="num">${money(s.total)}</td></tr>`).join("") || `<tr><td class="empty">—</td></tr>`}</tbody></table>
+        </section>
+      </div>`;
+    bindPager(q, load);
+    $("#results").querySelectorAll("a[data-sup]").forEach((a) => (a.onclick = (e) => {
+      e.preventDefault(); $("#supplier").value = a.dataset.sup; q.page = 1; load();
+    }));
+  };
+
+  const loadItems = async (f) => {
+    const [r, bills] = await Promise.all([api("/api/purchases/items", f), api("/api/purchases", { ...f, q: "", pageSize: 1 })]);
+    fillSuppliers(bills.suppliers);
+    $("#kpis").innerHTML = `
+      ${kpi("Items purchased", r.count, "Distinct stock items")}
+      ${kpi("Taxable value", money(r.totalAmount), "Sum of item lines")}
+      ${kpi("Bills", bills.totals.bills, "In the selected period")}`;
+    $("#results").innerHTML = `
+      <section class="panel"><div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Avg rate</th><th class="num">Last rate</th><th>Last purchased</th><th class="num">Bills</th><th class="num">Amount</th></tr></thead>
+        <tbody>${r.items.map((it) => `<tr>
+          <td><a href="#/inventory/${encodeURIComponent(it.item)}">${esc(it.item)}</a></td>
+          <td class="num">${qty(it.qty, it.unit)}</td><td class="num">${money(it.avgRate)}</td><td class="num">${money(it.lastRate)}</td>
+          <td>${fmtDate(it.lastDate)}</td><td class="num">${it.bills}</td><td class="num"><strong>${money(it.amount)}</strong></td>
+        </tr>`).join("") || `<tr><td colspan="7" class="empty">No items match.</td></tr>`}</tbody>
+      </table></div></section>`;
+  };
+
+  const reset = () => { q.page = 1; load(); };
+  view.querySelectorAll("button[data-tab]").forEach((b) => (b.onclick = () => { q.tab = b.dataset.tab; q.page = 1; q.q = ""; history.replaceState(null, "", hashWith("#/purchases", { tab: q.tab === "bills" ? "" : q.tab, ...params_(), q: "" })); viewPurchases(new URLSearchParams(location.hash.split("?")[1] || "")); }));
+  view.querySelectorAll("button[data-range]").forEach((b) => (b.onclick = () => {
+    const [, , from, to] = quickRanges().find(([k]) => k === b.dataset.range);
+    $("#from").value = from; $("#to").value = to; reset();
+  }));
+  $("#q").addEventListener("input", debounce(reset));
+  for (const id of ["from", "to", "supplier"]) $("#" + id).addEventListener("change", reset);
+  load();
+}
+
+async function viewPurchase(id) {
+  if (needCompany()) return;
+  view.innerHTML = `<div class="loading">Loading from Tally…</div>`;
+  let r;
+  try { r = await api(`/api/purchases/${encodeURIComponent(id)}`); } catch (e) { view.innerHTML = `<p><a href="#/purchases">← Purchases</a></p>` + errorBox(e); return; }
+  const p = r.purchase;
+  const row = (k, v) => (v ? `<dt>${k}</dt><dd>${v}</dd>` : "");
+  view.innerHTML = `
+    <p><a href="javascript:history.back()">← Back</a></p>
+    <h1>Purchase ${esc(p.number)} <span class="muted small">${fmtDate(p.date)}</span></h1>
+    <div class="grid two">
+      <section class="panel"><h2>Bill</h2><dl class="kv">
+        ${row("Supplier", `<a href="${hashWith("#/purchases", { supplier: p.supplier })}">${esc(p.supplier)}</a>`)}
+        ${row("Date", fmtDate(p.date))}
+        ${row("Voucher type", esc(p.voucherType))}
+        ${row("Voucher no.", esc(p.number))}
+        ${row("Supplier bill no.", esc(p.reference))}
+        ${row("Narration", esc(p.narration))}
+      </dl></section>
+      <section class="panel"><h2>Amounts</h2><dl class="kv">
+        <dt>Taxable value</dt><dd>${money(p.taxable)}</dd>
+        <dt>Tax &amp; other</dt><dd>${money(p.other)}</dd>
+        <dt>Bill total</dt><dd style="font-size:18px;font-weight:650">${money(p.total)}</dd>
+        <dt>Quantity</dt><dd>${qtyFmt.format(p.qty)}</dd>
+      </dl></section>
+    </div>
+    <section class="panel"><h2>Items (${(p.lines || []).length})</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Item</th><th>Godown</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Disc %</th><th class="num">Amount</th></tr></thead>
+        <tbody>${(p.lines || []).map((l, i) => `<tr><td class="muted">${i + 1}</td><td><a href="#/inventory/${encodeURIComponent(l.item)}">${esc(l.item)}</a></td><td class="small">${esc(l.godown)}</td>
+          <td class="num">${qty(l.qty, l.unit)}</td><td class="num">${money(l.rate)}</td><td class="num">${l.discount ? l.discount : ""}</td><td class="num">${money(l.amount)}</td></tr>`).join("") || `<tr><td colspan="7" class="empty">No item lines (accounting-only voucher).</td></tr>`}</tbody>
+        <tfoot><tr><td></td><td>Taxable value</td><td></td><td class="num">${qtyFmt.format(p.qty)}</td><td></td><td></td><td class="num">${money(p.taxable)}</td></tr></tfoot>
+      </table></div></section>
+    <section class="panel"><h2>Accounting entries <span class="muted small">(supplier's entry omitted)</span></h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ledger</th><th class="num">Amount</th></tr></thead>
+        <tbody>${(p.ledgers || []).map((l) => `<tr><td>${esc(l.ledger)}</td><td class="num">${bal(l.amount)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td>Credited to ${esc(p.supplier)}</td><td class="num">${money(p.total)} <span class="tag cr">Cr</span></td></tr></tfoot>
+      </table></div></section>`;
+}
+
+// ---- inventory
+
+async function viewInventory(params) {
+  if (needCompany()) return;
+  const q = { q: params.get("q") || "", group: params.get("group") || "", status: params.get("status") || "", sort: params.get("sort") || "name_asc",
+              page: +params.get("page") || 1, pageSize: +params.get("pageSize") || 50 };
+  view.innerHTML = `
+    <h1>Inventory <span class="muted small">stock position from Tally</span></h1>
+    <div id="kpis" class="grid kpis"></div>
+    <div class="panel">
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="Search item, part no., group…" value="${esc(q.q)}">
+        <select id="group"><option value="">All stock groups</option>${q.group ? `<option selected>${esc(q.group)}</option>` : ""}</select>
+        <select id="status">${opts([["", "All items"], ["available", "On hand (qty > 0)"], ["low", "Low (at/below reorder level)"], ["zero", "Out of stock"], ["negative", "Negative stock"]], q.status)}</select>
+        <select id="sort">${opts([["name_asc", "Name A→Z"], ["value_desc", "Highest value first"], ["qty_desc", "Highest qty first"], ["qty_asc", "Lowest qty first"], ["group_asc", "Stock group"]], q.sort)}</select>
+        <span class="spacer"></span>
+        <a id="csv"><button>Export CSV</button></a>
+        <a id="xlsx"><button>Export Excel</button></a>
+      </div>
+      <div id="results"><div class="loading">Reading stock items from Tally…</div></div>
+    </div>`;
+  const load = async () => {
+    const p = { q: $("#q").value.trim(), group: $("#group").value, status: $("#status").value, sort: $("#sort").value, page: q.page, pageSize: q.pageSize };
+    history.replaceState(null, "", hashWith("#/inventory", { q: p.q, group: p.group, status: p.status, sort: p.sort === "name_asc" ? "" : p.sort, page: q.page > 1 ? q.page : "" }));
+    $("#csv").href = exportUrl("inventory", "csv", p);
+    $("#xlsx").href = exportUrl("inventory", "xlsx", p);
+    let r;
+    try { r = await api("/api/inventory", p); } catch (e) { $("#results").innerHTML = errorBox(e); return; }
+    const sel = $("#group");
+    if (sel.options.length <= 2) {
+      const cur = sel.value;
+      sel.innerHTML = `<option value="">All stock groups</option>` + r.groups.map((g) => `<option value="${esc(g.group)}" ${g.group === cur ? "selected" : ""}>${esc(g.group)} (${g.items})</option>`).join("");
+    }
+    const a = r.all, f = r.filtered, filtered = f.items !== a.items;
+    $("#kpis").innerHTML = `
+      ${kpi("Stock items", a.items, filtered ? `${f.items} match the filters` : "")}
+      ${kpi("Stock value", money(a.value), filtered ? `${money(f.value)} for the filtered items` : "At Tally's valuation")}
+      ${kpi("On hand", a.inStock + a.low, a.low ? `${a.low} at or below reorder level` : "Items with qty > 0", "cr")}
+      ${kpi("Out of stock", a.zero, "Qty zero")}
+      ${kpi("Negative stock", a.negative, a.negative ? "Sold more than recorded in stock — check in Tally" : "None", a.negative ? "dr" : "")}`;
+    $("#results").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th>Stock group</th><th class="num">Closing qty</th><th class="num">Rate</th><th class="num">Value</th><th>Status</th></tr></thead>
+        <tbody>${r.items.map((it) => `<tr>
+          <td><a href="#/inventory/${encodeURIComponent(it.id)}">${esc(it.name)}</a>${it.aliases ? `<div class="small muted">${esc(it.aliases.join(", "))}</div>` : ""}</td>
+          <td class="small">${esc(it.group)}</td>
+          <td class="num ${it.closingQty < 0 ? "dr" : ""}">${qty(it.closingQty, it.unit)}</td>
+          <td class="num">${it.closingRate ? money(it.closingRate) : ""}</td>
+          <td class="num">${money(it.closingValue)}</td>
+          <td>${stockTag(it.status)}</td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">No stock items match.</td></tr>`}</tbody>
+        <tfoot><tr><td>${f.items} item${f.items === 1 ? "" : "s"}</td><td></td><td class="num">${qtyFmt.format(f.qty)}</td><td></td><td class="num">${money(f.value)}</td><td></td></tr></tfoot>
+      </table></div>
+      ${pager(r, "item")}`;
+    bindPager(q, load);
+  };
+  const reset = () => { q.page = 1; load(); };
+  $("#q").addEventListener("input", debounce(reset));
+  for (const id of ["group", "status", "sort"]) $("#" + id).addEventListener("change", reset);
+  load();
+}
+
+async function viewStockItem(id) {
+  if (needCompany()) return;
+  view.innerHTML = `<div class="loading">Loading from Tally…</div>`;
+  let r;
+  try { r = await api(`/api/inventory/${encodeURIComponent(id)}`); } catch (e) { view.innerHTML = `<p><a href="#/inventory">← Inventory</a></p>` + errorBox(e); return; }
+  const it = r.item;
+  const row = (k, v) => (v || v === 0 ? `<dt>${k}</dt><dd>${v}</dd>` : "");
+  view.innerHTML = `
+    <p><a href="javascript:history.back()">← Back</a></p>
+    <h1>${esc(it.name)} ${stockTag(it.status)}</h1>
+    ${it.parseWarnings ? `<div class="alert warn">Some values from Tally could not be read: ${esc(it.parseWarnings.join("; "))}</div>` : ""}
+    <div class="grid two">
+      <section class="panel"><h2>Item</h2><dl class="kv">
+        ${row("Stock group", `<a href="${hashWith("#/inventory", { group: it.group })}">${esc(it.group)}</a>`)}
+        ${row("Category", esc(it.category))}
+        ${row("Part no. / alias", esc((it.aliases || []).join(", ")))}
+        ${row("Unit", esc(it.unit))}
+        ${row("GST", it.gstApplicable ? "Applicable" : "Not applicable")}
+        ${it.reorderLevel ? row("Reorder level", qty(it.reorderLevel, it.unit)) : ""}
+        ${it.minOrderQty ? row("Minimum order", qty(it.minOrderQty, it.unit)) : ""}
+      </dl></section>
+      <section class="panel"><h2>Stock position <span class="muted small">from Tally · ${fmtTime(r.fetchedAt)}</span></h2><dl class="kv">
+        <dt>Opening</dt><dd>${qty(it.openingQty, it.unit)} · ${money(it.openingValue)}</dd>
+        <dt>Closing qty</dt><dd style="font-size:18px;font-weight:650" class="${it.closingQty < 0 ? "dr" : ""}">${qty(it.closingQty, it.unit)}</dd>
+        <dt>Valuation rate</dt><dd>${it.closingRate ? money(it.closingRate) + (it.unit ? " / " + esc(it.unit) : "") : "—"}</dd>
+        <dt>Closing value</dt><dd><strong>${money(it.closingValue)}</strong></dd>
+      </dl></section>
+    </div>
+    <section class="panel" id="hist"><h2>Purchase history</h2><div class="loading">Reading purchase vouchers from Tally…</div></section>`;
+
+  let h;
+  try { h = await api(`/api/inventory/${encodeURIComponent(id)}/purchases`); } catch (e) { $("#hist").innerHTML = `<h2>Purchase history</h2>` + errorBox(e); return; }
+  $("#hist").innerHTML = `
+    <h2>Purchase history <span class="muted small">${h.count} line${h.count === 1 ? "" : "s"}</span></h2>
+    ${h.count ? `<div class="grid kpis">${kpi("Purchased", qty(h.qty, it.unit))}${kpi("Amount", money(h.amount), "Taxable value")}${kpi("Average rate", money(h.avgRate))}${kpi("Last rate", money(h.purchases[0].rate), fmtDate(h.purchases[0].date))}</div>` : ""}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Voucher no.</th><th>Supplier</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr></thead>
+      <tbody>${h.purchases.map((x) => `<tr><td>${fmtDate(x.date)}</td><td><a href="#/purchases/${encodeURIComponent(x.purchaseId)}">${esc(x.number)}</a></td><td>${esc(x.supplier)}</td>
+        <td class="num">${qty(x.qty, x.unit)}</td><td class="num">${money(x.rate)}</td><td class="num">${money(x.amount)}</td></tr>`).join("") || `<tr><td colspan="6" class="empty">No purchases of this item in the books.</td></tr>`}</tbody>
+    </table></div>`;
+}
+
 // ------------------------------------------------------------ router
 
 async function route() {
@@ -661,6 +1076,9 @@ async function route() {
   switch (parts[0]) {
     case "shops": return parts[1] ? viewShop(decodeURIComponent(parts[1])) : viewShops(params);
     case "outstanding": return viewOutstanding(params);
+    case "suppliers": return parts[1] ? viewSupplier(decodeURIComponent(parts[1])) : viewSuppliers(params);
+    case "purchases": return parts[1] ? viewPurchase(decodeURIComponent(parts[1])) : viewPurchases(params);
+    case "inventory": return parts[1] ? viewStockItem(decodeURIComponent(parts.slice(1).join("/"))) : viewInventory(params);
     case "status": return viewStatus();
     case "sync": return viewSync();
     default: return viewDashboard();

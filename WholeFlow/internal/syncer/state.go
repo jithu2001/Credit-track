@@ -44,6 +44,15 @@ type CompanyState struct {
 	LastFullReconcileAt *time.Time `json:"lastFullReconcileAt,omitempty"`
 	ShopCount           int        `json:"shopCount"`
 	TransactionCount    int        `json:"transactionCount"`
+
+	// Suppliers, stock items and purchase bills (see purchasing.go).
+	SupplierCount           int        `json:"supplierCount,omitempty"`
+	StockItemCount          int        `json:"stockItemCount,omitempty"`
+	PurchaseCount           int        `json:"purchaseCount,omitempty"`
+	PurchaseCursor          int64      `json:"purchaseCursor,omitempty"` // highest AlterID of a purchase voucher synced
+	LastPurchaseReconcileAt *time.Time `json:"lastPurchaseReconcileAt,omitempty"`
+	// Warnings lists the secondary steps that failed in the last run.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type StateStore struct {

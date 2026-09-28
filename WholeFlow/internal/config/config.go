@@ -23,6 +23,8 @@ type Config struct {
 	TallyTimeout   time.Duration
 	DefaultCompany string
 	ShopGroups     []string
+	// SupplierGroups are the Tally groups whose ledgers are suppliers.
+	SupplierGroups []string
 
 	ListenAddr string
 	LogDir     string
@@ -72,6 +74,12 @@ func Load() (*Config, error) {
 	}
 	if len(c.ShopGroups) == 0 {
 		return nil, fmt.Errorf("SHOP_GROUPS must name at least one Tally group")
+	}
+
+	for _, g := range strings.Split(env("SUPPLIER_GROUPS", "Sundry Creditors"), ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			c.SupplierGroups = append(c.SupplierGroups, g)
+		}
 	}
 
 	c.TallyINI = findTallyINI(os.Getenv("TALLY_INI"))

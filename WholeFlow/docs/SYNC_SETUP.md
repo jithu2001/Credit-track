@@ -6,7 +6,7 @@ WholeFlow is one executable, `wholeflow.exe`. It serves the shop-outstanding web
 
 - Windows 10/11 PC with TallyPrime (Silver is fine) and the company data.
 - TallyPrime acting as **Server** or **Both**: Help (F1) > Settings > Connectivity > Client/Server configuration. Note the port (default 9000); the app reads it from `tally.ini` automatically.
-- A Supabase project with `supabase/migrations/0001_init.sql` applied.
+- A Supabase project with `supabase/migrations/0001_init.sql`, `0002_mobile_app.sql` and `0003_purchasing.sql` applied in that order (SQL Editor → paste → Run). Without 0003, shops and transactions still sync; suppliers, stock items and purchases show a warning on the Cloud Sync page until it is applied.
 - A row in `businesses` for this customer; note its `id`.
 - The project's **service-role key** (Supabase dashboard > Project Settings > API). Treat it like a root password.
 - `bin\wholeflow.exe` built with `go build -o bin\wholeflow.exe ./cmd/server`.

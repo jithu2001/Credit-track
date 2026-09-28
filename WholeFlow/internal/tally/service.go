@@ -17,13 +17,27 @@ type Service struct {
 	client     *Client
 	log        *slog.Logger
 	shopGroups []string
-	host       string
-	port       int
+	// supplierGroups are the Tally groups whose ledgers are suppliers
+	// (default: Sundry Creditors, including sub-groups).
+	supplierGroups []string
+	host           string
+	port           int
 }
 
 func NewService(client *Client, log *slog.Logger, host string, port int, shopGroups []string) *Service {
-	return &Service{client: client, log: log, host: host, port: port, shopGroups: shopGroups}
+	return &Service{client: client, log: log, host: host, port: port, shopGroups: shopGroups,
+		supplierGroups: []string{"Sundry Creditors"}}
 }
+
+// SetSupplierGroups replaces the supplier groups (SUPPLIER_GROUPS).
+func (s *Service) SetSupplierGroups(groups []string) {
+	if len(groups) > 0 {
+		s.supplierGroups = groups
+	}
+}
+
+// SupplierGroups returns the groups read as suppliers.
+func (s *Service) SupplierGroups() []string { return s.supplierGroups }
 
 // Endpoint is the Tally URL requests are sent to.
 func (s *Service) Endpoint() string { return s.client.Endpoint }
@@ -276,17 +290,44 @@ type xmlLedger struct {
 // GetCustomers returns every ledger under the configured shop groups
 // (default: Sundry Debtors, including its sub-groups).
 func (s *Service) GetCustomers(ctx context.Context, company string) ([]Customer, error) {
+	return s.partiesIn(ctx, "customers", company, s.shopGroups)
+}
+
+// GetSuppliers returns every ledger under the supplier groups (default:
+// Sundry Creditors). Same shape as shops; for a supplier a Cr balance is
+// money we owe (payable) and a Dr balance is an advance paid.
+func (s *Service) GetSuppliers(ctx context.Context, company string) ([]Customer, error) {
+	list, err := s.partiesIn(ctx, "suppliers", company, s.supplierGroups)
+	for i := range list {
+		list[i].Area = "" // the town-suffix heuristic is for shop names only
+	}
+	return list, err
+}
+
+// GetSupplier fetches one supplier ledger live from Tally by GUID.
+func (s *Service) GetSupplier(ctx context.Context, company, id string) (*Customer, error) {
+	c, err := s.ledgerByID(ctx, "supplier", company, id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.isGroupMember(ctx, company, *c, s.supplierGroups, s.GetSuppliers) {
+		return nil, &Error{Kind: KindNotFound, Op: "supplier", Msg: "ledger " + c.Name + " is not in a supplier group"}
+	}
+	return c, nil
+}
+
+func (s *Service) partiesIn(ctx context.Context, op, company string, groups []string) ([]Customer, error) {
 	byID := map[string]bool{}
 	var out []Customer
-	for _, group := range s.shopGroups {
+	for _, group := range groups {
 		tdl := `<COLLECTION NAME="WFC"><TYPE>Ledger</TYPE><CHILDOF>##WFGROUP</CHILDOF><BELONGSTO>Yes</BELONGSTO>` +
 			`<FETCH>` + customerFetch + `</FETCH></COLLECTION>`
-		items, err := s.fetchLedgers(ctx, "customers", Request{Company: company, Vars: map[string]string{"WFGROUP": group}, TDL: tdl})
+		items, err := s.fetchLedgers(ctx, op, Request{Company: company, Vars: map[string]string{"WFGROUP": group}, TDL: tdl})
 		if err != nil {
 			return nil, err
 		}
 		if len(items) == 0 {
-			s.log.Warn("shop group returned no ledgers", "group", group, "company", company)
+			s.log.Warn("ledger group returned no ledgers", "op", op, "group", group, "company", company)
 		}
 		for _, c := range items {
 			if !byID[c.ID] {
@@ -301,20 +342,27 @@ func (s *Service) GetCustomers(ctx context.Context, company string) ([]Customer,
 
 // GetCustomer fetches one shop ledger live from Tally by GUID.
 func (s *Service) GetCustomer(ctx context.Context, company, id string) (*Customer, error) {
+	c, err := s.ledgerByID(ctx, "customer", company, id)
+	if err != nil {
+		return nil, err
+	}
+	if !s.isGroupMember(ctx, company, *c, s.shopGroups, s.GetCustomers) {
+		return nil, &Error{Kind: KindNotFound, Op: "customer", Msg: "ledger " + c.Name + " is not in a shop group"}
+	}
+	return c, nil
+}
+
+func (s *Service) ledgerByID(ctx context.Context, op, company, id string) (*Customer, error) {
 	tdl := `<COLLECTION NAME="WFC"><TYPE>Ledger</TYPE><FETCH>` + customerFetch + `</FETCH><FILTER>WFBYID</FILTER></COLLECTION>` +
 		`<SYSTEM TYPE="Formulae" NAME="WFBYID">$GUID = ##WFID</SYSTEM>`
-	items, err := s.fetchLedgers(ctx, "customer", Request{Company: company, Vars: map[string]string{"WFID": id}, TDL: tdl})
+	items, err := s.fetchLedgers(ctx, op, Request{Company: company, Vars: map[string]string{"WFID": id}, TDL: tdl})
 	if err != nil {
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, &Error{Kind: KindNotFound, Op: "customer", Msg: "no ledger with id " + id}
+		return nil, &Error{Kind: KindNotFound, Op: op, Msg: "no ledger with id " + id}
 	}
-	c := items[0]
-	if !s.isShopGroupMember(ctx, company, c) {
-		return nil, &Error{Kind: KindNotFound, Op: "customer", Msg: "ledger " + c.Name + " is not in a shop group"}
-	}
-	return &c, nil
+	return &items[0], nil
 }
 
 // GetCustomerBalance returns just the live balance of one shop.
@@ -327,15 +375,16 @@ func (s *Service) GetCustomerBalances(ctx context.Context, company string) ([]Cu
 	return s.GetCustomers(ctx, company)
 }
 
-// isShopGroupMember guards GetCustomer against returning, say, a bank ledger.
-func (s *Service) isShopGroupMember(ctx context.Context, company string, c Customer) bool {
-	for _, g := range s.shopGroups {
+// isGroupMember guards GetCustomer/GetSupplier against returning, say, a bank ledger.
+func (s *Service) isGroupMember(ctx context.Context, company string, c Customer, groups []string,
+	list func(context.Context, string) ([]Customer, error)) bool {
+	for _, g := range groups {
 		if strings.EqualFold(c.Group, g) {
 			return true
 		}
 	}
-	// Sub-group of a shop group: ask Tally.
-	customers, err := s.GetCustomers(ctx, company)
+	// Sub-group of one of the groups: ask Tally.
+	customers, err := list(ctx, company)
 	if err != nil {
 		return false
 	}

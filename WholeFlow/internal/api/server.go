@@ -29,6 +29,7 @@ type Server struct {
 	mu        sync.Mutex
 	loadMu    sync.Mutex
 	snapshots map[string]*snapshot
+	caches    caches
 }
 
 type snapshot struct {
@@ -39,7 +40,7 @@ type snapshot struct {
 }
 
 func New(svc *tally.Service, cfg *config.Config, log *slog.Logger) *Server {
-	return &Server{svc: svc, cfg: cfg, log: log, snapshots: map[string]*snapshot{}}
+	return &Server{svc: svc, cfg: cfg, log: log, snapshots: map[string]*snapshot{}, caches: newCaches()}
 }
 
 func (s *Server) Routes(mux *http.ServeMux) {
@@ -53,6 +54,15 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/customers/{id}/transactions", s.handleTransactions)
 	mux.HandleFunc("GET /api/dashboard", s.handleDashboard)
 	mux.HandleFunc("GET /api/reports/outstanding", s.handleOutstanding)
+	mux.HandleFunc("GET /api/suppliers", s.handleSuppliers)
+	mux.HandleFunc("GET /api/suppliers/{id}", s.handleSupplier)
+	mux.HandleFunc("GET /api/suppliers/{id}/transactions", s.handleSupplierTransactions)
+	mux.HandleFunc("GET /api/purchases", s.handlePurchases)
+	mux.HandleFunc("GET /api/purchases/items", s.handlePurchaseItems)
+	mux.HandleFunc("GET /api/purchases/{id}", s.handlePurchase)
+	mux.HandleFunc("GET /api/inventory", s.handleInventory)
+	mux.HandleFunc("GET /api/inventory/{id}", s.handleStockItem)
+	mux.HandleFunc("GET /api/inventory/{id}/purchases", s.handleStockItemPurchases)
 	mux.HandleFunc("GET /api/export/{report}", s.handleExport)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "NOT_FOUND", "Unknown API endpoint.", "")
@@ -75,6 +85,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"companies":      st.Companies,
 		"checkedAt":      st.CheckedAt,
 		"shopGroups":     s.cfg.ShopGroups,
+		"supplierGroups": s.svc.SupplierGroups(),
 		"warnings":       s.cfg.Warnings,
 	}
 	if ini := s.cfg.TallyINI; ini != nil {
@@ -149,6 +160,8 @@ func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	// Suppliers, purchases and stock reload lazily on their next use.
+	s.invalidate(snap.Company.Name)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"company": snap.Company.Name, "fetchedAt": snap.FetchedAt, "customers": len(snap.Customers), "durationMs": snap.DurationMs,
 	})
@@ -539,7 +552,7 @@ func (s *Server) describe(err error) (string, string, int) {
 	case tally.KindCompanyNotFound:
 		return string(te.Kind), "The selected company is not open in TallyPrime. Open it in TallyPrime or choose another company.", http.StatusConflict
 	case tally.KindNotFound:
-		return string(te.Kind), "That shop was not found in Tally. It may have been renamed or deleted — refresh from Tally.", http.StatusNotFound
+		return string(te.Kind), "That record was not found in Tally. It may have been renamed or deleted — refresh from Tally.", http.StatusNotFound
 	}
 	return string(te.Kind), "TallyPrime returned an unexpected response. The technical details have been logged.", http.StatusBadGateway
 }

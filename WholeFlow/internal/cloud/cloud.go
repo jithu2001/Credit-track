@@ -262,3 +262,137 @@ func KindOf(err error) ErrorKind {
 	}
 	return ""
 }
+
+// ---------------------------------------------------------------- suppliers, stock, purchases
+
+// PurchasingProvider is an optional capability of a Provider: suppliers,
+// stock items and purchase bills. The engine uses it when the provider
+// implements it and the matching sync option is on. Same rules as Provider:
+// upserts keyed by Tally identifiers, soft deletes only.
+type PurchasingProvider interface {
+	// UpsertSuppliers writes suppliers keyed by (company, Tally ledger GUID) and
+	// returns the cloud id for every ledger GUID written.
+	UpsertSuppliers(ctx context.Context, suppliers []Supplier) (map[string]string, error)
+	// ListSuppliers returns active suppliers; Ref.Key is the Tally ledger GUID.
+	ListSuppliers(ctx context.Context, companyID string) ([]Ref, error)
+	SoftDeleteSuppliers(ctx context.Context, ids []string) error
+
+	// UpsertStockItems writes stock items keyed by (company, Tally item GUID) and
+	// returns the cloud id for every item GUID written.
+	UpsertStockItems(ctx context.Context, items []StockItem) (map[string]string, error)
+	// ListStockItems returns active stock items; Ref.Key is the Tally item GUID.
+	ListStockItems(ctx context.Context, companyID string) ([]Ref, error)
+	SoftDeleteStockItems(ctx context.Context, ids []string) error
+
+	// UpsertPurchases writes bills keyed by (company, Tally voucher GUID) and
+	// replaces each written bill's lines with the ones given.
+	UpsertPurchases(ctx context.Context, purchases []Purchase) error
+	// ListPurchases returns active bills; Ref.Key is the Tally voucher GUID.
+	ListPurchases(ctx context.Context, companyID string) ([]Ref, error)
+	SoftDeletePurchases(ctx context.Context, ids []string) error
+}
+
+// Ref is a cloud row id with the Tally identifier it was written under.
+type Ref struct {
+	ID  string
+	Key string
+}
+
+const (
+	EntitySuppliers  = "suppliers"
+	EntityStockItems = "stock_items"
+	EntityPurchases  = "purchases"
+)
+
+// Supplier is a ledger under the supplier groups (default Sundry Creditors).
+type Supplier struct {
+	BusinessID    string
+	CompanyID     string
+	TallyLedgerID string
+	TallyMasterID int
+	TallyAlterID  int64
+	Name          string
+	Aliases       []string
+	Group         string
+	Phone         string
+	Phones        []string
+	ContactPerson string
+	Email         string
+	GSTIN         string
+	GSTRegType    string
+	Address       []string
+	State         string
+	Pincode       string
+	Country       string
+	OpeningAmount float64
+	OpeningType   string
+	BalanceAmount float64
+	BalanceType   string
+	// Payable is signed: positive = the business owes the supplier (Cr),
+	// negative = advance paid (Dr).
+	Payable  float64
+	SyncedAt time.Time
+}
+
+type StockItem struct {
+	BusinessID   string
+	CompanyID    string
+	TallyItemID  string // Tally stock item GUID
+	Name         string
+	Aliases      []string
+	Group        string
+	Category     string
+	Unit         string
+	GST          bool
+	OpeningQty   float64
+	OpeningValue float64
+	ClosingQty   float64
+	ClosingRate  float64
+	ClosingValue float64
+	ReorderLevel float64
+	MinOrderQty  float64
+	Status       string // in_stock | low | zero | negative
+	SyncedAt     time.Time
+}
+
+type Purchase struct {
+	BusinessID     string
+	CompanyID      string
+	TallyVoucherID string
+	TallyAlterID   int64
+	SupplierID     string // "" when the party ledger is not a synced supplier
+	SupplierName   string
+	Date           string // YYYY-MM-DD
+	VoucherNumber  string
+	VoucherType    string
+	Reference      string // supplier's bill number
+	Narration      string
+	Taxable        float64
+	Other          float64
+	Total          float64
+	Qty            float64
+	// LedgerEntries is the accounting side without the supplier's entry:
+	// [{"ledger": "...", "amount": 123.45, "type": "DR"}].
+	LedgerEntries []PurchaseLedgerEntry
+	Lines         []PurchaseLine
+	SyncedAt      time.Time
+}
+
+type PurchaseLedgerEntry struct {
+	Ledger string  `json:"ledger"`
+	Amount float64 `json:"amount"`
+	Type   string  `json:"type"`
+}
+
+type PurchaseLine struct {
+	LineNo      int
+	StockItemID string // "" when the item is not a synced stock item
+	ItemName    string
+	Godown      string
+	Qty         float64
+	ActualQty   float64
+	Unit        string
+	Rate        float64
+	Discount    float64
+	Amount      float64
+}

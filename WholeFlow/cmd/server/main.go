@@ -238,6 +238,7 @@ func newApp(console bool) (*app, error) {
 
 	client := tally.NewClient(cfg.TallyHost, cfg.TallyPort, cfg.TallyTimeout, log, cfg.LogDir, cfg.DebugRaw)
 	svc := tally.NewService(client, log, cfg.TallyHost, cfg.TallyPort, cfg.ShopGroups)
+	svc.SetSupplierGroups(cfg.SupplierGroups)
 	host, _ := os.Hostname()
 	engine := &syncer.Engine{Tally: svc, Provider: syncer.NewProviderFactory(log, 90*time.Second), Settings: settings, State: state,
 		Log: log, TallyHost: cfg.TallyHost, TallyPort: cfg.TallyPort, Hostname: host}

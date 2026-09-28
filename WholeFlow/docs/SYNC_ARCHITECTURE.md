@@ -63,6 +63,8 @@ A company is only marked `SYNCED` when every step succeeded. If transactions fai
 
 ## Identity and idempotency
 
+The local cursors (`state.json`) belong to one cloud company row. When a run gets a different cloud id for a company than the one it last wrote to (another business id, a switched provider, or cloud data that was wiped), the transaction and purchase cursors are reset and the company gets a full sync, instead of receiving only changes made from then on.
+
 | Entity | Cloud key | Tally source |
 |---|---|---|
 | Company | `(business_id, tally_company_id)` | Company GUID |

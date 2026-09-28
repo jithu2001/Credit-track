@@ -89,3 +89,7 @@ code { background: #eef1f5; padding: 1px 5px; border-radius: 4px; font-size: 12.
   .tools { margin-left: 0; }
   .two { grid-template-columns: 1fr; }
 }
+/* Suppliers / purchases / inventory */
+.tabs { display: inline-flex; gap: 4px; margin-right: 8px; }
+.toolbar label.small { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+@media (max-width: 900px) { #results > .grid { grid-template-columns: 1fr !important; } }

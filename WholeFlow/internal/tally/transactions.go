@@ -15,6 +15,30 @@ const (
 	CatAdjustments = "adjustments" // Journals, Debit Notes, Payments, Contra, anything else
 )
 
+// Supplier-side categories.
+const (
+	CatPurchases       = "purchases"
+	CatPayments        = "payments"
+	CatPurchaseReturns = "purchase_returns" // Debit Notes
+)
+
+var (
+	shopCategories     = []string{CatSales, CatReceipts, CatReturns, CatAdjustments}
+	supplierCategories = []string{CatPurchases, CatPayments, CatPurchaseReturns, CatAdjustments}
+)
+
+func supplierCategoryFor(baseType string) string {
+	switch strings.ToLower(baseType) {
+	case "purchase":
+		return CatPurchases
+	case "payment":
+		return CatPayments
+	case "debit note":
+		return CatPurchaseReturns
+	}
+	return CatAdjustments
+}
+
 func categoryFor(baseType string) string {
 	switch strings.ToLower(baseType) {
 	case "sales":
@@ -87,7 +111,17 @@ type xmlVoucher struct {
 // from the start of the books, and reconciles the result against Tally's
 // closing balance so any mismatch is visible rather than silently wrong.
 func (s *Service) GetCustomerTransactions(ctx context.Context, company *Company, cust *Customer) (*TransactionSummary, error) {
-	const op = "transactions"
+	return s.ledgerTransactions(ctx, "transactions", company, cust, shopCategories, categoryFor)
+}
+
+// GetSupplierTransactions is the same summary for a supplier ledger, grouped
+// into purchases, payments, debit notes (purchase returns) and everything else.
+func (s *Service) GetSupplierTransactions(ctx context.Context, company *Company, cust *Customer) (*TransactionSummary, error) {
+	return s.ledgerTransactions(ctx, "supplier-transactions", company, cust, supplierCategories, supplierCategoryFor)
+}
+
+func (s *Service) ledgerTransactions(ctx context.Context, op string, company *Company, cust *Customer,
+	cats []string, catFor func(string) string) (*TransactionSummary, error) {
 	baseTypes, err := s.voucherBaseTypes(ctx, company.Name)
 	if err != nil {
 		return nil, err
@@ -117,7 +151,7 @@ func (s *Service) GetCustomerTransactions(ctx context.Context, company *Company,
 
 	sum := &TransactionSummary{Customer: cust.Name, From: company.BooksFrom, To: to, Transactions: []Transaction{}}
 	totals := map[string]*CategoryTotal{}
-	for _, cat := range []string{CatSales, CatReceipts, CatReturns, CatAdjustments} {
+	for _, cat := range cats {
 		totals[cat] = &CategoryTotal{Category: cat}
 	}
 	var movement Amount
@@ -150,7 +184,7 @@ func (s *Service) GetCustomerTransactions(ctx context.Context, company *Company,
 		if base == "" {
 			base = vt
 		}
-		cat := categoryFor(base)
+		cat := catFor(base)
 		t := totals[cat]
 		t.Count++
 		if amt < 0 {
@@ -165,7 +199,7 @@ func (s *Service) GetCustomerTransactions(ctx context.Context, company *Company,
 			Number: clean(v.Number), Narration: clean(v.Narration), Amount: amt.Balance(),
 		})
 	}
-	for _, cat := range []string{CatSales, CatReceipts, CatReturns, CatAdjustments} {
+	for _, cat := range cats {
 		t := totals[cat]
 		t.Net = t.net.Balance()
 		sum.Totals = append(sum.Totals, *t)

@@ -58,6 +58,13 @@ type CompanyResult struct {
 	Vouchers     int       `json:"vouchersFetched"`
 	Excluded     int       `json:"vouchersExcluded"`
 	Cursor       int64     `json:"cursor"`
+
+	// Secondary steps; nil when switched off or failed (see Warnings).
+	Suppliers    *Stats   `json:"suppliers,omitempty"`
+	StockItems   *Stats   `json:"stockItems,omitempty"`
+	Purchases    *Stats   `json:"purchases,omitempty"`
+	PurchaseMode string   `json:"purchaseMode,omitempty"`
+	Warnings     []string `json:"warnings,omitempty"`
 }
 
 type Stats struct {
@@ -254,6 +261,15 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		return finish(err, cloud.EntityCompany)
 	}
 	cr.CloudID = cloudID
+	// The cursors in state.json describe what was sent to *this* cloud company
+	// row. A different id means a different business id, a switched provider
+	// or cloud data that was wiped: start over with full syncs, otherwise the
+	// new row would only ever receive changes made from now on.
+	if prev.CloudID != "" && prev.CloudID != cloudID {
+		log.Warn("cloud company changed; resetting cursors for a full sync", "previous_cloud_id", prev.CloudID, "cloud_id", cloudID)
+		prev.VoucherCursor, prev.LastFullReconcileAt, prev.TransactionCount = 0, nil, 0
+		prev.PurchaseCursor, prev.LastPurchaseReconcileAt = 0, nil
+	}
 	e.State.UpdateCompany(tc.GUID, func(c *CompanyState) { c.CloudID = cloudID })
 
 	// 4 + 5. shops with current balances (always a full snapshot: cheap, and
@@ -422,6 +438,10 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 			"created", cr.Transactions.Created, "updated", cr.Transactions.Updated, "deleted", cr.Transactions.Deleted, "cursor", cursor)
 	}
 
+	// 6b. suppliers, stock items, purchase bills (secondary: failures are warnings)
+	pr := e.syncPurchasing(ctx, prov, set, tc, cloudID, prev, log)
+	cr.Suppliers, cr.StockItems, cr.Purchases, cr.PurchaseMode, cr.Warnings = pr.suppliers, pr.stock, pr.purchases, pr.purchaseMode, pr.warnings
+
 	// 7 + 8. company status, sync state, sync log — only now is it "synced".
 	done := e.now()
 	cr.Status = StatusSynced
@@ -447,6 +467,8 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		c.LastAttemptAt, c.LastSuccessAt = &done, &done
 		c.VoucherCursor, c.LastFullReconcileAt = cursor, lastReconcile
 		c.ShopCount, c.TransactionCount, c.CloudID = len(shops), txCount, cloudID
+		c.SupplierCount, c.StockItemCount, c.PurchaseCount = pr.supplierCount, pr.stockCount, pr.purchaseCount
+		c.PurchaseCursor, c.LastPurchaseReconcileAt, c.Warnings = pr.purchaseCursor, pr.lastReconcile, pr.warnings
 	})
 	log.Info("SYNC COMPLETE", "shops", cr.Shops.Fetched, "transactions", cr.Transactions.Fetched, "mode", cr.Mode, "duration_ms", cr.DurationMs)
 	return cr
@@ -473,11 +495,21 @@ func (e *Engine) writeState(ctx context.Context, prov cloud.Provider, set Settin
 }
 
 func (e *Engine) writeLog(ctx context.Context, prov cloud.Provider, set Settings, cr CompanyResult, status string) {
+	all := Stats{Fetched: cr.Shops.Fetched + cr.Transactions.Fetched, Created: cr.Shops.Created + cr.Transactions.Created,
+		Updated: cr.Shops.Updated + cr.Transactions.Updated, Deleted: cr.Shops.Deleted + cr.Transactions.Deleted}
+	for _, s := range []*Stats{cr.Suppliers, cr.StockItems, cr.Purchases} {
+		if s != nil {
+			all.Fetched, all.Created, all.Updated, all.Deleted = all.Fetched+s.Fetched, all.Created+s.Created, all.Updated+s.Updated, all.Deleted+s.Deleted
+		}
+	}
+	code, msg := cr.ErrorCode, cr.ErrorMessage
+	if code == "" && len(cr.Warnings) > 0 {
+		code, msg = "STEP_WARNINGS", strings.Join(cr.Warnings, "; ")
+	}
 	l := cloud.SyncLog{BusinessID: set.Business.ID, CompanyID: cr.CloudID, StartedAt: cr.StartedAt,
 		CompletedAt: cr.StartedAt.Add(time.Duration(cr.DurationMs) * time.Millisecond), Status: status, Mode: cr.Mode,
-		RecordsProcessed: cr.Shops.Fetched + cr.Transactions.Fetched, RecordsCreated: cr.Shops.Created + cr.Transactions.Created,
-		RecordsUpdated: cr.Shops.Updated + cr.Transactions.Updated, RecordsDeleted: cr.Shops.Deleted + cr.Transactions.Deleted,
-		ShopsProcessed: cr.Shops.Fetched, TransactionsFetched: cr.Transactions.Fetched, ErrorCode: cr.ErrorCode, ErrorMessage: cr.ErrorMessage}
+		RecordsProcessed: all.Fetched, RecordsCreated: all.Created, RecordsUpdated: all.Updated, RecordsDeleted: all.Deleted,
+		ShopsProcessed: cr.Shops.Fetched, TransactionsFetched: cr.Transactions.Fetched, ErrorCode: code, ErrorMessage: msg}
 	if err := prov.CreateSyncLog(ctx, l); err != nil {
 		e.Log.Warn("could not write cloud sync log", "error", err.Error())
 	}
@@ -549,6 +581,17 @@ func (r *RunResult) String() string {
 				c.Shops.Fetched, c.Shops.Created, c.Shops.Updated, c.Shops.Deleted,
 				c.Transactions.Fetched, c.Transactions.Created, c.Transactions.Updated, c.Transactions.Deleted,
 				c.Mode, float64(c.DurationMs)/1000)
+			for _, x := range []struct {
+				label string
+				s     *Stats
+			}{{"suppliers", c.Suppliers}, {"items", c.StockItems}, {"purchases", c.Purchases}} {
+				if x.s != nil {
+					fmt.Fprintf(&b, "  %s %d (+%d ~%d -%d)", x.label, x.s.Fetched, x.s.Created, x.s.Updated, x.s.Deleted)
+				}
+			}
+			for _, w := range c.Warnings {
+				fmt.Fprintf(&b, "\n    warning: %s", w)
+			}
 		} else if c.ErrorCode != "" {
 			fmt.Fprintf(&b, " %s: %s", c.ErrorCode, c.ErrorMessage)
 		}

@@ -1,6 +1,6 @@
 # Database Schema (Supabase / PostgreSQL)
 
-Migration: `supabase/migrations/0001_init.sql`. Apply it in the Supabase SQL editor or with `supabase db push`.
+Migrations: `supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, applied in that order in the Supabase SQL editor (or with `supabase db push`).
 
 ```
 businesses ─┬─ users (auth.users)            OWNER | STAFF
@@ -175,6 +175,42 @@ A trigger rejects rows for non-STAFF users and for companies of another business
 | staff_company_access | owners: all rows of the business; staff: their own |
 
 The helpers are `security definer`. They return true for an active owner, and for an active staff member only through a matching assignment. The views are `security_invoker`, so `v_company_summary` for a staff member lists only their companies, with totals covering only their shops.
+
+## Suppliers, stock and purchases (migration 0003)
+
+Migration: `supabase/migrations/0003_purchasing.sql` (additive). Written by the sync service after shops and transactions; each part can be switched off on the Cloud Sync page (step 4) or with `SYNC_SUPPLIERS`, `SYNC_PURCHASES`, `SYNC_INVENTORY` in `.env`. A failure in these steps is a warning: the company is still `SYNCED`, the error goes to that entity's `sync_state` row and to the sync log (`error_code = STEP_WARNINGS`).
+
+| Table | Key | Content | How it is synced |
+|---|---|---|---|
+| `suppliers` | `(company_id, tally_ledger_id)` | Ledgers under `SUPPLIER_GROUPS` (default Sundry Creditors): contact, GSTIN, opening and current balance. `payable` is signed: > 0 we owe the supplier (Cr), < 0 advance paid (Dr). | Full snapshot every run; missing ledgers soft-deleted. |
+| `stock_items` | `(company_id, tally_item_id)` | Name, part no. (`aliases`), stock group, unit, opening and closing qty and value, Tally valuation rate, reorder level, `stock_status` (`in_stock`, `low`, `zero`, `negative`). | Full snapshot every run; missing items soft-deleted. |
+| `purchases` | `(company_id, tally_voucher_id)` | One row per purchase bill (voucher types deriving from Purchase): date, voucher and supplier bill no., `supplier_id` (null when the party is not a synced supplier) and `supplier_name`, taxable / tax & other / total, qty, `ledger_entries` jsonb. | Incremental by AlterID (`sync_state.last_cursor` for `purchases`); a full read every `fullReconcileHours` soft-deletes bills deleted in Tally. Cancelled or optional bills are soft-deleted. |
+| `purchase_lines` | `(purchase_id, line_no)` | Item lines: `stock_item_id` (null if not a synced item), `item_name`, godown, qty, rate, discount %, amount. | Replaced wholesale whenever their bill is synced. |
+
+`sync_state.entity_type` gains `suppliers`, `stock_items`, `purchases`.
+
+Read access: `suppliers`, `purchases` and `purchase_lines` are **owner only**. `stock_items` is readable by the owner and by staff assigned to the company.
+
+Views: `v_stock_items` (each active item with its last purchase date, rate and supplier) and `v_purchases_by_supplier_month`.
+
+Example queries for the mobile app:
+
+```sql
+-- Stock on hand, highest value first
+select name, closing_qty, unit, closing_value, stock_status, last_purchase_rate
+from v_stock_items where company_id = :company and closing_qty > 0 order by closing_value desc;
+
+-- What we owe suppliers
+select name, payable from suppliers
+where company_id = :company and deleted_at is null and payable > 0 order by payable desc;
+
+-- Purchase history of one item
+select p.purchase_date, p.supplier_name, l.qty, l.rate, l.amount
+from purchase_lines l join purchases p on p.id = l.purchase_id and p.deleted_at is null
+where l.stock_item_id = :item order by p.purchase_date desc;
+```
+
+Verified on 28 Sep 2026 against the live project: first run created 19 suppliers, 592 stock items and 442 bills for the two companies; the next run found every row in place (updated only, nothing created or deleted).
 
 ## Future backends
 

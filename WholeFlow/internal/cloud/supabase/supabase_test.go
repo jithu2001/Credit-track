@@ -96,6 +96,14 @@ func (f *fakePostgREST) handle(w http.ResponseWriter, r *http.Request) {
 			out = append(out, map[string]string{"id": fmt.Sprintf("t%d", i), "tally_voucher_id": fmt.Sprintf("v%d", i), "tally_ledger_id": "l"})
 		}
 		json.NewEncoder(w).Encode(out)
+	case strings.HasSuffix(r.URL.Path, "/purchases") && r.Method == http.MethodPost:
+		var rows []map[string]any
+		json.Unmarshal(body, &rows)
+		var out []map[string]string
+		for i, row := range rows {
+			out = append(out, map[string]string{"id": fmt.Sprintf("pur-%d", i), "tally_voucher_id": row["tally_voucher_id"].(string)})
+		}
+		json.NewEncoder(w).Encode(out)
 	default:
 		w.WriteHeader(http.StatusCreated)
 		io.WriteString(w, `[]`)
@@ -282,5 +290,46 @@ func TestErrorClassification(t *testing.T) {
 	err := st.Authenticate(context.Background())
 	if cloud.KindOf(err) != cloud.KindTimeout || strings.Contains(err.Error(), "sk-secret") {
 		t.Errorf("slow server → %v", err)
+	}
+}
+
+// A bill batch is one upsert, one delete of the old lines of those bills and
+// one insert of the new lines; the supplier id and nulls are encoded as the
+// columns expect.
+func TestUpsertPurchasesReplacesLines(t *testing.T) {
+	f := newFake(t)
+	s := newStorage(t, f.srv.URL, 5*time.Second)
+	err := s.UpsertPurchases(context.Background(), []cloud.Purchase{
+		{BusinessID: "biz", CompanyID: "cmp", TallyVoucherID: "v1", SupplierID: "sup-1", SupplierName: "CEAT", Date: "2026-04-10",
+			Total: 1180, Taxable: 1000, Other: 180, LedgerEntries: []cloud.PurchaseLedgerEntry{{Ledger: "IGST", Amount: 180, Type: "DR"}},
+			Lines: []cloud.PurchaseLine{{LineNo: 1, StockItemID: "item-1", ItemName: "TYRE A", Qty: 6, Rate: 100, Amount: 600},
+				{LineNo: 2, ItemName: "TYRE C", Qty: 4, Rate: 100, Amount: 400}}},
+		{BusinessID: "biz", CompanyID: "cmp", TallyVoucherID: "v2", SupplierName: "MIDLAND", Date: "2026-04-11", Total: 50},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.reqs) != 3 {
+		t.Fatalf("want upsert + delete + insert, got %d requests: %+v", len(f.reqs), f.reqs)
+	}
+	up, del, ins := f.reqs[0], f.reqs[1], f.reqs[2]
+	if up.Method != "POST" || !strings.HasSuffix(up.Path, "/purchases") || !strings.Contains(up.Query, "on_conflict=company_id%2Ctally_voucher_id") ||
+		!strings.Contains(up.Prefer, "merge-duplicates") {
+		t.Fatalf("upsert: %+v", up)
+	}
+	var bills []map[string]any
+	json.Unmarshal(up.Body, &bills)
+	if bills[0]["supplier_id"] != "sup-1" || bills[1]["supplier_id"] != nil || bills[0]["line_count"] != float64(2) ||
+		bills[0]["deleted_at"] != nil || bills[1]["ledger_entries"] == nil {
+		t.Fatalf("bill rows: %s", up.Body)
+	}
+	if del.Method != "DELETE" || !strings.HasSuffix(del.Path, "/purchase_lines") || !strings.Contains(del.Query, "pur-0") || !strings.Contains(del.Query, "pur-1") {
+		t.Fatalf("line delete must cover every bill of the batch: %+v", del)
+	}
+	var lines []map[string]any
+	json.Unmarshal(ins.Body, &lines)
+	if ins.Method != "POST" || len(lines) != 2 || lines[0]["purchase_id"] != "pur-0" || lines[0]["stock_item_id"] != "item-1" ||
+		lines[1]["stock_item_id"] != nil || lines[1]["line_no"] != float64(2) {
+		t.Fatalf("line insert: %s", ins.Body)
 	}
 }

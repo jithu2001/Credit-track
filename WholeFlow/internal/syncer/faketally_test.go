@@ -37,6 +37,7 @@ type fakeCompany struct {
 	BooksFrom  string
 	Ledgers    []fakeLedger
 	Vouchers   []fakeVoucher
+	Stock      []fakeStock
 }
 
 type fakeLedger struct {
@@ -54,6 +55,8 @@ type fakeVoucher struct {
 	Cancelled bool
 	Optional  bool
 	Entries   []fakeEntry
+	Party     string     // purchase vouchers: PARTYLEDGERNAME
+	Items     []fakeItem // purchase vouchers: inventory lines
 }
 
 type fakeEntry struct {
@@ -123,8 +126,39 @@ func (f *fakeTally) respond(req string) string {
 	case strings.Contains(req, "<TYPE>VoucherType</TYPE>"):
 		f.requests["voucher-types"]++
 		for _, vt := range [][2]string{{"Sales", ""}, {"Receipt", ""}, {"Credit Note", ""}, {"Journal", ""}, {"Payment", ""},
-			{"JK RECEIPT", "Receipt"}, {"B2c Gst Sales", "Sales"}, {"Tyre Claim", "Credit Note"}} {
+			{"JK RECEIPT", "Receipt"}, {"B2c Gst Sales", "Sales"}, {"Tyre Claim", "Credit Note"}, {"Purchase", ""}, {"Purchase Tcs", "Purchase"}} {
 			fmt.Fprintf(&b, `<VOUCHERTYPE NAME="%s"><PARENT>%s</PARENT></VOUCHERTYPE>`, vt[0], vt[1])
+		}
+	case strings.Contains(req, "<TYPE>StockItem</TYPE>"):
+		f.requests["stock-items"]++
+		if c != nil {
+			for _, s := range c.Stock {
+				fmt.Fprintf(&b, `<STOCKITEM NAME="%s"><GUID>%s</GUID><PARENT>%s</PARENT><BASEUNITS>Nos</BASEUNITS><CLOSINGBALANCE>%s</CLOSINGBALANCE><CLOSINGVALUE>%s</CLOSINGVALUE><CLOSINGRATE>%s</CLOSINGRATE></STOCKITEM>`,
+					esc(s.Name), s.GUID, esc(s.Group), s.Qty, s.Value, s.Rate)
+			}
+		}
+	case strings.Contains(req, "$$IsPurchase:$VoucherTypeName"):
+		f.requests["purchases"]++
+		var since int64
+		if m := reNewer.FindStringSubmatch(req); m != nil {
+			since, _ = strconv.ParseInt(m[1], 10, 64)
+		}
+		if c != nil {
+			for _, v := range c.Vouchers {
+				if !isPurchaseType(v.Type) || v.AlterID <= since {
+					continue
+				}
+				fmt.Fprintf(&b, `<VOUCHER><DATE>%s</DATE><GUID>%s</GUID><ALTERID>%d</ALTERID><VOUCHERTYPENAME>%s</VOUCHERTYPENAME><VOUCHERNUMBER>%s</VOUCHERNUMBER><PARTYLEDGERNAME>%s</PARTYLEDGERNAME><ISOPTIONAL>%s</ISOPTIONAL><ISCANCELLED>%s</ISCANCELLED>`,
+					v.Date, v.GUID, v.AlterID, esc(v.Type), esc(v.Number), esc(v.Party), yesNo(v.Optional), yesNo(v.Cancelled))
+				for _, e := range v.Entries {
+					fmt.Fprintf(&b, `<ALLLEDGERENTRIES.LIST><LEDGERNAME>%s</LEDGERNAME><AMOUNT>%s</AMOUNT></ALLLEDGERENTRIES.LIST>`, esc(e.Ledger), e.Amount)
+				}
+				for _, it := range v.Items {
+					fmt.Fprintf(&b, `<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>%s</STOCKITEMNAME><RATE>%s</RATE><AMOUNT>%s</AMOUNT><ACTUALQTY>%s</ACTUALQTY><BILLEDQTY>%s</BILLEDQTY></ALLINVENTORYENTRIES.LIST>`,
+						esc(it.Item), it.Rate, it.Amount, it.Qty, it.Qty)
+				}
+				b.WriteString(`</VOUCHER>`)
+			}
 		}
 	case strings.Contains(req, "<TYPE>Voucher</TYPE>"):
 		full := strings.Contains(req, "ALLLEDGERENTRIES")
@@ -252,3 +286,14 @@ func sampleCompany(guid, name string) *fakeCompany {
 				Entries: []fakeEntry{{"SHOP THREE", "-999.00"}, {"Sales@18%", "999.00"}}},
 		}}
 }
+
+type fakeStock struct {
+	Name, GUID, Group string
+	Qty, Value, Rate  string // " 6 Nos", "-6053.63", "1008.94/Nos"
+}
+
+type fakeItem struct {
+	Item, Qty, Rate, Amount string // "TYRE A", " 6 Nos", "100.00/Nos", "-600.00"
+}
+
+func isPurchaseType(t string) bool { return strings.HasPrefix(t, "Purchase") }

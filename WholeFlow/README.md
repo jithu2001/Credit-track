@@ -2,7 +2,7 @@
 
 One executable, `wholeflow.exe`, one process, one port, one login:
 
-- **Web app** (http://127.0.0.1:8080): dashboard, shop list, shop detail with reconciled transaction summary, outstanding report, CSV/Excel export — read live from a running TallyPrime.
+- **Web app** (http://127.0.0.1:8080): dashboard, shop list, shop detail with reconciled transaction summary, outstanding report, suppliers (payables), purchase register with item lines, inventory with purchase history per item, CSV/Excel export — read live from a running TallyPrime. Suppliers, purchases (with item lines) and inventory are also synced to the cloud (migration `0003_purchasing.sql`).
 - **Cloud Sync** (the app's *Cloud Sync* page): select which Tally companies to synchronise, configure Supabase, run and monitor the **background sync** that upserts shops, balances and transactions into the cloud every few minutes for the future owner/staff mobile app.
 - **Admin login for everything.** The app is for the developer/administrator only: every page and every API call requires the single admin account. On the first run the browser asks you to create it (default username `admin`; there is no default password); `set-password` resets it from the console. The business owner and staff never use this app; they will use the mobile app against the cloud.
 - **Runs unattended in the background.** Installed as the Windows service **WholeFlow** it starts at every boot, before anyone logs in, with no window. Where Administrator rights are not available, `autostart` starts it hidden at every logon instead. Nobody has to open anything for the sync to run. See [Deploying on a client PC](#deploying-on-a-client-pc).
@@ -61,6 +61,26 @@ Goal: the customer's Tally PC syncs to the cloud on its own, every few minutes, 
 
 Tally itself must be open with the company loaded for a sync to succeed; while it is closed the app waits and retries, and nothing is deleted in the cloud.
 
+### Before you start: create the business in Supabase
+
+Each client (business) needs one row in the `businesses` table. Its id is the **business id** you enter on the Cloud Sync page. In the Supabase dashboard open **SQL Editor** and run:
+
+```sql
+insert into public.businesses (name)
+values ('Client Business Name')
+returning id, name, created_at;
+```
+
+Copy the `id` from the result. Only the name is needed; `id`, `created_at` and `updated_at` fill themselves in. The *Test cloud connection* button on the Cloud Sync page checks that this row exists, so a mistyped id shows up straight away.
+
+To list existing businesses and their ids later:
+
+```sql
+select id, name, created_at from public.businesses order by created_at;
+```
+
+Several clients can share one Supabase project, one row each; Row Level Security keeps their data apart. A second Tally PC of the **same** business uses the same id (each PC must have a different Windows computer name). Owner and staff logins for the mobile app are created afterwards from the Cloud Sync page.
+
 ### A. Windows service, step by step
 
 1. **Prepare one folder** (USB stick or `Downloads\WholeFlow` on the client PC) with:
@@ -70,7 +90,7 @@ Tally itself must be open with the company loaded for a sync to succeed; while i
 2. **TallyPrime**: Help (F1) → Settings → Connectivity → Client/Server configuration → *TallyPrime acts as* = **Server** (or Both). Note the port; the app reads it from `tally.ini`.
 3. **Double-click `Install-WholeFlow.cmd`** and accept the UAC prompt. It copies the exe to `C:\Program Files\WholeFlow`, registers and starts the service (delayed automatic start, restart on failure) and opens http://127.0.0.1:8080. Doing it by hand instead: copy the exe there, open an Administrator console in that folder, run `.\wholeflow.exe install`.
 4. **Create the admin account** on the page that opens (username, password ≥ 10 characters). Do this immediately: the first person to open the page claims the account. The app only listens on 127.0.0.1, so that is whoever sits at this PC.
-5. **Cloud Sync page** (`/#/sync`): business id, Supabase URL and service-role key → *Test cloud connection* → *Test Tally & discover companies* → tick the companies → *Save* → *Sync now* → tick *Background synchronisation enabled* → *Save*. Details: [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
+5. **Cloud Sync page** (`/#/sync`): business id (from [the query above](#before-you-start-create-the-business-in-supabase)), Supabase URL and service-role key → *Test cloud connection* → *Test Tally & discover companies* → tick the companies → *Save* → *Sync now* → tick *Background synchronisation enabled* → *Save*. Details: [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
 6. **Verify**: close the browser, reboot the PC, do not log in yet or log in and open nothing. After a few minutes, from any console:
    ```powershell
    & "C:\Program Files\WholeFlow\wholeflow.exe" status
@@ -103,6 +123,7 @@ Documentation:
 - [docs/SYNC_ARCHITECTURE.md](docs/SYNC_ARCHITECTURE.md) — how a run works, incremental sync by Tally `ALTERID`, retry/backoff, offline rules, security model
 - [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — Supabase tables, RLS for owner/staff, example queries
 - [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql) — the schema
+- [supabase/migrations/0002_mobile_app.sql](supabase/migrations/0002_mobile_app.sql), [0003_purchasing.sql](supabase/migrations/0003_purchasing.sql) — staff access; suppliers, stock items, purchase bills
 - [STATUS.md](STATUS.md) — current project status
 
 ---
@@ -123,6 +144,9 @@ Documentation:
 | Item | Source in Tally |
 |---|---|
 | Shops | Ledgers under **Sundry Debtors** incl. sub-groups (`SHOP_GROUPS`). The status page's "Inspect ledger groups" shows the group breakdown for a new company. |
+| Suppliers | Ledgers under **Sundry Creditors** incl. sub-groups (`SUPPLIER_GROUPS`). Cr = we owe the supplier (payable), Dr = advance paid. Transaction summary grouped into purchases, payments, debit notes and other, reconciled like shops. |
+| Purchases | Every voucher whose type derives from **Purchase** (filtered inside Tally with `$$IsPurchase`), with item lines (stock item, godown, billed qty, rate, discount, amount) and the accounting entries. Bill total = amount credited to the party ledger; taxable = sum of item lines; tax & other = the difference. Cancelled and optional vouchers are left out. Debit notes (purchase returns) are not in the register; they show on the supplier page. |
+| Inventory | Stock items with group, unit, part no. (alias), opening and closing quantity, Tally valuation rate and closing value, reorder level. Status: in stock, low (at or below reorder level), out of stock, negative. The item total equals the sum of Tally's stock groups plus items directly under Primary (verified on the sample company: ₹32,94,711.54). |
 | Current balance | Ledger `ClosingBalance`. Tally sign: negative = **Dr** (shop owes us), positive = **Cr** (advance / we owe). |
 | Opening balance | Ledger `OpeningBalance` (at the start of the books). |
 | Phone | `Ledger Phone/Mobile`; if empty, extracted from address lines like `PH 98xxxxxxxx` (marked "found in address"). |
@@ -138,7 +162,11 @@ ledger totals; 13 sampled shops reconciled to the paisa.
 
 The shop list is pulled from Tally on first use and kept in memory; **Refresh from
 Tally** re-pulls it (the "as of" time is always shown). The shop detail page and
-its transactions are always read live. No local database yet.
+its transactions are always read live. The supplier list, the purchase register
+and the stock items are also pulled on first use and kept in memory per company;
+**Refresh from Tally** drops them so they reload on the next visit. Supplier detail
+pages are read live. The purchase register is one request of about 7.7 MB / 3 s for
+~400 bills on the sample company. No local database yet.
 
 ## API
 
@@ -152,7 +180,14 @@ its transactions are always read live. No local database yet.
 | `GET /api/customers/{id}` | one shop, live (id = Tally GUID) |
 | `GET /api/customers/{id}/transactions` | summary + reconciliation |
 | `GET /api/dashboard` · `GET /api/reports/outstanding` · `GET /api/ledgers` | |
-| `GET /api/export/{customers\|outstanding}?format=csv\|xlsx` | same filters as the lists |
+| `GET /api/suppliers?q=&type=dr\|cr\|zero&sort=balance_desc\|balance_asc\|name_asc\|name_desc` | suppliers with payable / advance totals |
+| `GET /api/suppliers/{id}` · `GET /api/suppliers/{id}/transactions` | one supplier live; summary + reconciliation |
+| `GET /api/purchases?from=&to=&supplier=&item=&q=&page=&pageSize=` | register (bills without lines), totals, by-supplier totals; dates `YYYY-MM-DD`, inclusive |
+| `GET /api/purchases/items?from=&to=&supplier=&q=` | quantity, amount, average and last rate per item |
+| `GET /api/purchases/{id}` | one bill with item lines and accounting entries |
+| `GET /api/inventory?q=&group=&status=available\|low\|zero\|negative&sort=name_asc\|value_desc\|qty_desc\|qty_asc\|group_asc&page=&pageSize=` | stock items, stock value and status counts |
+| `GET /api/inventory/{id}` · `GET /api/inventory/{id}/purchases` | one item (id = Tally GUID or the item name); its purchase lines |
+| `GET /api/export/{customers\|outstanding\|suppliers\|purchases\|purchase-lines\|purchase-items\|inventory}?format=csv\|xlsx` | same filters as the lists |
 
 `company` may be omitted when exactly one company is open. Errors are
 `{"error":{"code","message","details"}}` with codes `TALLY_UNREACHABLE` (503),
