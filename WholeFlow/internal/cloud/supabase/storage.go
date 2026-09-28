@@ -285,7 +285,7 @@ func (s *Storage) SoftDeleteShops(ctx context.Context, ids []string) error {
 
 func (s *Storage) softDelete(ctx context.Context, op, table string, ids []string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	for _, batch := range chunk(ids, 200) {
+	for _, batch := range chunk(ids, 100) { // ~4.5 KB of ids: stays under common 8 KB URL limits
 		q := url.Values{"id": {inList(batch)}}
 		if _, _, err := s.c.do(ctx, op, http.MethodPatch, table, q, "return=minimal", "", map[string]any{"deleted_at": now}); err != nil {
 			return err

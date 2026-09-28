@@ -71,7 +71,8 @@ $dataDir = Join-Path $env:ProgramData 'WholeFlow'
 
 function Invoke-WholeFlow {
     param([string[]]$CommandArgs)
-    & $target @CommandArgs
+    # Show the exe's output; return only its exit code.
+    & $target @CommandArgs | Out-Host
     return $LASTEXITCODE
 }
 
@@ -104,14 +105,27 @@ try {
 
     New-Item -ItemType Directory -Force $InstallDir | Out-Null
 
-    if (Test-Path $target) {
-        Write-Host 'Stopping the running WholeFlow (upgrade)...'
+    $newVersion = (& $source version) -replace '^wholeflow\s+(\S+).*$', '$1'
+    $isUpgrade = Test-Path $target
+    if ($isUpgrade) {
+        $oldVersion = (& $target version) -replace '^wholeflow\s+(\S+).*$', '$1'
+        Write-Host "Upgrading WholeFlow $oldVersion -> $newVersion"
+        Write-Host 'Stopping the running WholeFlow...'
         $null = Invoke-WholeFlow @('stop')   # "not running" is fine
-        Start-Sleep -Seconds 1
+    } else {
+        Write-Host "Installing WholeFlow $newVersion"
     }
 
+    # Windows keeps the exe locked for a moment after the process exits: retry.
     Write-Host "Copying $exeName to $InstallDir"
-    Copy-Item -Force $source $target
+    $copied = $false
+    for ($i = 1; $i -le 30 -and -not $copied; $i++) {
+        try { Copy-Item -Force $source $target -ErrorAction Stop; $copied = $true }
+        catch { Start-Sleep -Seconds 1 }
+    }
+    if (-not $copied) {
+        throw "Could not replace $target (still in use). Close any WholeFlow window, run 'wholeflow.exe stop' as Administrator, then run this installer again."
+    }
     $envFile = Join-Path $PSScriptRoot '.env'
     if (Test-Path $envFile) {
         Write-Host 'Copying .env'
@@ -123,14 +137,24 @@ try {
     if ($code -ne 0) { throw "wholeflow.exe install failed (exit $code). See $dataDir\logs\app.log and startup-error.txt." }
 
     Write-Host ''
-    Write-Host 'WholeFlow is installed and running in the background. It starts automatically at every boot.' -ForegroundColor Green
+    if ($isUpgrade) {
+        Write-Host "WholeFlow upgraded to $newVersion and running again. Settings, admin login and sync state are unchanged." -ForegroundColor Green
+    } else {
+        Write-Host "WholeFlow $newVersion is installed and running in the background. It starts automatically at every boot." -ForegroundColor Green
+    }
     Write-Host "  Program:  $target"
     Write-Host "  Data:     $dataDir"
     Write-Host '  Web app:  http://127.0.0.1:8080   (admin login; Cloud Sync setup at /#/sync)'
     Write-Host ''
-    Write-Host 'Next: create the admin account in the browser (first run), then configure Cloud Sync.'
+    Start-Sleep -Seconds 2
+    $null = Invoke-WholeFlow @('status')
+    Write-Host ''
+    if (-not $isUpgrade) {
+        Write-Host 'Next: create the admin account in the browser (first run), then configure Cloud Sync.'
+    }
     Write-Host 'Manage later from an Administrator console:  wholeflow.exe status | stop | start | restart | uninstall'
 
+    if ($isUpgrade) { $NoBrowser = $true }   # nothing to set up after an upgrade
     if (-not $NoBrowser) {
         Start-Sleep -Seconds 1
         Start-Process 'http://127.0.0.1:8080'

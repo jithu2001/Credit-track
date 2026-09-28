@@ -46,7 +46,7 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 	// step is off or failed, the ids stay empty and bills keep the names.
 	supplierIDByName := map[string]string{}
 	if set.Sync.Suppliers {
-		st, ids, err := e.syncSuppliers(ctx, pp, set, tc, cloudID)
+		st, ids, err := e.syncSuppliers(ctx, pp, set, tc, cloudID, &res)
 		if err != nil {
 			fail(cloud.EntitySuppliers, err)
 		} else {
@@ -58,7 +58,7 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 	}
 	itemIDByName := map[string]string{}
 	if set.Sync.Inventory {
-		st, ids, err := e.syncStockItems(ctx, pp, set, tc, cloudID)
+		st, ids, err := e.syncStockItems(ctx, pp, set, tc, cloudID, &res)
 		if err != nil {
 			fail(cloud.EntityStockItems, err)
 		} else {
@@ -68,7 +68,13 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 			log.Info("stock items synced", "fetched", st.Fetched, "created", st.Created, "updated", st.Updated, "deleted", st.Deleted)
 		}
 	}
-	if set.Sync.Purchases {
+	// Bills point at suppliers and items by id: if either step failed this
+	// run, a full pass would upsert every bill with empty links. Wait instead.
+	linksBroken := (set.Sync.Suppliers && res.suppliers == nil) || (set.Sync.Inventory && res.stock == nil)
+	if set.Sync.Purchases && linksBroken {
+		res.warnings = append(res.warnings, cloud.EntityPurchases+": skipped this run because the supplier or stock item step failed")
+	}
+	if set.Sync.Purchases && !linksBroken {
 		mode := "incremental"
 		switch {
 		case prev.PurchaseCursor == 0:
@@ -77,7 +83,7 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 			e.now().Sub(*prev.LastPurchaseReconcileAt) >= time.Duration(set.Sync.FullReconcileHours)*time.Hour:
 			mode = "reconcile"
 		}
-		st, cursor, active, err := e.syncPurchases(ctx, pp, set, tc, cloudID, mode, prev.PurchaseCursor, supplierIDByName, itemIDByName)
+		st, cursor, active, err := e.syncPurchases(ctx, pp, set, tc, cloudID, mode, prev.PurchaseCursor, supplierIDByName, itemIDByName, &res)
 		if err != nil {
 			fail(cloud.EntityPurchases, err)
 		} else {
@@ -95,7 +101,7 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 }
 
 // syncSuppliers is a full snapshot with diff-based soft deletes, like shops.
-func (e *Engine) syncSuppliers(ctx context.Context, pp cloud.PurchasingProvider, set Settings, tc tally.Company, cloudID string) (Stats, map[string]string, error) {
+func (e *Engine) syncSuppliers(ctx context.Context, pp cloud.PurchasingProvider, set Settings, tc tally.Company, cloudID string, res *purchasingResult) (Stats, map[string]string, error) {
 	var st Stats
 	list, err := e.Tally.GetSuppliers(ctx, tc.Name)
 	if err != nil {
@@ -119,6 +125,10 @@ func (e *Engine) syncSuppliers(ctx context.Context, pp cloud.PurchasingProvider,
 	st.Fetched = len(rows)
 	gone, created := diffRefs(existing, ids)
 	st.Created, st.Updated = created, len(rows)-created
+	if massDeleteBlocked(len(existing), len(gone)) {
+		res.warnings = append(res.warnings, massDeleteWarning(cloud.EntitySuppliers, len(existing), len(gone)))
+		gone = nil
+	}
 	if len(gone) > 0 {
 		if err := pp.SoftDeleteSuppliers(ctx, gone); err != nil {
 			return st, nil, err
@@ -138,7 +148,7 @@ func (e *Engine) syncSuppliers(ctx context.Context, pp cloud.PurchasingProvider,
 }
 
 // syncStockItems is a full snapshot with diff-based soft deletes.
-func (e *Engine) syncStockItems(ctx context.Context, pp cloud.PurchasingProvider, set Settings, tc tally.Company, cloudID string) (Stats, map[string]string, error) {
+func (e *Engine) syncStockItems(ctx context.Context, pp cloud.PurchasingProvider, set Settings, tc tally.Company, cloudID string, res *purchasingResult) (Stats, map[string]string, error) {
 	var st Stats
 	items, err := e.Tally.GetStockItems(ctx, tc.Name)
 	if err != nil {
@@ -164,6 +174,10 @@ func (e *Engine) syncStockItems(ctx context.Context, pp cloud.PurchasingProvider
 	st.Fetched = len(rows)
 	gone, created := diffRefs(existing, ids)
 	st.Created, st.Updated = created, len(rows)-created
+	if massDeleteBlocked(len(existing), len(gone)) {
+		res.warnings = append(res.warnings, massDeleteWarning(cloud.EntityStockItems, len(existing), len(gone)))
+		gone = nil
+	}
 	if len(gone) > 0 {
 		if err := pp.SoftDeleteStockItems(ctx, gone); err != nil {
 			return st, nil, err
@@ -182,7 +196,7 @@ func (e *Engine) syncStockItems(ctx context.Context, pp cloud.PurchasingProvider
 // altered since the cursor and soft-deletes those that became cancelled or
 // optional. Returns the new cursor and the number of active bills.
 func (e *Engine) syncPurchases(ctx context.Context, pp cloud.PurchasingProvider, set Settings, tc tally.Company, cloudID, mode string,
-	cursor int64, supplierIDByName, itemIDByName map[string]string) (Stats, int64, int, error) {
+	cursor int64, supplierIDByName, itemIDByName map[string]string, res *purchasingResult) (Stats, int64, int, error) {
 	var st Stats
 	since := cursor
 	if mode != "incremental" {
@@ -232,6 +246,10 @@ func (e *Engine) syncPurchases(ctx context.Context, pp cloud.PurchasingProvider,
 				gone = append(gone, cid)
 			}
 		}
+	}
+	if mode != "incremental" && massDeleteBlocked(len(have), len(gone)) {
+		res.warnings = append(res.warnings, massDeleteWarning(cloud.EntityPurchases, len(have), len(gone)))
+		gone = nil
 	}
 	if len(gone) > 0 {
 		if err := pp.SoftDeletePurchases(ctx, gone); err != nil {

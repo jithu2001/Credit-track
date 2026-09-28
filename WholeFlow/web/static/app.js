@@ -88,7 +88,7 @@ function renderCompanySelect() {
   const sel = $("#company");
   sel.hidden = state.companies.length < 2;
   sel.innerHTML = `<option value="">Select company…</option>` +
-    state.companies.map((c) => `<option ${c.name === state.company ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+    state.companies.map((c) => `<option value="${esc(c.name)}" ${c.name === state.company ? "selected" : ""}>${esc(c.name)}</option>`).join("");
 }
 
 function selectCompany(name) {
@@ -159,7 +159,7 @@ async function viewDashboard() {
       <section class="panel">
         <h2>Outstanding by area <span class="muted small">(area taken from shop name)</span></h2>
         <table><tbody>${d.outstandingByArea.map((a) => `
-          <tr><td style="width:34%"><a href="#/outstanding?q=${encodeURIComponent(a.area)}&field=area">${esc(a.area)}</a> <span class="muted small">${a.shops} shop${a.shops === 1 ? "" : "s"}</span></td>
+          <tr><td style="width:34%"><a href="#/outstanding?q=${encodeURIComponent(a.area)}&field=area_exact">${esc(a.area)}</a> <span class="muted small">${a.shops} shop${a.shops === 1 ? "" : "s"}</span></td>
           <td><div class="bar"><span style="width:${(a.outstanding / maxArea) * 100}%"></span></div></td>
           <td class="num">${money(a.outstanding)}</td></tr>`).join("")}</tbody></table>
       </section>
@@ -297,7 +297,7 @@ async function viewOutstanding(params) {
     <div class="panel">
       <div class="toolbar">
         <input type="search" id="q" placeholder="Search…" value="${esc(params.get("q") || "")}">
-        <select id="field">${opts([["all", "All fields"], ["name", "Shop name"], ["phone", "Phone"], ["area", "Area / address"]], params.get("field") || "all")}</select>
+        <select id="field">${opts([["all", "All fields"], ["name", "Shop name"], ["phone", "Phone"], ["area", "Area / address"], ["area_exact", "Area (exact)"]], params.get("field") || "all")}</select>
         <select id="sort">${opts([["balance_desc", "Highest first"], ["balance_asc", "Lowest first"], ["name_asc", "Name A→Z"], ["area_asc", "Area"]], params.get("sort") || "balance_desc")}</select>
         <input type="number" id="min" placeholder="Min ₹" min="0" step="1000" style="width:110px" value="${esc(params.get("min") || "")}">
         <span class="spacer"></span>
@@ -824,7 +824,7 @@ async function viewPurchases(params) {
       </div>
       <div class="toolbar">
         <input type="search" id="q" placeholder="${q.tab === "items" ? "Search items…" : "Search supplier, bill no., item…"}" value="${esc(q.q)}">
-        <select id="supplier"><option value="">All suppliers</option>${q.supplier ? `<option selected>${esc(q.supplier)}</option>` : ""}</select>
+        <select id="supplier"><option value="">All suppliers</option>${q.supplier ? `<option value="${esc(q.supplier)}" selected>${esc(q.supplier)}</option>` : ""}</select>
         <span class="spacer"></span>
         <a id="csv"><button>Export CSV</button></a>
         <a id="xlsx"><button>Export Excel</button></a>
@@ -850,7 +850,7 @@ async function viewPurchases(params) {
   const fillSuppliers = (names) => {
     const sel = $("#supplier"), cur = sel.value;
     if (sel.options.length > 2 || !names) return;
-    sel.innerHTML = `<option value="">All suppliers</option>` + names.map((n) => `<option ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("");
+    sel.innerHTML = `<option value="">All suppliers</option>` + names.map((n) => `<option value="${esc(n)}" ${n === cur ? "selected" : ""}>${esc(n)}</option>`).join("");
   };
 
   const loadBills = async (f) => {
@@ -1107,7 +1107,7 @@ function showLogin(err) {
       <label><span class="l">Password</span><input name="password" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Log in</button>
     </form>
-    <p class="small muted">Admin access only. Forgotten password: run <code>wholeflow.exe set-password</code> on this PC.</p></div>`;
+    <p class="small muted">Admin access only.</p></div>`;
   $("#loginForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -1130,7 +1130,7 @@ function showSetupRequired(err) {
       <label><span class="l">Repeat password</span><input name="confirm" type="password" autocomplete="new-password" required minlength="10"></label>
       <button class="primary" type="submit">Create account and continue</button>
     </form>
-    <p class="small muted">Forgotten later? Run <code>wholeflow.exe set-password</code> on this PC to reset it.</p></div>`;
+    </div>`;
   $("#setupForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);

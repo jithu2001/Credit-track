@@ -138,7 +138,7 @@ func (s *Service) ledgerTransactions(ctx context.Context, op string, company *Co
 	req := Request{Company: company.Name, FromDate: from, ToDate: strings.ReplaceAll(to, "-", ""),
 		Vars: map[string]string{"WFLEDGER": cust.Name}, TDL: tdl}
 
-	body, err := s.client.Post(ctx, op, req.Envelope())
+	body, err := s.client.post(ctx, op, req.Envelope())
 	if err != nil {
 		return nil, err
 	}
@@ -224,7 +224,7 @@ func (s *Service) ledgerTransactions(ctx context.Context, op string, company *Co
 func (s *Service) voucherBaseTypes(ctx context.Context, company string) (map[string]string, error) {
 	const op = "voucher-types"
 	tdl := `<COLLECTION NAME="WFC"><TYPE>VoucherType</TYPE><FETCH>NAME,PARENT</FETCH></COLLECTION>`
-	body, err := s.client.Post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
+	body, err := s.client.post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
 	if err != nil {
 		return nil, err
 	}

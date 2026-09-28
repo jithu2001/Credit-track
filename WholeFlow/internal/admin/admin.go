@@ -7,6 +7,7 @@ package admin
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,7 +123,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); bearer != "" && s.ControlToken != "" {
-			if bearer == s.ControlToken {
+			if tokenEqual(bearer, s.ControlToken) {
 				next(w, r)
 				return
 			}
@@ -174,7 +175,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	set := s.Settings.Get()
 	if set.Developer.PasswordHash == "" {
-		writeErr(w, http.StatusConflict, "SETUP_REQUIRED", "No developer password is set. Run: wholeflow.exe set-password")
+		writeErr(w, http.StatusConflict, "SETUP_REQUIRED", "No admin account exists yet. Open the app to create it.")
 		return
 	}
 	user := strings.TrimSpace(body.Username)
@@ -218,7 +219,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.Settings.Get().Developer.PasswordHash != "" {
-		writeErr(w, http.StatusConflict, "ALREADY_SET", "An admin account already exists. Log in, or reset it with: wholeflow.exe set-password")
+		writeErr(w, http.StatusConflict, "ALREADY_SET", "An admin account already exists. Log in.")
 		return
 	}
 	user := strings.TrimSpace(body.Username)
@@ -274,10 +275,16 @@ func (s *Server) password(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := s.Settings.Get()
+	if err := s.Limiter.Allow(set.Developer.Username); err != nil {
+		writeErr(w, http.StatusTooManyRequests, "LOCKED", err.Error())
+		return
+	}
 	if !auth.VerifyPassword(set.Developer.PasswordHash, body.Current) {
+		s.Limiter.Failure(set.Developer.Username)
 		writeErr(w, http.StatusUnauthorized, "BAD_CREDENTIALS", "Current password is incorrect.")
 		return
 	}
+	s.Limiter.Success(set.Developer.Username)
 	hash, err := auth.HashPassword(body.Password)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", err.Error())
@@ -293,6 +300,12 @@ func (s *Server) password(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		writeErr(w, http.StatusBadRequest, "INVALID", err.Error())
 		return
+	}
+	// Sign out every other browser; this one keeps its session.
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.Sessions.RevokeAllExcept(c.Value)
+	} else {
+		s.Sessions.RevokeAllExcept("")
 	}
 	s.Log.Info("developer password changed", "username", user)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
@@ -355,7 +368,12 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request: "+err.Error())
 		return
 	}
-	wasEnabled := s.Settings.Get().Sync.Enabled
+	cur := s.Settings.Get()
+	wasEnabled := cur.Sync.Enabled
+	if keyNeededFor(cur.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, cur.Cloud.KeyFromEnv) {
+		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL changed: enter the service-role key for the new project too.")
+		return
+	}
 	err := s.Settings.Update(func(st *syncer.Settings) error {
 		st.Business = syncer.BusinessSettings{ID: strings.TrimSpace(in.Business.ID), Name: strings.TrimSpace(in.Business.Name)}
 		st.Cloud.Provider = strings.ToLower(strings.TrimSpace(in.Cloud.Provider))
@@ -421,6 +439,10 @@ func (s *Server) cloudTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := s.Settings.Get()
+	if keyNeededFor(set.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, set.Cloud.KeyFromEnv) {
+		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL differs from the saved one: enter the service-role key for that project too.")
+		return
+	}
 	if in.Business.ID != "" {
 		set.Business.ID = strings.TrimSpace(in.Business.ID)
 	}
@@ -638,7 +660,7 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 // it; a browser session cannot stop the app.
 func (s *Server) quit(w http.ResponseWriter, r *http.Request) {
 	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if s.ControlToken == "" || bearer != s.ControlToken {
+	if s.ControlToken == "" || !tokenEqual(bearer, s.ControlToken) {
 		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid control token.")
 		return
 	}
@@ -708,4 +730,17 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, code, msg string) {
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": msg}})
+}
+
+// tokenEqual compares secrets in constant time.
+func tokenEqual(a, b string) bool {
+	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
+// keyNeededFor reports whether switching to newURL requires the caller to
+// supply the service-role key again: the stored key is only ever sent to the
+// Supabase project it was saved for.
+func keyNeededFor(saved, newURL, suppliedKey string, keyFromEnv bool) bool {
+	norm := func(u string) string { return strings.ToLower(strings.TrimRight(strings.TrimSpace(u), "/")) }
+	return !keyFromEnv && strings.TrimSpace(suppliedKey) == "" && saved != "" && norm(newURL) != "" && norm(newURL) != norm(saved)
 }

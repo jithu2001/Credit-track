@@ -32,3 +32,5 @@ func readPassword(in *bufio.Reader, prompt string) (string, error) {
 	}
 	return strings.TrimRight(line, "\r\n"), nil
 }
+
+func secureDataDir(string) error { return nil } // 0o700 from MkdirAll already applies

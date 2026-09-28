@@ -243,7 +243,7 @@ func (s *Server) handleCustomers(w http.ResponseWriter, r *http.Request) {
 	list := filterCustomers(snap.Customers, q)
 	total := len(list)
 	page, size := q.page, q.size
-	from := min((page-1)*size, total)
+	from := pageStart(page, size, total)
 	to := min(from+size, total)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"company": snap.Company.Name, "fetchedAt": snap.FetchedAt,
@@ -508,6 +508,11 @@ func matches(c tally.Customer, field, needle, digits string) bool {
 		return byName()
 	case "phone":
 		return byPhone()
+	case "area_exact": // dashboard area links: exactly the rows behind the bar
+		if needle == "(unknown)" {
+			return c.Area == ""
+		}
+		return strings.EqualFold(c.Area, needle)
 	case "area":
 		return byArea()
 	}
@@ -551,6 +556,8 @@ func (s *Server) describe(err error) (string, string, int) {
 		return string(te.Kind), "No company selected. Open a company in TallyPrime and select it here.", http.StatusBadRequest
 	case tally.KindCompanyNotFound:
 		return string(te.Kind), "The selected company is not open in TallyPrime. Open it in TallyPrime or choose another company.", http.StatusConflict
+	case tally.KindWriteBlocked:
+		return string(te.Kind), "This request was stopped before reaching TallyPrime: the app only ever reads from Tally, and a name containing \"$$\" cannot be sent safely.", http.StatusBadRequest
 	case tally.KindNotFound:
 		return string(te.Kind), "That record was not found in Tally. It may have been renamed or deleted — refresh from Tally.", http.StatusNotFound
 	}
@@ -588,4 +595,15 @@ func onlyDigits(s string) string {
 		}
 		return -1
 	}, s)
+}
+
+// pageStart is (page-1)*size clamped to [0, total], safe for huge page numbers.
+func pageStart(page, size, total int) int {
+	if size <= 0 || page <= 1 {
+		return 0
+	}
+	if page-1 > total/size {
+		return total
+	}
+	return min((page-1)*size, total)
 }

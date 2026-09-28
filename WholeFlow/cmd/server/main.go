@@ -68,6 +68,7 @@ func main() {
 	checkFlag := fs.Bool("check", false, "test the Tally and cloud connections, print the result and exit")
 	background := fs.Bool("background", false, "run: start as a hidden background process (no console window) and return")
 	user := fs.String("username", "", "set-password: developer username")
+	anyLocation := fs.Bool("allow-any-location", false, "install: allow a service exe outside Program Files (development only)")
 	fs.Parse(args)
 	if *dataFlag != "" {
 		os.Setenv("WHOLEFLOW_DATA_DIR", *dataFlag)
@@ -88,7 +89,7 @@ func main() {
 			code = runForeground()
 		}
 	case "install":
-		code = cmdInstall()
+		code = cmdInstall(*anyLocation)
 	case "uninstall":
 		code = report(uninstallService())
 	case "autostart":
@@ -194,6 +195,9 @@ func newApp(console bool) (*app, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create data dir %s: %w", dir, err)
 	}
+	// Lock the data dir to SYSTEM, Administrators and this account. It fails
+	// (harmlessly) when a later, less privileged console lacks WRITE_DAC.
+	aclErr := secureDataDir(dir)
 	// .env next to the executable and in the data dir, whatever the CWD is
 	// (config.Load also reads ./.env, which is what a developer run uses).
 	if exe, err := os.Executable(); err == nil {
@@ -213,13 +217,22 @@ func newApp(console bool) (*app, error) {
 	logPath := filepath.Join(cfg.LogDir, "app.log")
 	lf, err := logging.OpenRotating(logPath, 20<<20, 5)
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return nil, fmt.Errorf("open log: %w (the data folder is restricted to Administrators: use an Administrator console)", err)
+		}
 		return nil, fmt.Errorf("open log: %w", err)
 	}
 	log := logging.New(lf, console, slog.LevelInfo)
+	if aclErr != nil {
+		log.Debug("data dir ACL not changed", "dir", dir, "error", aclErr.Error())
+	}
 
 	sec := secrets.Default()
 	settings, err := syncer.LoadSettings(dir, sec)
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return nil, fmt.Errorf("settings: %w (the data folder is restricted to Administrators: use an Administrator console)", err)
+		}
 		return nil, fmt.Errorf("settings: %w", err)
 	}
 	if err := applyEnvPassword(settings); err != nil {
@@ -310,7 +323,9 @@ func (a *app) serve(ctx context.Context) error {
 		}
 		return fmt.Errorf("cannot listen on %s (port in use? set APP_ADDR in .env): %w", a.cfg.ListenAddr, err)
 	}
-	httpSrv := &http.Server{Handler: accessLog(a.log, mux), ReadHeaderTimeout: 10 * time.Second}
+	// No WriteTimeout: "sync ?wait=1" from the CLI may run for many minutes.
+	httpSrv := &http.Server{Handler: hostCheck(a.cfg.ListenAddr, accessLog(a.log, mux)), ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 	a.log.Info("wholeflow started", "version", syncer.Version, "mode", a.mode, "url", a.localURL(), "data_dir", a.dataDir,
 		"tally", a.tally.Endpoint(), "port_source", a.cfg.PortSource, "provider", set.Cloud.Provider,
 		"sync_enabled", set.Sync.Enabled, "interval_s", set.Sync.IntervalSeconds, "secrets", a.secrets.Scheme())
@@ -613,7 +628,10 @@ func cmdStatus() int {
 			}
 			json.Unmarshal(b, &resp)
 			st = resp.Sync
-			fmt.Printf("Process:         running as %s, pid %d (%s)\n", c.mode, c.pid, a.localURL())
+			fmt.Printf("Process:         running as %s, pid %d, version %s (%s)\n", c.mode, c.pid, st.Version, a.localURL())
+			if st.Version != "" && st.Version != syncer.Version {
+				fmt.Printf("                 (this exe is %s: restart or re-run install to switch to it)\n", syncer.Version)
+			}
 		}
 	} else {
 		fmt.Println("Process:         not running")
@@ -816,7 +834,7 @@ func cmdSetPassword(username string) int {
 	return 0
 }
 
-func cmdInstall() int {
+func cmdInstall(allowAnyLocation bool) int {
 	a, err := newApp(false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -829,8 +847,9 @@ func cmdInstall() int {
 		return 1
 	}
 	exe, _ = filepath.Abs(exe)
-	if strings.HasPrefix(strings.ToLower(exe), strings.ToLower(os.TempDir())) {
-		fmt.Fprintln(os.Stderr, "error: the executable is in a temporary folder; copy it to C:\\Program Files\\WholeFlow first")
+	if !allowAnyLocation && !underProgramFiles(exe) {
+		fmt.Fprintln(os.Stderr, "error: the service runs as LocalSystem, so its exe must be in a folder only Administrators can change.\n"+
+			`Copy it to C:\Program Files\WholeFlow (or use deploy\Install-WholeFlow.cmd), or pass -allow-any-location on a development PC.`)
 		return 1
 	}
 	// A background process or logon task would fight the service for the port.
@@ -867,4 +886,40 @@ func cmdInstall() int {
 		fmt.Println("No admin account yet: open the web app NOW and create it (the first person to open the page claims the account).")
 	}
 	return 0
+}
+
+// hostCheck defeats DNS rebinding: when the app listens on loopback only, a
+// request must name a loopback host, so a web page on another domain that
+// re-points its name to 127.0.0.1 cannot talk to the app from the browser.
+func hostCheck(listen string, next http.Handler) http.Handler {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil || !(host == "127.0.0.1" || host == "localhost" || host == "::1") {
+		return next // listening on the LAN on purpose (APP_ADDR): nothing to pin
+	}
+	allowed := map[string]bool{}
+	for _, h := range []string{"127.0.0.1", "localhost", "[::1]"} {
+		allowed[h+":"+port] = true
+		if port == "80" {
+			allowed[h] = true
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !allowed[strings.ToLower(r.Host)] {
+			http.Error(w, "Misdirected request", http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// underProgramFiles reports whether path is inside Program Files, which only
+// Administrators can modify.
+func underProgramFiles(path string) bool {
+	p := strings.ToLower(filepath.Clean(path))
+	for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+		if root := os.Getenv(env); root != "" && strings.HasPrefix(p, strings.ToLower(filepath.Clean(root))+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

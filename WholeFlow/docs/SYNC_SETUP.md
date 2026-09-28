@@ -103,6 +103,9 @@ Nothing. PC boots → service starts → when Tally is opened the next cycle suc
 | `another WholeFlow is already running` | `status` | A second copy was started (double-clicked exe while the service runs); harmless, close it |
 | Nothing runs after reboot | `status` | Neither the service nor the logon task is registered: run `install` (Administrator) or `autostart`. With `autostart`, the user must log in first |
 | Logon task registered but `Process: not running` | Task Scheduler → WholeFlow → History; `logs\app.log` | Exe moved or deleted after `autostart` (re-run it), or port in use |
+| `access denied` from `status`, `sync`, `config` | — | The data folder is restricted to SYSTEM and Administrators: open the console with *Run as administrator* |
+| Warning "… would be deleted; skipped as a safety check" | Cloud Sync status table | Tally returned far fewer shops, suppliers, items, bills or transactions than the cloud has (group renamed, `SHOP_GROUPS` typo, wrong company). Fix the setting; if the deletions are real, set `SYNC_ALLOW_MASS_DELETE=true` in `.env` for one run |
+| `TALLY_WRITE_BLOCKED` | log | A request was refused before reaching Tally because it was not a read-only export (e.g. a name containing `$$`). Nothing was sent to Tally |
 | Login refused | — | 8 failed attempts lock the account for 5 minutes; reset with `set-password` (console) |
 
 Logs: `C:\ProgramData\WholeFlow\logs\app.log` (rotated at 20 MB, 5 kept): every Tally request, every cloud request, every web request under `/api/`, every run summary and every error; credentials never. `wholeflow.exe config` prints the effective configuration with secrets redacted.

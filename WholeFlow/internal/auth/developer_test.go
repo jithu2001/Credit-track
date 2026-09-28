@@ -67,3 +67,28 @@ func TestLimiterLocksOut(t *testing.T) {
 	}
 	l.Success("dev")
 }
+
+func TestLimiterCaseAndBurst(t *testing.T) {
+	l := NewLimiter(3, time.Minute, time.Hour)
+	// Case variants share one bucket.
+	for _, u := range []string{"admin", "Admin", "ADMIN"} {
+		if err := l.Allow(u); err != nil {
+			t.Fatalf("attempt %s refused early: %v", u, err)
+		}
+	}
+	if err := l.Allow("aDmIn"); err != ErrLocked {
+		t.Fatalf("4th attempt under another case must be locked, got %v", err)
+	}
+	// Attempts count before the password check: a burst without any Failure
+	// call still stops at maxFailures.
+	l2 := NewLimiter(3, time.Minute, time.Hour)
+	ok := 0
+	for i := 0; i < 10; i++ {
+		if l2.Allow("admin") == nil {
+			ok++
+		}
+	}
+	if ok != 3 {
+		t.Fatalf("burst let %d attempts through, want 3", ok)
+	}
+}

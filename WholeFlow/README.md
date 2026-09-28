@@ -7,7 +7,14 @@ One executable, `wholeflow.exe`, one process, one port, one login:
 - **Admin login for everything.** The app is for the developer/administrator only: every page and every API call requires the single admin account. On the first run the browser asks you to create it (default username `admin`; there is no default password); `set-password` resets it from the console. The business owner and staff never use this app; they will use the mobile app against the cloud.
 - **Runs unattended in the background.** Installed as the Windows service **WholeFlow** it starts at every boot, before anyone logs in, with no window. Where Administrator rights are not available, `autostart` starts it hidden at every logon instead. Nobody has to open anything for the sync to run. See [Deploying on a client PC](#deploying-on-a-client-pc).
 
-**Nothing is ever written to Tally**, and Tally's data files are never touched. The only third-party dependency is `golang.org/x/sys` (Windows service and DPAPI).
+**Nothing is ever written to Tally**, and Tally's data files are never touched. This is enforced in code, not just by convention:
+
+- The app talks to Tally only over Tally's HTTP/XML port, through one private function in `internal/tally/client.go`. No other code can send anything to Tally, and the app never opens Tally's data folder.
+- Before any request leaves the app, `internal/tally/readonly.go` checks it against an allow-list. The header must say `TALLYREQUEST=Export`, `TYPE=Collection`. Only collection-definition elements may appear, and formulas may call only five read-only functions. Anything else is refused with `TALLY_WRITE_BLOCKED`, logged, and never sent. That covers imports, `TALLYMESSAGE` data, `ACTION`s, report or function definitions and unknown `$$` functions.
+- Names typed by users or read from Tally (company, ledger, item) only ever travel as escaped text, so they cannot turn into Tally commands. A name containing `$$` is refused rather than sent.
+- Tests (`internal/tally/readonly_test.go`) run every real request through the check and prove that write-shaped requests are blocked before they reach the port.
+
+The only third-party dependency is `golang.org/x/sys` (Windows service and DPAPI).
 
 ```
 TallyPrime  ──HTTP/XML──▶  wholeflow.exe (this PC: web app + sync)  ──HTTPS──▶  Supabase  ──▶  Mobile app (owner / staff)
@@ -45,7 +52,9 @@ Cloud sync in one minute: run the app → open http://127.0.0.1:8080, create the
 Data lives in `%ProgramData%\WholeFlow` (`config.json` with the key DPAPI-encrypted, `state.json`, `logs\app.log`).
 Environment variables / `.env` override the file (see `.env.example`). `CLOUD_PROVIDER=memory` is a dry run.
 
-While the service runs from `bin\wholeflow.exe`, `go build` cannot overwrite that file: build to another name, or `wholeflow.exe stop` first and `install` (Administrator) afterwards to pick up the new build.
+While the service runs from `bin\wholeflow.exe`, `go build` cannot overwrite that file: build to another name, or `wholeflow.exe stop` first and `install` (Administrator) afterwards to pick up the new build. Because the service runs as LocalSystem, `install` refuses an exe outside Program Files; on a development PC add `-allow-any-location`.
+
+The data folder is locked to SYSTEM, Administrators and the account the app runs as; the app sets this on every start. With the service installed, run `status`, `sync`, `check`, `config` and `set-password` from an **Administrator** console. A normal console gets "access denied".
 
 ## Deploying on a client PC
 
@@ -91,13 +100,13 @@ Several clients can share one Supabase project, one row each; Row Level Security
 3. **Double-click `Install-WholeFlow.cmd`** and accept the UAC prompt. It copies the exe to `C:\Program Files\WholeFlow`, registers and starts the service (delayed automatic start, restart on failure) and opens http://127.0.0.1:8080. Doing it by hand instead: copy the exe there, open an Administrator console in that folder, run `.\wholeflow.exe install`.
 4. **Create the admin account** on the page that opens (username, password ≥ 10 characters). Do this immediately: the first person to open the page claims the account. The app only listens on 127.0.0.1, so that is whoever sits at this PC.
 5. **Cloud Sync page** (`/#/sync`): business id (from [the query above](#before-you-start-create-the-business-in-supabase)), Supabase URL and service-role key → *Test cloud connection* → *Test Tally & discover companies* → tick the companies → *Save* → *Sync now* → tick *Background synchronisation enabled* → *Save*. Details: [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
-6. **Verify**: close the browser, reboot the PC, do not log in yet or log in and open nothing. After a few minutes, from any console:
+6. **Verify**: close the browser, reboot the PC, do not log in yet or log in and open nothing. After a few minutes, from an Administrator console:
    ```powershell
    & "C:\Program Files\WholeFlow\wholeflow.exe" status
    ```
    Expect `Windows service: running (automatic start)`, `Process: running as service`, and `Last successful sync` on each ticked company (needs Tally open).
 
-Upgrade: copy the new `wholeflow.exe` into the folder and double-click `Install-WholeFlow.cmd` again (or, by hand: `stop`, overwrite the exe, `install`). Config, state and the encrypted key are untouched. Remove: `Install-WholeFlow.cmd -Uninstall` (add `-PurgeData` to delete `C:\ProgramData\WholeFlow` too).
+Upgrade: see [Rolling out an update](#rolling-out-an-update). Remove: `Install-WholeFlow.cmd -Uninstall` (add `-PurgeData` to delete `C:\ProgramData\WholeFlow` too).
 
 ### B. Logon autostart (no Administrator)
 
@@ -115,6 +124,49 @@ The app then runs only while that user is logged in; a locked screen is fine, a 
 ### Daily operation
 
 The customer sees nothing: no window, no tray icon, no login. Sync runs every interval (default 5 minutes) while Tally is open. `wholeflow.exe status` shows what is happening; `C:\ProgramData\WholeFlow\logs\app.log` has the details; http://127.0.0.1:8080 shows the dashboards and the Cloud Sync log behind the admin login. If port 8080 is taken on that PC, put `APP_ADDR=127.0.0.1:8090` in the `.env` next to the exe before installing.
+
+### Rolling out an update
+
+An update replaces only `wholeflow.exe`. The admin login, the Cloud Sync settings, the encrypted Supabase key and the sync progress all live in `C:\ProgramData\WholeFlow` and are kept, so there is nothing to set up again.
+
+**On your PC, once per release:**
+
+1. Raise the version in `internal/syncer/settings.go` (`const Version`, e.g. `0.3.0` → `0.3.1`). It is how you tell an updated PC from an old one.
+2. Build the package. This runs `go vet` and `go test` first and stops if anything fails:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1
+   ```
+   Result: `dist\WholeFlow-<version>.zip` with `wholeflow.exe`, `Install-WholeFlow.cmd` / `.ps1`, `README.txt`, `.env.example` and `migrations\`. The script prints the exe's SHA-256 so you can check the copy on the client.
+3. **Database first.** If the release adds a file under `supabase/migrations/`, run that file in Supabase → SQL Editor before updating any PC, once per Supabase project. Migrations are additive, so the old version keeps working against the new schema. Releases so far:
+
+   | Version | Migration to apply | What it adds |
+   |---|---|---|
+   | 0.2.0 | `0001_init.sql`, `0002_mobile_app.sql` | shops, transactions, staff access |
+   | 0.3.0 | `0003_purchasing.sql` | suppliers, stock items, purchase bills; background mode and autostart |
+
+   Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
+
+**On each client PC** (in person or over AnyDesk / TeamViewer):
+
+1. Copy the zip to the PC and extract it (right-click → *Extract All*). Run from the extracted folder, not from inside the zip.
+2. Double-click **`Install-WholeFlow.cmd`** and accept the UAC prompt. It prints `Upgrading WholeFlow <old> -> <new>`, stops the service, waits until Windows releases the old exe, copies the new one to `C:\Program Files\WholeFlow`, points the service at it, starts it again and prints `status`.
+3. Check the `status` output at the end: `Process: running as service, version <new>`. Within a few minutes each company shows a new *Last successful sync*.
+
+The sync is down only for the few seconds of the restart; nothing is lost, because the next run picks up everything changed in Tally since the last one. If the release changes what is synced (0.3.0 adds purchases and stock), the first run after the update uploads that data in full, which takes about half a minute for a company like the sample one.
+
+**By hand**, from an Administrator console, if the script cannot be used:
+
+```powershell
+cd "C:\Program Files\WholeFlow"
+.\wholeflow.exe stop
+Copy-Item "<extracted folder>\wholeflow.exe" . -Force   # retry after a few seconds if Windows says "in use"
+.\wholeflow.exe install                                   # re-points and restarts the existing service
+.\wholeflow.exe status
+```
+
+**PCs set up with logon autostart** (no Administrator): log in as that user, run `.\wholeflow.exe stop` in the program folder, overwrite `wholeflow.exe` with the new one, then `.\wholeflow.exe start`. The logon task keeps pointing at the same path.
+
+**Rollback:** keep the previous release zip. Installing it the same way puts the old version back. Settings and data are untouched, and extra tables from a newer migration are simply not used by the older version.
 
 Documentation:
 

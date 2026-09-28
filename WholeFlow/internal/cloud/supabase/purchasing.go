@@ -162,7 +162,7 @@ func (s *Storage) SoftDeleteStockItems(ctx context.Context, ids []string) error 
 // batch: delete the old lines of those bills, insert the new ones. Lines are
 // derived data (a bill's items), so they are replaced rather than soft-deleted.
 func (s *Storage) UpsertPurchases(ctx context.Context, ps []cloud.Purchase) error {
-	for _, batch := range chunk(ps, 200) {
+	for _, batch := range chunk(ps, 100) { // the line delete lists every bill id in the URL
 		rows := make([]purchaseRow, 0, len(batch))
 		for _, p := range batch {
 			le := p.LedgerEntries

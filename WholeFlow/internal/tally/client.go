@@ -18,7 +18,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -57,15 +56,19 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
+// maxResponseBytes caps one Tally response. The sample company's full voucher
+// export is ~33 MB; the cap leaves room for companies 10-15x larger.
+const maxResponseBytes = 512 << 20
+
 // Client is a thin, serialised HTTP transport to one Tally server.
 // TallyPrime processes requests one at a time, so we never send in parallel.
 type Client struct {
 	Endpoint string
 	http     *http.Client
 	log      *slog.Logger
-	rawDir   string // where raw responses are written; "" disables debug dumps
-	errDir   string // raw responses that failed to parse are always kept here
-	mu       sync.Mutex
+	rawDir   string        // where raw responses are written; "" disables debug dumps
+	errDir   string        // raw responses that failed to parse are always kept here
+	busy     chan struct{} // one request at a time (TallyPrime is single-threaded); honours ctx while waiting
 }
 
 func NewClient(host string, port int, timeout time.Duration, log *slog.Logger, logDir string, debugRaw bool) *Client {
@@ -78,13 +81,24 @@ func NewClient(host string, port int, timeout time.Duration, log *slog.Logger, l
 	if debugRaw {
 		c.rawDir = filepath.Join(logDir, "raw")
 	}
+	c.busy = make(chan struct{}, 1)
 	return c
 }
 
-// Post sends an XML envelope and returns the sanitised response body.
-func (c *Client) Post(ctx context.Context, op string, body []byte) ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// post sends an XML envelope and returns the sanitised response body. It is
+// the only way this program talks to Tally, and it refuses anything that is
+// not a read-only collection export (see checkReadOnly in readonly.go).
+func (c *Client) post(ctx context.Context, op string, body []byte) ([]byte, error) {
+	if err := checkReadOnly(body); err != nil {
+		c.log.Error("tally request blocked: not a read-only export", "op", op, "error", err.Error())
+		return nil, &Error{Kind: KindWriteBlocked, Op: op, Msg: err.Error()}
+	}
+	select {
+	case c.busy <- struct{}{}:
+	case <-ctx.Done():
+		return nil, &Error{Kind: KindTimeout, Op: op, Msg: "gave up waiting for an earlier Tally request to finish", Err: ctx.Err()}
+	}
+	defer func() { <-c.busy }()
 
 	start := time.Now()
 	attrs := []any{"op", op, "endpoint", c.Endpoint}
@@ -108,7 +122,12 @@ func (c *Client) Post(ctx context.Context, op string, body []byte) ([]byte, erro
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
+	// Cap the response: a runaway export must fail clearly, not exhaust memory.
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err == nil && len(raw) > maxResponseBytes {
+		c.log.Error("tally response too large", append(attrs, "limit_bytes", maxResponseBytes)...)
+		return nil, &Error{Kind: KindInvalidResponse, Op: op, Msg: fmt.Sprintf("response larger than %d MB", maxResponseBytes>>20)}
+	}
 	attrs = append(attrs, "status", resp.StatusCode, "bytes", len(raw), "duration_ms", time.Since(start).Milliseconds())
 	if err != nil {
 		kind := KindUnreachable

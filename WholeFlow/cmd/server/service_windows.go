@@ -425,3 +425,29 @@ func readPassword(in *bufio.Reader, prompt string) (string, error) {
 	}
 	return strings.TrimRight(line, "\r\n"), nil
 }
+
+// secureDataDir replaces the data directory's inherited ACL (ProgramData lets
+// every local user read files and create new ones) with a protected one:
+// SYSTEM, Administrators and the account this process runs as, full control;
+// nobody else. Children inherit it, so config.json (DPAPI-encrypted key,
+// password hash), control.token, state.json, .env and the logs are covered.
+func secureDataDir(dir string) error {
+	sddl := "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	if tok := windows.GetCurrentProcessToken(); tok != 0 {
+		if u, err := tok.GetTokenUser(); err == nil {
+			if sid := u.User.Sid.String(); sid != "S-1-5-18" { // not already SYSTEM
+				sddl += "(A;OICI;FA;;;" + sid + ")"
+			}
+		}
+	}
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
+}

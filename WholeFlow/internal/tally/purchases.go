@@ -106,7 +106,7 @@ func (s *Service) GetPurchasesSince(ctx context.Context, company *Company, since
 	}
 	tdl := `<COLLECTION NAME="WFC"><TYPE>Voucher</TYPE><FETCH>` + purchaseFetch + `</FETCH>` +
 		`<FILTER>` + filters + `</FILTER></COLLECTION>` + formulae
-	body, err := s.client.Post(ctx, op, voucherRequest(company, tdl).Envelope())
+	body, err := s.client.post(ctx, op, voucherRequest(company, tdl).Envelope())
 	if err != nil {
 		return nil, err
 	}

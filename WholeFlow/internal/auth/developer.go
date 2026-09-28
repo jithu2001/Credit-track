@@ -150,40 +150,88 @@ func NewLimiter(maxFailures int, window, lockout time.Duration) *Limiter {
 
 var ErrLocked = errors.New("too many failed logins; try again later")
 
-// Allow reports whether a login attempt for user may proceed.
+// key folds case: usernames are compared case-insensitively, so "Admin" and
+// "admin" must share one bucket.
+func limiterKey(user string) string { return strings.ToLower(strings.TrimSpace(user)) }
+
+// Allow reports whether a login attempt for user may proceed and, if so,
+// counts it straight away. Counting before the (slow) password check means
+// parallel requests cannot all slip in before the first failure is recorded;
+// Success forgets the attempts of a correct login.
 func (l *Limiter) Allow(user string) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if until, ok := l.locked[user]; ok {
-		if l.now().Before(until) {
+	key, now := limiterKey(user), l.now()
+	if until, ok := l.locked[key]; ok {
+		if now.Before(until) {
 			return ErrLocked
 		}
-		delete(l.locked, user)
-		delete(l.fails, user)
+		delete(l.locked, key)
+		delete(l.fails, key)
 	}
+	recent := l.recentLocked(key, now)
+	if len(recent) >= l.maxFailures {
+		l.locked[key] = now.Add(l.lockout)
+		return ErrLocked
+	}
+	l.fails[key] = append(recent, now)
+	l.pruneLocked(now)
 	return nil
 }
 
+// Failure locks the account once maxFailures attempts fall inside the window.
+// (The attempt itself was already counted by Allow.)
 func (l *Limiter) Failure(user string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	now := l.now()
-	var recent []time.Time
-	for _, t := range l.fails[user] {
-		if now.Sub(t) < l.window {
-			recent = append(recent, t)
-		}
-	}
-	recent = append(recent, now)
-	l.fails[user] = recent
-	if len(recent) >= l.maxFailures {
-		l.locked[user] = now.Add(l.lockout)
+	key, now := limiterKey(user), l.now()
+	if len(l.recentLocked(key, now)) >= l.maxFailures {
+		l.locked[key] = now.Add(l.lockout)
 	}
 }
 
 func (l *Limiter) Success(user string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.fails, user)
-	delete(l.locked, user)
+	key := limiterKey(user)
+	delete(l.fails, key)
+	delete(l.locked, key)
+}
+
+func (l *Limiter) recentLocked(key string, now time.Time) []time.Time {
+	var recent []time.Time
+	for _, t := range l.fails[key] {
+		if now.Sub(t) < l.window {
+			recent = append(recent, t)
+		}
+	}
+	return recent
+}
+
+// pruneLocked drops expired entries so random usernames cannot grow the maps forever.
+func (l *Limiter) pruneLocked(now time.Time) {
+	if len(l.fails)+len(l.locked) < 256 {
+		return
+	}
+	for k := range l.fails {
+		if len(l.recentLocked(k, now)) == 0 {
+			delete(l.fails, k)
+		}
+	}
+	for k, until := range l.locked {
+		if !now.Before(until) {
+			delete(l.locked, k)
+		}
+	}
+}
+
+// RevokeAllExcept ends every session but keep (e.g. after a password change).
+func (s *Sessions) RevokeAllExcept(keep string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for tok := range s.toks {
+		if tok != keep {
+			delete(s.toks, tok)
+		}
+	}
 }

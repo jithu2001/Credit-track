@@ -102,3 +102,11 @@ func TestGetPurchases(t *testing.T) {
 		t.Errorf("ledgers (party must be excluded): %+v", p.Ledgers)
 	}
 }
+
+func TestParseQuantityRejectsCompound(t *testing.T) {
+	for _, in := range []string{"1 Box 2 Nos", "1-2 Box"} {
+		if _, err := ParseQuantity(in); err == nil {
+			t.Errorf("ParseQuantity(%q) must report an error, not read part of it", in)
+		}
+	}
+}

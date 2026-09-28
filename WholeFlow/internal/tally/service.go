@@ -173,7 +173,7 @@ type xmlCompany struct {
 // GetCompanies lists the companies currently open in TallyPrime.
 func (s *Service) GetCompanies(ctx context.Context) ([]Company, error) {
 	const op = "companies"
-	body, err := s.client.Post(ctx, op, Request{TDL: companyTDL}.Envelope())
+	body, err := s.client.post(ctx, op, Request{TDL: companyTDL}.Envelope())
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (s *Service) ResolveCompany(ctx context.Context, name string) (*Company, er
 func (s *Service) GetLedgers(ctx context.Context, company string) ([]LedgerSummary, error) {
 	const op = "ledgers"
 	tdl := `<COLLECTION NAME="WFC"><TYPE>Ledger</TYPE><FETCH>NAME,PARENT,CLOSINGBALANCE</FETCH></COLLECTION>`
-	body, err := s.client.Post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
+	body, err := s.client.post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +310,9 @@ func (s *Service) GetSupplier(ctx context.Context, company, id string) (*Custome
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGroupMember(ctx, company, *c, s.supplierGroups, s.GetSuppliers) {
+	if ok, err := s.isGroupMember(ctx, company, *c, s.supplierGroups, s.GetSuppliers); err != nil {
+		return nil, err
+	} else if !ok {
 		return nil, &Error{Kind: KindNotFound, Op: "supplier", Msg: "ledger " + c.Name + " is not in a supplier group"}
 	}
 	return c, nil
@@ -346,7 +348,9 @@ func (s *Service) GetCustomer(ctx context.Context, company, id string) (*Custome
 	if err != nil {
 		return nil, err
 	}
-	if !s.isGroupMember(ctx, company, *c, s.shopGroups, s.GetCustomers) {
+	if ok, err := s.isGroupMember(ctx, company, *c, s.shopGroups, s.GetCustomers); err != nil {
+		return nil, err
+	} else if !ok {
 		return nil, &Error{Kind: KindNotFound, Op: "customer", Msg: "ledger " + c.Name + " is not in a shop group"}
 	}
 	return c, nil
@@ -377,27 +381,27 @@ func (s *Service) GetCustomerBalances(ctx context.Context, company string) ([]Cu
 
 // isGroupMember guards GetCustomer/GetSupplier against returning, say, a bank ledger.
 func (s *Service) isGroupMember(ctx context.Context, company string, c Customer, groups []string,
-	list func(context.Context, string) ([]Customer, error)) bool {
+	list func(context.Context, string) ([]Customer, error)) (bool, error) {
 	for _, g := range groups {
 		if strings.EqualFold(c.Group, g) {
-			return true
+			return true, nil
 		}
 	}
 	// Sub-group of one of the groups: ask Tally.
 	customers, err := list(ctx, company)
 	if err != nil {
-		return false
+		return false, err
 	}
 	for _, x := range customers {
 		if x.ID == c.ID {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 func (s *Service) fetchLedgers(ctx context.Context, op string, req Request) ([]Customer, error) {
-	body, err := s.client.Post(ctx, op, req.Envelope())
+	body, err := s.client.post(ctx, op, req.Envelope())
 	if err != nil {
 		return nil, err
 	}

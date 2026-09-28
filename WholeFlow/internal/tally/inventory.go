@@ -27,6 +27,10 @@ func ParseQuantity(s string) (Quantity, error) {
 		s = strings.TrimSpace(s[:i])
 	}
 	num, unit := splitNumber(s)
+	if strings.IndexFunc(unit, func(r rune) bool { return r >= '0' && r <= '9' }) >= 0 {
+		// e.g. "1 Box 2 Nos" (compound unit): reading only "1" would be wrong
+		return Quantity{}, fmt.Errorf("unsupported compound quantity %q", s)
+	}
 	if num == "" {
 		return Quantity{}, fmt.Errorf("unrecognised quantity %q", s)
 	}
@@ -118,7 +122,7 @@ type xmlStockItem struct {
 func (s *Service) GetStockItems(ctx context.Context, company string) ([]StockItem, error) {
 	const op = "stock-items"
 	tdl := `<COLLECTION NAME="WFC"><TYPE>StockItem</TYPE><FETCH>` + stockFetch + `</FETCH></COLLECTION>`
-	body, err := s.client.Post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
+	body, err := s.client.post(ctx, op, Request{Company: company, TDL: tdl}.Envelope())
 	if err != nil {
 		return nil, err
 	}

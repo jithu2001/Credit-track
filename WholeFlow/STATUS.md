@@ -113,3 +113,24 @@ Roughly 8,000 lines of Go (including ~1,700 of tests), 800 lines of frontend, 33
 6. **Web app persistence** remains in-memory; it could read the cloud tables later.
 7. **Area derivation** remains heuristic and tuned to this business's ledger naming.
 8. **Owner account creation against a real Supabase project** has not been run in this session (verified against a fake Auth API in tests); check the first real one in Supabase → Authentication → Users.
+
+## 8. Production hardening (28 Sep 2026, version 0.3.0)
+
+Three independent reviews (security; sync correctness; Tally parsing, API and frontend), then fixes, each with tests:
+
+| Area | Change |
+|---|---|
+| **Tally is read-only, enforced** | `internal/tally/readonly.go` checks every request against an allow-list (Export of a Collection only, fixed element vocabulary, five read-only `$$` functions) before it is sent; anything else is `TALLY_WRITE_BLOCKED` and never leaves the process. The send function is private to the Tally package. Verified: every real request passes; imports, `TALLYMESSAGE`, `ACTION`, function definitions and unknown functions are blocked; a live full sync sent 14 requests, 0 blocked. |
+| Data folder | Protected ACL on every start (SYSTEM, Administrators, the running account). Before, every local user could read `control.token` (admin API access) and decrypt the Supabase key, and could plant a `.env`. |
+| Web app | Host-header check against DNS rebinding; read/idle timeouts; login lockout counts attempts before the password check and ignores username case; password change signs out other sessions and is rate limited; control token compared in constant time; the stored key is only sent to the project URL it was saved for. |
+| Service install | Refuses an exe outside Program Files (LocalSystem would run a user-replaceable file); `-allow-any-location` for development. |
+| Sync | Reconcile re-reads every voucher (gaps heal on schedule); a newly appeared shop forces a reconcile; safety check skips mass soft-deletes after a suspicious read (`SYNC_ALLOW_MASS_DELETE` to override); purchases wait when the supplier or item step failed (no lost links); id lists per request halved (URL length); paging follows the server's real page size; env interval clamped. |
+| Tally client / API | Response size cap (512 MB); waiting for Tally's single request slot honours the request deadline; Tally errors in the shop/supplier membership check no longer show as "not found"; compound quantities reported instead of misread; page numbers overflow-safe; exact area filter for dashboard links. |
+| Exports | CSV formula injection defused; whole numbers written as numbers in CSV and Excel. |
+| Installer | Fixed: exit code was mixed with output (success looked like failure) and `status` output was swallowed. |
+
+Known limits, accepted for now:
+
+1. A full voucher sync is one Tally request (about 33 MB for the sample company; capped at 512 MB). A company roughly 15 times larger would need windowed fetching.
+2. While Tally is offline the cloud `sync_state` records the error, but `tally_companies.sync_status` keeps its last value; the mobile app should read `sync_state`.
+3. `deploy\Install-WholeFlow.cmd` is syntax-checked but has not yet been run end to end on a client PC.

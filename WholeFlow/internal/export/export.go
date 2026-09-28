@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 )
 
 // Table is a header row plus data rows; cells are string or float64.
@@ -36,8 +37,10 @@ func WriteCSV(w io.Writer, t Table) error {
 			switch x := v.(type) {
 			case float64:
 				rec[i] = strconv.FormatFloat(x, 'f', 2, 64)
+			case int:
+				rec[i] = strconv.Itoa(x)
 			default:
-				rec[i] = fmt.Sprint(x)
+				rec[i] = csvText(fmt.Sprint(x))
 			}
 		}
 		cw.Write(rec)
@@ -115,6 +118,8 @@ func sheetXML(t Table) string {
 					s = 2
 				}
 				fmt.Fprintf(&b, `<c r="%s" s="%d"><v>%s</v></c>`, ref, s, strconv.FormatFloat(x, 'f', -1, 64))
+			case int:
+				fmt.Fprintf(&b, `<c r="%s" s="%d"><v>%d</v></c>`, ref, style, x)
 			default:
 				fmt.Fprintf(&b, `<c r="%s" s="%d" t="inlineStr"><is><t xml:space="preserve">%s</t></is></c>`,
 					ref, style, esc(fmt.Sprint(x)))
@@ -149,4 +154,15 @@ func esc(s string) string {
 	var b bytes.Buffer
 	xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// csvText defuses spreadsheet formula injection: a Tally name or narration
+// such as =HYPERLINK(...) or @SUM(...) would otherwise run as a formula when
+// the CSV is opened in Excel. A leading apostrophe makes Excel show it as
+// text. (XLSX cells are typed inline strings and are safe as they are.)
+func csvText(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
 }

@@ -311,7 +311,7 @@ func (s *Server) handlePurchases(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(sups, func(i, j int) bool { return sups[i].total > sups[j].total })
 
 	total := len(list)
-	from := min((q.page-1)*q.size, total)
+	from := pageStart(q.page, q.size, total)
 	to := min(from+q.size, total)
 	rows := make([]purchaseRow, 0, to-from)
 	for _, p := range list[from:to] {
@@ -558,7 +558,7 @@ func (s *Server) handleInventory(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(gl, func(i, j int) bool { return strings.ToLower(gl[i].Group) < strings.ToLower(gl[j].Group) })
 
 	total := len(list)
-	from := min((q.page-1)*q.size, total)
+	from := pageStart(q.page, q.size, total)
 	to := min(from+q.size, total)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"company": c.Company.Name, "fetchedAt": c.FetchedAt,

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	gosync "sync"
@@ -321,6 +322,12 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 			goneShops = append(goneShops, id)
 		}
 	}
+	if massDeleteBlocked(len(existingByLedger), len(goneShops)) {
+		w := massDeleteWarning(cloud.EntityShops, len(existingByLedger), len(goneShops))
+		log.Warn("SAFETY CHECK", "detail", w)
+		cr.Warnings = append(cr.Warnings, w)
+		goneShops = nil
+	}
 	if len(goneShops) > 0 {
 		if err := prov.SoftDeleteShops(ctx, goneShops); err != nil {
 			return finish(err, cloud.EntityShops)
@@ -342,7 +349,18 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		default:
 			cr.Mode = "incremental"
 		}
-		vouchers, err := e.Tally.GetVouchers(ctx, &tc, cursor)
+		// A shop that is new in the cloud (created in Tally, moved into a shop
+		// group, restored) has history older than the cursor: read everything.
+		if cr.Mode == "incremental" && cr.Shops.Created > 0 {
+			cr.Mode = "reconcile"
+		}
+		// full and reconcile re-read every voucher, so gaps (unparsed amounts,
+		// ledgers that became shops, post-dated vouchers) heal on schedule.
+		since := cursor
+		if cr.Mode != "incremental" {
+			since = 0
+		}
+		vouchers, err := e.Tally.GetVouchers(ctx, &tc, since)
 		if err != nil {
 			return finish(err, cloud.EntityTransactions)
 		}
@@ -388,27 +406,9 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		// no longer hit a shop. Incremental: only the latter, within scope.
 		var gone []string
 		switch cr.Mode {
-		case "full":
+		case "full", "reconcile":
 			for key, r := range existingByKey {
 				if !newKeys[key] {
-					gone = append(gone, r.ID)
-				}
-			}
-		case "reconcile":
-			refs, err := e.Tally.GetVoucherIDs(ctx, &tc)
-			if err != nil {
-				return finish(err, cloud.EntityTransactions)
-			}
-			alive := make(map[string]bool, len(refs))
-			for _, r := range refs {
-				alive[r.GUID] = true
-			}
-			touched := make(map[string]bool, len(vouchers))
-			for _, v := range vouchers {
-				touched[v.GUID] = true
-			}
-			for key, r := range existingByKey {
-				if !alive[r.TallyVoucherID] || (touched[r.TallyVoucherID] && !newKeys[key]) {
 					gone = append(gone, r.ID)
 				}
 			}
@@ -418,6 +418,12 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 					gone = append(gone, r.ID)
 				}
 			}
+		}
+		if cr.Mode != "incremental" && massDeleteBlocked(len(existingByKey), len(gone)) {
+			w := massDeleteWarning(cloud.EntityTransactions, len(existingByKey), len(gone))
+			log.Warn("SAFETY CHECK", "detail", w)
+			cr.Warnings = append(cr.Warnings, w)
+			gone = nil
 		}
 		if len(gone) > 0 {
 			if err := prov.SoftDeleteTransactions(ctx, gone); err != nil {
@@ -440,7 +446,8 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 
 	// 6b. suppliers, stock items, purchase bills (secondary: failures are warnings)
 	pr := e.syncPurchasing(ctx, prov, set, tc, cloudID, prev, log)
-	cr.Suppliers, cr.StockItems, cr.Purchases, cr.PurchaseMode, cr.Warnings = pr.suppliers, pr.stock, pr.purchases, pr.purchaseMode, pr.warnings
+	cr.Suppliers, cr.StockItems, cr.Purchases, cr.PurchaseMode = pr.suppliers, pr.stock, pr.purchases, pr.purchaseMode
+	cr.Warnings = append(cr.Warnings, pr.warnings...)
 
 	// 7 + 8. company status, sync state, sync log — only now is it "synced".
 	done := e.now()
@@ -468,7 +475,7 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		c.VoucherCursor, c.LastFullReconcileAt = cursor, lastReconcile
 		c.ShopCount, c.TransactionCount, c.CloudID = len(shops), txCount, cloudID
 		c.SupplierCount, c.StockItemCount, c.PurchaseCount = pr.supplierCount, pr.stockCount, pr.purchaseCount
-		c.PurchaseCursor, c.LastPurchaseReconcileAt, c.Warnings = pr.purchaseCursor, pr.lastReconcile, pr.warnings
+		c.PurchaseCursor, c.LastPurchaseReconcileAt, c.Warnings = pr.purchaseCursor, pr.lastReconcile, cr.Warnings
 	})
 	log.Info("SYNC COMPLETE", "shops", cr.Shops.Fetched, "transactions", cr.Transactions.Fetched, "mode", cr.Mode, "duration_ms", cr.DurationMs)
 	return cr
@@ -597,4 +604,20 @@ func (r *RunResult) String() string {
 		}
 	}
 	return b.String()
+}
+
+// massDeleteBlocked is the safety check before soft-deleting what Tally no
+// longer returns. An empty read, or one that would remove more than half of
+// ten or more cloud rows, usually means a wrong group setting or a damaged
+// company rather than real deletions, so the deletes are skipped (with a
+// warning) unless SYNC_ALLOW_MASS_DELETE=true.
+func massDeleteBlocked(existing, gone int) bool {
+	if gone == 0 || isTrue(os.Getenv("SYNC_ALLOW_MASS_DELETE")) {
+		return false
+	}
+	return gone == existing || (existing >= 10 && gone*2 > existing)
+}
+
+func massDeleteWarning(entity string, existing, gone int) string {
+	return fmt.Sprintf("%s: %d of %d cloud rows would be deleted; skipped as a safety check. Check the company and group settings in Tally; if the deletions are real, set SYNC_ALLOW_MASS_DELETE=true for one run", entity, gone, existing)
 }

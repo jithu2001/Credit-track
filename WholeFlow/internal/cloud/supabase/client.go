@@ -215,7 +215,9 @@ func (c *client) upsert(ctx context.Context, op, table, onConflict string, rows 
 
 // selectAll pages through a filtered select until all rows are read.
 func (c *client) selectAll(ctx context.Context, op, table string, query url.Values, into func([]byte) (int, error)) error {
-	for from := 0; ; from += pageSize {
+	// Advance by the rows actually returned: a project whose "Max rows" is
+	// below pageSize still gets paged to the end (the exact count says when).
+	for from := 0; ; {
 		raw, hdr, err := c.do(ctx, op, http.MethodGet, table, query, "count=exact", fmt.Sprintf("%d-%d", from, from+pageSize-1), nil)
 		if err != nil {
 			// PostgREST answers 416 when the range starts past the end.
@@ -230,9 +232,10 @@ func (c *client) selectAll(ctx context.Context, op, table string, query url.Valu
 			return &cloud.Error{Kind: cloud.KindError, Op: op, Msg: "unexpected response", Err: err}
 		}
 		total := contentRangeTotal(hdr.Get("Content-Range"))
-		if n < pageSize || (total >= 0 && from+n >= total) {
+		if n == 0 || (total >= 0 && from+n >= total) || (total < 0 && n < pageSize) {
 			return nil
 		}
+		from += n
 	}
 }
 

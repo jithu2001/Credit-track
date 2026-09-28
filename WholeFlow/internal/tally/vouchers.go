@@ -63,7 +63,7 @@ func (s *Service) GetVouchers(ctx context.Context, company *Company, sinceAlterI
 	} else {
 		tdl += `</COLLECTION>`
 	}
-	body, err := s.client.Post(ctx, op, voucherRequest(company, tdl).Envelope())
+	body, err := s.client.post(ctx, op, voucherRequest(company, tdl).Envelope())
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Service) GetVouchers(ctx context.Context, company *Company, sinceAlterI
 func (s *Service) GetVoucherIDs(ctx context.Context, company *Company) ([]VoucherRef, error) {
 	const op = "voucher-ids"
 	tdl := `<COLLECTION NAME="WFC"><TYPE>Voucher</TYPE><FETCH>GUID,ALTERID</FETCH></COLLECTION>`
-	body, err := s.client.Post(ctx, op, voucherRequest(company, tdl).Envelope())
+	body, err := s.client.post(ctx, op, voucherRequest(company, tdl).Envelope())
 	if err != nil {
 		return nil, err
 	}

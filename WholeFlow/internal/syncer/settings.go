@@ -18,7 +18,7 @@ import (
 )
 
 // Version of the sync service, reported to the cloud and the status page.
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 const (
 	ProviderSupabase = "supabase"
@@ -228,6 +228,7 @@ func (st *SettingsStore) applyEnv() {
 	set("BUSINESS_NAME", func(v string) { st.s.Business.Name = v })
 	set("SYNC_INTERVAL_SECONDS", func(v string) {
 		if n, err := strconv.Atoi(v); err == nil {
+			n = min(max(n, MinInterval), MaxInterval) // Validate does not run on env values
 			st.s.Sync.IntervalSeconds = n
 		}
 	})
