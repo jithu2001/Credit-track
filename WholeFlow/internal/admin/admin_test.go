@@ -214,6 +214,35 @@ func TestControlToken(t *testing.T) {
 	}
 }
 
+// The quit endpoint is for "wholeflow.exe stop": control token only, never a
+// browser session, and 409 when the instance has no Quit hook.
+func TestQuitEndpoint(t *testing.T) {
+	ts, s := newTestServer(t, true)
+	cli := &client{t: t, base: ts.URL, bearer: "ctl-token"}
+	if resp, _ := cli.do("POST", "/api/sync/quit", "", false); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("quit without hook: want 409, got %d", resp.StatusCode)
+	}
+	called := make(chan struct{}, 1)
+	s.Quit = func() { called <- struct{}{} }
+	if resp, _ := cli.do("POST", "/api/sync/quit", "", false); resp.StatusCode != http.StatusOK {
+		t.Fatalf("quit with token: want 200, got %d", resp.StatusCode)
+	}
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Quit hook not called")
+	}
+	bad := &client{t: t, base: ts.URL, bearer: "nope"}
+	if resp, _ := bad.do("POST", "/api/sync/quit", "", false); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong token accepted: %d", resp.StatusCode)
+	}
+	browser := &client{t: t, base: ts.URL}
+	browser.login("admin-secret-1")
+	if resp, _ := browser.do("POST", "/api/sync/quit", "", true); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("browser session may not stop the app: got %d", resp.StatusCode)
+	}
+}
+
 func TestSettingsNeverEchoKey(t *testing.T) {
 	ts, s := newTestServer(t, true)
 	c := &client{t: t, base: ts.URL}

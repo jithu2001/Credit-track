@@ -46,6 +46,12 @@ type Server struct {
 	DataDir      string
 	ControlToken string
 	SecretScheme string
+	// Quit, when set, is called by POST /api/sync/quit (control token only)
+	// so that "wholeflow.exe stop" can end a background process gracefully.
+	Quit func()
+	// Mode tells the CLI how this instance runs: "service", "background" or
+	// "foreground" (reported by GET /api/sync/status).
+	Mode string
 }
 
 // Routes mounts the login and sync API under /api/sync/ on the application's
@@ -72,6 +78,7 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sync/users", g(s.auth(s.createUser)))
 	mux.HandleFunc("POST /api/sync/users/{id}/password", g(s.auth(s.userPassword)))
 	mux.HandleFunc("POST /api/sync/users/{id}/active", g(s.auth(s.userActive)))
+	mux.HandleFunc("POST /api/sync/quit", g(s.quit))
 	mux.HandleFunc("/api/sync/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "NOT_FOUND", "Unknown endpoint.")
 	})
@@ -299,6 +306,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"sync":          st,
 		"tallyEndpoint": s.Tally.Endpoint(), "portSource": s.Cfg.PortSource, "shopGroups": s.Cfg.ShopGroups,
 		"dataDir": s.DataDir, "logPath": s.LogPath, "secretScheme": s.SecretScheme, "now": time.Now(),
+		"mode": s.Mode, "pid": os.Getpid(),
 	})
 }
 
@@ -624,6 +632,23 @@ func (s *Server) sync(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Scheduler.TriggerNow()
 	writeJSON(w, http.StatusAccepted, map[string]any{"triggered": true})
+}
+
+// quit asks the process to shut down. Only the CLI (control token) may call
+// it; a browser session cannot stop the app.
+func (s *Server) quit(w http.ResponseWriter, r *http.Request) {
+	bearer := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if s.ControlToken == "" || bearer != s.ControlToken {
+		writeErr(w, http.StatusUnauthorized, "UNAUTHORIZED", "Invalid control token.")
+		return
+	}
+	if s.Quit == nil {
+		writeErr(w, http.StatusConflict, "NOT_SUPPORTED", "This instance cannot be stopped over the API.")
+		return
+	}
+	s.Log.Info("shutdown requested over the control API")
+	writeJSON(w, http.StatusOK, map[string]any{"stopping": true})
+	go s.Quit()
 }
 
 func (s *Server) logs(w http.ResponseWriter, r *http.Request) {

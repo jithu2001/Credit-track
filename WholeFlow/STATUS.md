@@ -26,7 +26,9 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Dependencies | `golang.org/x/sys v0.48.0` only (Windows service control, DPAPI, console echo-off) |
 | Live check, merged app, against TallyPrime 6 | Web API and `/api/sync/*` on one port; CLI `sync` through the running app: full sync 323 shops, 4,321 transactions from 5,909 vouchers, 14.2 s; earlier second run incremental with 0 vouchers fetched in 2.4 s; header summary reports `SYNCED` with the last success time |
 | Admin API tests | Whole app locked without a session (dashboards, exports, sync), login, lockout, cookie flags, CSRF header on all mutations, key never echoed, CLI control token |
-| Windows service install (`install`/`start`/`stop`) | **Not exercised live** (this session's console is not elevated). Implemented with `x/sys/windows/svc` + `mgr`; `status` from a non-elevated console verified. |
+| Windows service install (`install`/`start`/`stop`) | **Verified live** on the development PC: service installed; after the 28 Sep 2026 boot (09:33) it started by itself at 09:35 and synced 9 s later without anyone opening the app. Implemented with `x/sys/windows/svc` + `mgr`; `install` now upgrades in place. |
+| Background process (`run -background`, `start`/`stop` without the service) | Verified live: hidden process (no window handle), `status` reports `running as background`, `stop` ends it through `POST /api/sync/quit` (control token only, tested). |
+| Logon autostart (`autostart`, Task Scheduler, no Administrator) | Verified by `TestLogonTaskLifecycle` (registers, inspects and removes a real task under a test name). |
 | Supabase migration | Written, **not yet applied to a real project**; PostgREST client verified against a fake in tests |
 | Version control | Still **not a git repository**; `.gitignore` covers `bin/`, `logs/`, `.env` |
 
@@ -47,7 +49,9 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Incremental transactions (ALTERID cursor), soft deletes, daily reconcile for deleted vouchers | Done, tested |
 | Cloud abstraction (`cloud.Provider`), Supabase isolated, memory provider (dry run) | Done |
 | Sync state and sync logs in cloud + local `state.json` | Done |
-| Windows service: install/uninstall/start/stop/restart/status, auto start, recovery actions | Implemented, not run live |
+| Windows service: install/uninstall/start/stop/restart/status, auto start, recovery actions, in-place upgrade | Done, run live |
+| Hidden background mode (`run -background`), logon autostart without Administrator (`autostart`), graceful `stop` over the control API | Done |
+| Client installer: `deploy\Install-WholeFlow.cmd` (self-elevating, copy + install/upgrade/uninstall) | Done, parse-checked; not yet run on a fresh client PC |
 | Cloud Sync page: 5-step flow, per-company status, last run table, log tail, password change; header "Cloud sync" pill on every page | Done |
 | Structured rotating log, secrets redacted | Done |
 | Local database for the web app | Not started (in-memory snapshots) |
@@ -102,7 +106,7 @@ Roughly 8,000 lines of Go (including ~1,700 of tests), 800 lines of frontend, 33
 ## 7. Known gaps and next steps
 
 1. **Apply the migration to the real Supabase project and run one sync with `CLOUD_PROVIDER=supabase`**, watching the log on the Cloud Sync page.
-2. **Install the Windows service from an elevated console** (`install`, reboot, `status`). Not yet exercised.
+2. **Run `deploy\Install-WholeFlow.cmd` once on a fresh client PC** end to end (the service itself is verified here; the script is only parse-checked).
 3. **Open the Cloud Sync page in a browser once** to confirm rendering; the API behind it is tested.
 4. **Initialise git** before further work.
 5. **Staff permissions** exist only as a `permissions` column and read-only RLS.

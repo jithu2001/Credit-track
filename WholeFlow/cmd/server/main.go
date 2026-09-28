@@ -3,8 +3,10 @@
 //
 //	wholeflow.exe                 run in the foreground (also what the Windows service executes)
 //	wholeflow.exe run
+//	wholeflow.exe run -background start hidden (no console window) and return
 //	wholeflow.exe check           test the Tally and cloud connections and exit   (also: -check)
-//	wholeflow.exe install         install as Windows service "WholeFlow" (automatic start)
+//	wholeflow.exe install         install as Windows service "WholeFlow" (starts at boot; Administrator)
+//	wholeflow.exe autostart       start hidden at every logon of this user (no Administrator needed)
 //	wholeflow.exe uninstall | start | stop | restart | status
 //	wholeflow.exe sync            run one cloud synchronisation now and print the result
 //	wholeflow.exe config          print the effective configuration (secrets redacted)
@@ -64,6 +66,7 @@ func main() {
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	dataFlag := fs.String("data", "", "data directory (default %ProgramData%\\WholeFlow, or WHOLEFLOW_DATA_DIR)")
 	checkFlag := fs.Bool("check", false, "test the Tally and cloud connections, print the result and exit")
+	background := fs.Bool("background", false, "run: start as a hidden background process (no console window) and return")
 	user := fs.String("username", "", "set-password: developer username")
 	fs.Parse(args)
 	if *dataFlag != "" {
@@ -76,25 +79,30 @@ func main() {
 	var code int
 	switch cmd {
 	case "run":
-		if isWindowsService() {
+		switch {
+		case isWindowsService():
 			code = runService()
-		} else {
+		case *background:
+			code = report(startBackground())
+		default:
 			code = runForeground()
 		}
 	case "install":
 		code = cmdInstall()
 	case "uninstall":
 		code = report(uninstallService())
+	case "autostart":
+		code = cmdAutostart(fs.Args())
 	case "start":
-		code = report(startService())
+		code = report(cmdStart())
 	case "stop":
-		code = report(stopService())
+		code = report(cmdStop())
 	case "restart":
-		if err := stopService(); err != nil && !strings.Contains(err.Error(), "not running") {
+		if err := cmdStop(); err != nil && !strings.Contains(err.Error(), "not running") {
 			code = report(err)
 			break
 		}
-		code = report(startService())
+		code = report(cmdStart())
 	case "status":
 		code = cmdStatus()
 	case "sync":
@@ -123,10 +131,16 @@ func usage() {
 usage: wholeflow.exe [command] [-data DIR]
 
   run            run in the foreground (default); web app at http://127.0.0.1:8080, Cloud Sync page inside it
+  run -background
+                 start hidden in the background (no console window) and return; stop with "stop"
   check          test the Tally and cloud connections and exit (also -check)
-  install        install as Windows service "`+serviceName+`" (automatic start); requires the admin password
+  install        install as Windows service "`+serviceName+`": starts at boot, before anyone logs in (Administrator)
   uninstall      remove the Windows service
-  start / stop / restart / status
+  autostart      start hidden at every logon of the current Windows user (no Administrator needed)
+  autostart off  remove that logon start
+  start / stop / restart
+                 the Windows service if installed, otherwise the background process
+  status         Windows service / autostart / process state and cloud sync state per company
   sync           run one cloud synchronisation now (through the running app if there is one)
   config         print the effective configuration (secrets redacted)
   set-password   set the admin username and password that unlocks the whole app  [-username NAME]
@@ -157,6 +171,7 @@ type app struct {
 	engine    *syncer.Engine
 	scheduler *syncer.Scheduler
 	secrets   secrets.Store
+	mode      string // "service", "background" or "foreground"
 }
 
 func dataDir() string {
@@ -272,9 +287,13 @@ func (a *app) serve(ctx context.Context) error {
 	}
 	defer os.Remove(filepath.Join(a.dataDir, "control.token"))
 
+	// "wholeflow.exe stop" ends a background or foreground process through
+	// POST /api/sync/quit (control token only).
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
 	syncAPI := &admin.Server{Settings: a.settings, Scheduler: a.scheduler, Engine: a.engine, Tally: a.tally, Cfg: a.cfg,
 		Provider: a.engine.Provider, Sessions: auth.NewSessions(12 * time.Hour), Limiter: auth.NewLimiter(8, 10*time.Minute, 5*time.Minute),
-		Log: a.log, LogPath: a.logPath, DataDir: a.dataDir, ControlToken: token, SecretScheme: a.secrets.Scheme()}
+		Log: a.log, LogPath: a.logPath, DataDir: a.dataDir, ControlToken: token, SecretScheme: a.secrets.Scheme(), Quit: quit, Mode: a.mode}
 	mux := http.NewServeMux()
 	syncAPI.Routes(mux) // /api/sync/login and /api/sync/session are the only endpoints open without a session
 	webAPI := http.NewServeMux()
@@ -285,10 +304,13 @@ func (a *app) serve(ctx context.Context) error {
 
 	ln, err := net.Listen("tcp", a.cfg.ListenAddr)
 	if err != nil {
-		return fmt.Errorf("cannot listen on %s: %w", a.cfg.ListenAddr, err)
+		if _, ok := openControl(a); ok {
+			return fmt.Errorf("another WholeFlow is already running at %s (see: wholeflow.exe status)", a.localURL())
+		}
+		return fmt.Errorf("cannot listen on %s (port in use? set APP_ADDR in .env): %w", a.cfg.ListenAddr, err)
 	}
 	httpSrv := &http.Server{Handler: accessLog(a.log, mux), ReadHeaderTimeout: 10 * time.Second}
-	a.log.Info("wholeflow started", "version", syncer.Version, "url", a.localURL(), "data_dir", a.dataDir,
+	a.log.Info("wholeflow started", "version", syncer.Version, "mode", a.mode, "url", a.localURL(), "data_dir", a.dataDir,
 		"tally", a.tally.Endpoint(), "port_source", a.cfg.PortSource, "provider", set.Cloud.Provider,
 		"sync_enabled", set.Sync.Enabled, "interval_s", set.Sync.IntervalSeconds, "secrets", a.secrets.Scheme())
 	if ok, why := set.Configured(); !ok {
@@ -347,13 +369,22 @@ func writeControlToken(dir string) (string, error) {
 	return tok, os.WriteFile(filepath.Join(dir, "control.token"), []byte(tok), 0o600)
 }
 
+// backgroundEnv marks the hidden child started by "run -background": it has
+// no console, so it logs to the file only.
+const backgroundEnv = "WHOLEFLOW_BACKGROUND"
+
 func runForeground() int {
-	a, err := newApp(true)
+	bg := os.Getenv(backgroundEnv) == "1"
+	a, err := newApp(!bg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
 	defer a.logFile.Close()
+	a.mode = "foreground"
+	if bg {
+		a.mode = "background"
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := a.serve(ctx); err != nil {
@@ -372,10 +403,135 @@ func runService() int {
 		return 1
 	}
 	defer a.logFile.Close()
+	a.mode = "service"
 	if err := runAsService(serviceName, a.serve); err != nil {
 		a.log.Error("service control failed", "error", err.Error())
 		return 1
 	}
+	return 0
+}
+
+// startBackground launches "wholeflow.exe run" as a hidden, detached process
+// (no console window) and returns once it answers on its port. This is what
+// the logon task created by "autostart" runs, and what "start" does when the
+// Windows service is not installed.
+func startBackground() error {
+	a, err := newApp(false)
+	if err != nil {
+		return err
+	}
+	defer a.logFile.Close()
+	if _, ok := openControl(a); ok {
+		fmt.Println("WholeFlow is already running at " + a.localURL())
+		return nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	exe, _ = filepath.Abs(exe)
+	if err := spawnHidden(exe, []string{"run", "-data", a.dataDir}, backgroundEnv+"=1"); err != nil {
+		return fmt.Errorf("start background process: %w", err)
+	}
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+		if _, ok := openControl(a); ok {
+			fmt.Println("WholeFlow running in the background at " + a.localURL())
+			return nil
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return errors.New("background process did not answer within 15 s; see " + a.logPath)
+}
+
+func serviceInstalled() bool {
+	st, err := serviceStatus()
+	return err == nil && st != "not installed"
+}
+
+// cmdStart starts the Windows service if it is installed, otherwise a hidden
+// background process.
+func cmdStart() error {
+	if serviceInstalled() {
+		return startService()
+	}
+	return startBackground()
+}
+
+// cmdStop stops whatever is running: the Windows service through the service
+// manager, a background or foreground process through its control API.
+func cmdStop() error {
+	a, err := newApp(false)
+	if err != nil {
+		return err
+	}
+	defer a.logFile.Close()
+	c, ok := openControl(a)
+	if !ok {
+		if serviceInstalled() {
+			return errors.New("service is not running")
+		}
+		return errors.New("WholeFlow is not running")
+	}
+	if c.mode == "service" {
+		return stopService()
+	}
+	if _, err := c.call(http.MethodPost, "/api/sync/quit", 5*time.Second); err != nil {
+		return err
+	}
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
+		if _, ok := openControl(a); !ok {
+			return nil
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	return errors.New("process did not stop in time")
+}
+
+// cmdAutostart registers (or with "off" removes) a Task Scheduler logon task
+// for the current Windows user that runs "wholeflow.exe run -background".
+// It needs no Administrator rights; the Windows service is the better option
+// where they are available.
+func cmdAutostart(args []string) int {
+	off := len(args) > 0 && (args[0] == "off" || args[0] == "remove" || args[0] == "disable")
+	if off {
+		if err := removeLogonTask(); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return 1
+		}
+		fmt.Println("Logon autostart removed. A running background process keeps running until: wholeflow.exe stop")
+		return 0
+	}
+	if st, _ := serviceStatus(); serviceInstalled() {
+		fmt.Fprintln(os.Stderr, "error: the Windows service is installed ("+st+"), which already starts WholeFlow at boot.\n"+
+			"Run 'wholeflow.exe uninstall' (Administrator) first if you really want the logon task instead.")
+		return 1
+	}
+	a, err := newApp(false)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	defer a.logFile.Close()
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	exe, _ = filepath.Abs(exe)
+	if err := installLogonTask(exe, []string{"run", "-background", "-data", a.dataDir}); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		return 1
+	}
+	fmt.Printf("Logon autostart registered (Task Scheduler task %q).\n  Executable: %s\n  Data dir:   %s\n", serviceName, exe, a.dataDir)
+	fmt.Println("WholeFlow will start hidden each time this Windows user logs on. Note: unlike the Windows service it does not run before logon.")
+	if a.settings.Get().Developer.PasswordHash == "" {
+		fmt.Println("No admin account yet: open " + a.localURL() + " right after starting to create it.")
+	}
+	if err := startBackground(); err != nil {
+		fmt.Println("Registered but not started:", err)
+		return 1
+	}
+	fmt.Printf("Web app: %s  ·  Cloud Sync setup: %s/#/sync\n", a.localURL(), a.localURL())
 	return 0
 }
 
@@ -385,6 +541,8 @@ func runService() int {
 type control struct {
 	base  string
 	token string
+	mode  string // how the running instance was started
+	pid   int
 }
 
 func openControl(a *app) (*control, bool) {
@@ -393,8 +551,18 @@ func openControl(a *app) (*control, bool) {
 		return nil, false
 	}
 	c := &control{base: a.localURL(), token: strings.TrimSpace(string(tok))}
-	if _, err := c.call(http.MethodGet, "/api/sync/status", 3*time.Second); err != nil {
+	b, err := c.call(http.MethodGet, "/api/sync/status", 3*time.Second)
+	if err != nil {
 		return nil, false
+	}
+	var resp struct {
+		Mode string `json:"mode"`
+		PID  int    `json:"pid"`
+	}
+	json.Unmarshal(b, &resp)
+	c.mode, c.pid = resp.Mode, resp.PID
+	if c.mode == "" {
+		c.mode = "process"
 	}
 	return c, true
 }
@@ -430,6 +598,11 @@ func cmdStatus() int {
 	} else {
 		fmt.Println("Windows service:", svcState)
 	}
+	task, _ := logonTaskStatus()
+	fmt.Println("Logon autostart:", task)
+	if svcState == "not installed" && task == "not registered" {
+		fmt.Println("                 (not starting at boot: run 'install' as Administrator, or 'autostart')")
+	}
 	var st syncer.Status
 	if c, ok := openControl(a); ok {
 		b, err := c.call(http.MethodGet, "/api/sync/status", 5*time.Second)
@@ -439,7 +612,7 @@ func cmdStatus() int {
 			}
 			json.Unmarshal(b, &resp)
 			st = resp.Sync
-			fmt.Println("Process:         running (" + a.localURL() + ")")
+			fmt.Printf("Process:         running as %s, pid %d (%s)\n", c.mode, c.pid, a.localURL())
 		}
 	} else {
 		fmt.Println("Process:         not running")
@@ -649,25 +822,48 @@ func cmdInstall() int {
 		return 1
 	}
 	defer a.logFile.Close()
-	if a.settings.Get().Developer.PasswordHash == "" {
-		fmt.Fprintln(os.Stderr, "error: set the admin password first:  wholeflow.exe set-password")
-		return 1
-	}
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
 	exe, _ = filepath.Abs(exe)
-	if err := installService(serviceName, serviceDisplay, serviceDesc, exe, []string{"run", "-data", a.dataDir}); err != nil {
+	if strings.HasPrefix(strings.ToLower(exe), strings.ToLower(os.TempDir())) {
+		fmt.Fprintln(os.Stderr, "error: the executable is in a temporary folder; copy it to C:\\Program Files\\WholeFlow first")
+		return 1
+	}
+	// A background process or logon task would fight the service for the port.
+	if st, _ := logonTaskStatus(); st != "not registered" {
+		if err := removeLogonTask(); err == nil {
+			fmt.Println("Removed the logon autostart task; the service replaces it.")
+		}
+	}
+	if c, ok := openControl(a); ok && c.mode != "service" {
+		if err := cmdStop(); err == nil {
+			fmt.Println("Stopped the running WholeFlow process; the service replaces it.")
+		}
+	}
+	updated, err := installService(serviceName, serviceDisplay, serviceDesc, exe, []string{"run", "-data", a.dataDir})
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		return 1
 	}
-	fmt.Printf("Service %q installed (automatic start).\n  Executable: %s\n  Data dir:   %s\n", serviceName, exe, a.dataDir)
+	if updated {
+		fmt.Printf("Service %q already installed; updated to this executable.\n", serviceName)
+		if err := stopService(); err != nil && !strings.Contains(err.Error(), "not running") {
+			fmt.Println("Could not stop the old instance:", err)
+		}
+	} else {
+		fmt.Printf("Service %q installed (automatic start at boot).\n", serviceName)
+	}
+	fmt.Printf("  Executable: %s\n  Data dir:   %s\n", exe, a.dataDir)
 	if err := startService(); err != nil {
 		fmt.Println("Installed but not started:", err)
 		return 1
 	}
 	fmt.Printf("Service started. Web app: %s  ·  Cloud Sync setup: %s/#/sync\n", a.localURL(), a.localURL())
+	if a.settings.Get().Developer.PasswordHash == "" {
+		fmt.Println("No admin account yet: open the web app NOW and create it (the first person to open the page claims the account).")
+	}
 	return 0
 }

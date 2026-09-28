@@ -5,11 +5,17 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"os/user"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
+	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -61,25 +67,34 @@ func runAsService(name string, serve func(ctx context.Context) error) error {
 	return svc.Run(name, &handler{serve: serve})
 }
 
-func installService(name, display, desc, exe string, args []string) error {
+// installService registers the service, or, when it already exists, points
+// it at this executable (upgrade in place). updated reports the latter.
+func installService(name, display, desc, exe string, args []string) (updated bool, err error) {
 	m, err := mgr.Connect()
 	if err != nil {
-		return fmt.Errorf("open service manager (run as Administrator): %w", err)
+		return false, fmt.Errorf("open service manager (run as Administrator): %w", err)
 	}
 	defer m.Disconnect()
-	if s, err := m.OpenService(name); err == nil {
-		s.Close()
-		return errors.New("service already installed; run uninstall first")
-	}
-	s, err := m.CreateService(name, exe, mgr.Config{
+	cfg := mgr.Config{
 		DisplayName:      display,
 		Description:      desc,
 		StartType:        mgr.StartAutomatic,
 		DelayedAutoStart: true, // let TallyPrime and the network come up first
 		ErrorControl:     mgr.ErrorNormal,
-	}, args...)
-	if err != nil {
-		return fmt.Errorf("create service: %w", err)
+	}
+	s, err := m.OpenService(name)
+	if err == nil {
+		updated = true
+		cfg.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
+		if err := s.UpdateConfig(cfg); err != nil {
+			s.Close()
+			return true, fmt.Errorf("update service: %w", err)
+		}
+	} else {
+		s, err = m.CreateService(name, exe, cfg, args...)
+		if err != nil {
+			return false, fmt.Errorf("create service: %w", err)
+		}
 	}
 	defer s.Close()
 	// Restart on crash: 30 s, 60 s, then every 5 min; reset the counter after a day.
@@ -89,9 +104,177 @@ func installService(name, display, desc, exe string, args []string) error {
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Minute},
 	}, 86400)
 	if err != nil {
-		return fmt.Errorf("set recovery actions: %w", err)
+		return updated, fmt.Errorf("set recovery actions: %w", err)
+	}
+	return updated, nil
+}
+
+// ---------------------------------------------------------------- background process
+
+// spawnHidden starts exe with args as a detached process without a console
+// window. stdin/stdout/stderr go to NUL; the app logs to its file.
+func spawnHidden(exe string, args []string, env ...string) error {
+	cmd := exec.Command(exe, args...)
+	cmd.Dir = filepath.Dir(exe)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP,
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	// Do not wait: the child outlives us. Release the handle.
+	return cmd.Process.Release()
+}
+
+// ---------------------------------------------------------------- logon task (no Administrator)
+
+// Task Scheduler is driven through schtasks.exe with an XML definition so we
+// can turn off the 72-hour execution limit that the plain /Create form applies.
+const taskXML = `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>%[1]s</Description>
+    <URI>\%[2]s</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>%[3]s</UserId>
+      <Delay>PT20S</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>%[3]s</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>%[4]s</Command>
+      <Arguments>%[5]s</Arguments>
+      <WorkingDirectory>%[6]s</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+`
+
+// taskName is the Task Scheduler task name; a variable so tests can use their own.
+var taskName = serviceName
+
+func schtasks(args ...string) (string, error) {
+	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "schtasks.exe"), args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func xmlEscape(s string) string {
+	var b strings.Builder
+	xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
+// installLogonTask registers (replacing any previous one) a Task Scheduler
+// task that runs exe with args when the current user logs on.
+func installLogonTask(exe string, args []string) error {
+	user, err := currentUserName()
+	if err != nil {
+		return err
+	}
+	def := fmt.Sprintf(taskXML, xmlEscape(serviceDesc), taskName, xmlEscape(user), xmlEscape(exe),
+		xmlEscape(windows.ComposeCommandLine(args)), xmlEscape(filepath.Dir(exe)))
+	// schtasks wants the XML file in UTF-16 LE with a BOM.
+	u16 := utf16.Encode([]rune(def))
+	buf := make([]byte, 2, 2+2*len(u16))
+	buf[0], buf[1] = 0xFF, 0xFE
+	for _, c := range u16 {
+		buf = append(buf, byte(c), byte(c>>8))
+	}
+	f, err := os.CreateTemp("", "wholeflow-task-*.xml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(buf); err != nil {
+		f.Close()
+		return err
+	}
+	f.Close()
+	if out, err := schtasks("/Create", "/TN", taskName, "/XML", f.Name(), "/F"); err != nil {
+		return fmt.Errorf("schtasks: %s", firstLine(out, err))
 	}
 	return nil
+}
+
+func removeLogonTask() error {
+	if st, _ := logonTaskStatus(); st == "not registered" {
+		return errors.New("logon autostart is not registered")
+	}
+	if out, err := schtasks("/Delete", "/TN", taskName, "/F"); err != nil {
+		return fmt.Errorf("schtasks: %s", firstLine(out, err))
+	}
+	return nil
+}
+
+// logonTaskStatus reports "not registered", or the task's status and user.
+func logonTaskStatus() (string, error) {
+	out, err := schtasks("/Query", "/TN", taskName, "/FO", "CSV", "/NH")
+	if err != nil {
+		return "not registered", nil
+	}
+	// "\WholeFlow","Next Run Time","Status"
+	fields := strings.Split(out, "\",\"")
+	status := "registered"
+	if len(fields) == 3 {
+		status = strings.ToLower(strings.Trim(fields[2], "\"\r\n "))
+	}
+	user, _ := currentUserName()
+	if status == "running" {
+		// The task itself only spawns the hidden process and exits; report it plainly.
+		status = "registered"
+	}
+	return fmt.Sprintf("%s (runs at logon of %s)", status, user), nil
+}
+
+func currentUserName() (string, error) {
+	u, err := user.Current()
+	if err != nil {
+		return "", fmt.Errorf("current user: %w", err)
+	}
+	return u.Username, nil // DOMAIN\name or PC\name, what Task Scheduler expects
+}
+
+func firstLine(out string, err error) string {
+	if out == "" {
+		return err.Error()
+	}
+	if i := strings.IndexAny(out, "\r\n"); i >= 0 {
+		out = out[:i]
+	}
+	return strings.TrimPrefix(out, "ERROR: ")
 }
 
 func uninstallService() error {
@@ -130,7 +313,7 @@ func startService() error {
 		return fmt.Errorf("start: %w", err)
 	}
 	if !waitFor(s, svc.Running, 30*time.Second) {
-		return errors.New("service did not reach Running state; see logs\\sync.log and startup-error.txt in the data dir")
+		return errors.New("service did not reach Running state; see logs\\app.log and startup-error.txt in the data dir")
 	}
 	return nil
 }
