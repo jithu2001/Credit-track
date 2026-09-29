@@ -133,4 +133,42 @@ void main() {
     expect(s.onTimeRate, 1);
     expect(s.avgDaysToPay, 10);
   });
+
+  test('pay habit compares days to pay with the credit period', () {
+    expect(PayHabit.of(null, 30), PayHabit.noPayments);
+    expect(PayHabit.of(30.4, 30), PayHabit.onTime);
+    expect(PayHabit.of(31, 30), PayHabit.late);
+    expect(PayHabit.of(60, 30), PayHabit.late);
+    expect(PayHabit.of(61, 30), PayHabit.veryLate);
+    // Bill on 1 Jun paid on 21 Jun: 20 days.
+    expect(run([bill('2026-06-01', 100), pay('2026-06-21', 100)]).habit(15), PayHabit.late);
+    expect(run([bill('2026-06-01', 100), pay('2026-06-21', 100)]).habit(30), PayHabit.onTime);
+  });
+
+  test('overdue a month ago uses only the vouchers dated by then', () {
+    final txns = [bill('2026-05-01', 100), bill('2026-06-15', 50), pay('2026-07-10', 100)];
+    Money? ago(String today, {int daysAgo = 30}) => overdueDaysAgo(
+      shops: [shop()],
+      txns: txns,
+      creditDays: 30,
+      booksFrom: DateTime(2026, 4, 1),
+      today: DateTime.parse(today),
+      daysAgo: daysAgo,
+    );
+    // On 20 Jun (30 days before 20 Jul) the May bill was 50 days old and unpaid.
+    expect(ago('2026-07-20'), rs(100));
+    // Today the payment has cleared it; the June bill is 35 days old.
+    expect(
+      analyseBusiness(
+        shops: [shop()],
+        txns: txns,
+        creditDays: 30,
+        booksFrom: DateTime(2026, 4, 1),
+        today: DateTime(2026, 7, 20),
+      ).overdue,
+      rs(50),
+    );
+    // Before the synced books begin there is nothing to compare with.
+    expect(ago('2026-04-20'), isNull);
+  });
 }

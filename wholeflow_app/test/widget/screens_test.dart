@@ -19,6 +19,9 @@ import 'package:wholeflow_app/features/dashboard/data/dashboard_repository.dart'
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
 import 'package:wholeflow_app/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:wholeflow_app/features/home/home_shell.dart';
+import 'package:wholeflow_app/features/outstanding/data/overdue_repository.dart';
+import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
+import 'package:wholeflow_app/features/outstanding/presentation/outstanding_screen.dart';
 import 'package:wholeflow_app/features/shop_detail/data/transaction_repository.dart';
 import 'package:wholeflow_app/features/shop_detail/presentation/shop_detail_screen.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
@@ -44,6 +47,7 @@ Future<List<Override>> baseOverrides({
   List<CompanyAccess> access = const [],
   FakeShopRepository? shopRepo,
   FakeDashboardRepository? dashboard,
+  FakeOverdueRepository? overdueRepo,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -56,8 +60,27 @@ Future<List<Override>> baseOverrides({
     shopRepositoryProvider.overrideWithValue(shopRepo ?? FakeShopRepository(shops: shops)),
     dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository()),
     analyticsRepositoryProvider.overrideWithValue(FakeAnalyticsRepository()),
+    overdueRepositoryProvider.overrideWithValue(overdueRepo ?? FakeOverdueRepository()),
   ];
 }
+
+/// As `overdue_shops()` returns it; [withBills] false is staff without transaction access.
+OverdueShop overdueShop({bool withBills = true}) => OverdueShop.fromJson({
+  'shop_id': 's1',
+  'name': 'PRINCE TYRES -- RAJAKKAD',
+  'area': 'Rajakkad',
+  'phone': null,
+  'receivable': 6000,
+  'overdue': 3000,
+  'max_days_overdue': 20,
+  'overdue_bills': 1,
+  'bills_visible': withBills,
+  'bills': withBills
+      ? [
+          {'date': '2026-08-10', 'voucher': 'Sales · S1', 'amount': 5000, 'remaining': 3000, 'days_overdue': 20},
+        ]
+      : null,
+});
 
 void main() {
   group('login', () {
@@ -255,18 +278,32 @@ void main() {
   });
 
   group('analytics', () {
-    testWidgets('shows overdue under the credit period and reacts to the filter', (tester) async {
-      await pumpScreen(tester, const AnalyticsScreen(), overrides: await baseOverrides(), size: const Size(900, 1600));
+    testWidgets('explains overdue, trend and habits in plain words, and reacts to the period', (tester) async {
+      await pumpScreen(tester, const AnalyticsScreen(), overrides: await baseOverrides(), size: const Size(900, 2000));
       await tester.pumpAndSettle();
-      // 30 days: the ₹10,000 bill from 50 days ago is 20 days late.
-      expect(find.text('₹10,000.00'), findsWidgets);
-      expect(find.textContaining('oldest 20 days late'), findsOneWidget);
-      expect(find.text('Overdue only (1)'), findsOneWidget);
+      // 30 days: the ₹10,000 bill from 50 days ago is past the limit.
+      expect(find.text('Overdue now'), findsOneWidget);
+      expect(find.text('1 shop with bills older than 30 days'), findsOneWidget);
+      // A month ago that bill was only 20 days old.
+      expect(find.text('₹10,000.00 more than a month ago — getting worse'), findsOneWidget);
+      expect(find.text('See who to call'), findsOneWidget);
+      // Shop 2 paid its bill 10 days after it: on time; shop 1 never paid.
+      expect(find.text('Shops usually pay 10 days after the bill.'), findsOneWidget);
+      expect(find.text('Usually pays 10 days after the bill'), findsOneWidget);
+      expect(find.text('Has not paid any bill yet'), findsOneWidget);
+      expect(find.text('Pays on time'), findsOneWidget);
+      expect(find.text('No payments yet'), findsOneWidget);
 
-      // 60 days: nothing is late any more; the data is not fetched again.
+      await tester.tap(find.text('Pay on time (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Has not paid any bill yet'), findsNothing);
+
+      // 60 days: nothing is past the limit any more; the data is not fetched again.
       await tester.tap(find.widgetWithText(ChoiceChip, '60 days'));
       await tester.pumpAndSettle();
-      expect(find.text('No shop is overdue'), findsOneWidget);
+      expect(find.text('Nothing'), findsOneWidget);
+      expect(find.text('No bill is older than 60 days'), findsOneWidget);
+      expect(find.text('See who to call'), findsNothing);
     });
 
     testWidgets('dashboard shows the overdue card to owners only', (tester) async {
@@ -281,6 +318,61 @@ void main() {
       expect(find.textContaining('overdue'), findsNothing);
       // Staff without transaction access for the company don't get the sales tile.
       expect(find.text('Sales this month'), findsNothing);
+    });
+  });
+
+  group('outstanding past credit limit', () {
+    Future<void> openOverdue(WidgetTester tester) async {
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Past credit limit'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('owner sees amount, days and the bills, and the period re-queries', (tester) async {
+      final repo = FakeOverdueRepository([overdueShop()]);
+      await pumpScreen(
+        tester,
+        const OutstandingScreen(),
+        overrides: await baseOverrides(overdueRepo: repo),
+        size: const Size(900, 1600),
+      );
+      await openOverdue(tester);
+
+      expect(find.text('Past 30 days'), findsOneWidget);
+      expect(find.text('₹3,000.00'), findsWidgets);
+      expect(find.text('of ₹6,000.00'), findsOneWidget);
+      expect(find.text('20 days past limit · 1 bill'), findsOneWidget);
+      expect(find.text('Sales · S1'), findsNothing);
+
+      await tester.tap(find.text('PRINCE TYRES -- RAJAKKAD'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sales · S1'), findsOneWidget);
+      expect(find.text('10 Aug 2026 · bill ₹5,000.00, part paid'), findsOneWidget);
+      expect(find.text('Open shop'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, '60 days'));
+      await tester.pumpAndSettle();
+      expect(repo.requestedDays, [30, 60]);
+    });
+
+    testWidgets('staff without transaction access get amounts but no bills', (tester) async {
+      await pumpScreen(
+        tester,
+        const OutstandingScreen(),
+        overrides: await baseOverrides(user: staffUser, overdueRepo: FakeOverdueRepository([overdueShop(withBills: false)])),
+      );
+      await openOverdue(tester);
+      expect(find.text('₹3,000.00'), findsWidgets);
+      expect(find.text('20 days past limit · 1 bill'), findsOneWidget);
+      expect(find.byIcon(Icons.expand_more_rounded), findsNothing);
+      expect(find.textContaining('Sales · S1'), findsNothing);
+    });
+
+    testWidgets('empty state names the period', (tester) async {
+      await pumpScreen(tester, const OutstandingScreen(), overrides: await baseOverrides());
+      await openOverdue(tester);
+      expect(find.text('No shop is past the limit'), findsOneWidget);
+      expect(find.text('Every unpaid bill is within 30 days.'), findsOneWidget);
     });
   });
 

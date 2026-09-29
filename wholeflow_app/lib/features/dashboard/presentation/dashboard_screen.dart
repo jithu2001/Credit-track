@@ -14,7 +14,6 @@ import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../analytics/presentation/analytics_providers.dart';
-import '../../analytics/presentation/analytics_widgets.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
@@ -185,8 +184,7 @@ class _OverdueCard extends ConsumerWidget {
                         style: context.text.titleMedium?.copyWith(color: fg, fontWeight: FontWeight.w600),
                       ),
                       Text(
-                        '${plural(v.overdueShops, 'shop')} past ${plural(v.creditDays, 'day')} · '
-                        '${formatPercent(v.onTimeRate)} of bills paid on time',
+                        '${plural(v.overdueShops, 'shop')} with bills older than ${plural(v.creditDays, 'day')}',
                         style: context.text.bodySmall?.copyWith(color: fg),
                       ),
                     ],

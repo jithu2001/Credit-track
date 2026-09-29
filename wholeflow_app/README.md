@@ -13,7 +13,7 @@ TallyPrime ─▶ wholeflow.exe (Tally PC) ─▶ Supabase (Postgres + RLS) ─�
 ## Prerequisites
 
 - Flutter stable (built with 3.47 / Dart 3.13)
-- The Supabase project with `WholeFlow/supabase/migrations/0001_init.sql`, `0002_mobile_app.sql` **and** `0003_purchasing.sql` applied, and the `manage-staff` Edge Function deployed (see below)
+- The Supabase project with `WholeFlow/supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql` **and** `0004_overdue.sql` applied, and the `manage-staff` Edge Function deployed (see below)
 - An owner account created from the WholeFlow **Cloud Sync** page ("Business owner & staff accounts")
 
 ## Configure and run
@@ -34,8 +34,10 @@ flutter build apk --release --dart-define-from-file=env/dev.json
 | Path | What it does |
 |---|---|
 | `migrations/0002_mobile_app.sql` | `staff_company_access` table (which companies each staff member works for, with areas and transaction visibility per company), RLS read policies that enforce it, and two service-role-only functions used by `manage-staff` |
+| `migrations/0004_overdue.sql` | `overdue_shops(company, credit_days, today)`: shops past the credit period for the Outstanding screen, aged FIFO on the server so staff without transaction access still get amounts and days; bills only for users who may see transactions |
 | `functions/manage-staff/` | Edge Function holding the service-role key; owner-only `create_staff`, `update_staff`, `set_companies`, `set_active`, `reset_password` |
 | `tests/rls_mobile.sql` | Impersonates owner and staff users and asserts what each can see; everything is rolled back |
+| `tests/overdue.sql` | Checks `overdue_shops()` amounts, days and bill visibility per user; rolled back |
 
 ### Deploy
 
@@ -49,6 +51,10 @@ npx supabase link --project-ref <project-ref>
 # database: apply 0002, then run the RLS checks (they roll back)
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_mobile_app.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_mobile.sql
+
+# overdue report: apply 0004, then its checks (they roll back)
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_overdue.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/overdue.sql
 
 # Edge Function (SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are injected by the platform)
 npx supabase functions deploy manage-staff

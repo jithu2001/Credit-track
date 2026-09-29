@@ -16,6 +16,8 @@ import 'package:wholeflow_app/features/company/data/company_repository.dart';
 import 'package:wholeflow_app/features/company/domain/company.dart';
 import 'package:wholeflow_app/features/dashboard/data/dashboard_repository.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
+import 'package:wholeflow_app/features/outstanding/data/overdue_repository.dart';
+import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
 import 'package:wholeflow_app/features/shop_detail/data/transaction_repository.dart';
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
@@ -110,6 +112,20 @@ class FakeShopRepository implements ShopRepository {
   Future<List<ShopSummary>> topDues(String companyId, {int limit = 10}) async => shops.take(limit).toList();
   @override
   Future<List<ShopSummary>> outstanding(String companyId) async => shops;
+}
+
+/// Returns [shops] for every credit period and records the periods asked for.
+class FakeOverdueRepository implements OverdueRepository {
+  FakeOverdueRepository([this.shops = const []]);
+
+  final List<OverdueShop> shops;
+  final List<int> requestedDays = [];
+
+  @override
+  Future<List<OverdueShop>> overdue(String companyId, {required int creditDays, required DateTime today}) async {
+    requestedDays.add(creditDays);
+    return shops;
+  }
 }
 
 class FakeTransactionRepository implements TransactionRepository {

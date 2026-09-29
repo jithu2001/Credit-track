@@ -5,6 +5,7 @@ import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/phone.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
 import 'package:wholeflow_app/features/outstanding/domain/outstanding_report.dart';
+import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
 import 'package:wholeflow_app/features/shops/domain/shop.dart';
@@ -96,6 +97,69 @@ void main() {
       expect(r.total, const Money(520));
       expect(r.shopCount, 4);
       expect(outstandingReportText(r), contains('Pala — ₹4.00'));
+    });
+  });
+
+  group('overdue report', () {
+    Map<String, dynamic> row(String id, String? area, num overdue, int days, {bool bills = true}) => {
+      'shop_id': id,
+      'name': 'Shop $id',
+      'area': area,
+      'phone': null,
+      'receivable': '1000.50',
+      'overdue': overdue,
+      'max_days_overdue': days,
+      'overdue_bills': 1,
+      'bills_visible': bills,
+      'bills': bills
+          ? [
+              {'date': '2026-08-10', 'voucher': 'Sales · $id', 'amount': 500, 'remaining': overdue, 'days_overdue': days},
+            ]
+          : null,
+    };
+
+    test('parses the function row, with and without bills', () {
+      final s = OverdueShop.fromJson(row('1', 'Pala', 300, 20));
+      expect(s.receivable, const Money(100050));
+      expect(s.overdue, const Money(30000));
+      expect(s.maxDaysOverdue, 20);
+      expect(s.bills!.single.voucher, 'Sales · 1');
+      expect(s.bills!.single.date, DateTime(2026, 8, 10));
+      expect(OverdueShop.fromJson(row('2', 'Pala', 300, 20, bills: false)).bills, isNull);
+    });
+
+    test('groups by area, most overdue first, and lists bills in the text', () {
+      final r = buildOverdueReport(
+        companyName: 'JMJ',
+        creditDays: 30,
+        generatedAt: DateTime(2026, 9, 29),
+        shops: [
+          OverdueShop.fromJson(row('1', 'Pala', 100, 5)),
+          OverdueShop.fromJson(row('2', 'Pala', 300, 40)),
+          OverdueShop.fromJson(row('3', null, 50, 10)),
+          OverdueShop.fromJson(row('4', 'Kply', 0, 0)),
+        ],
+      );
+      expect(r.groups.map((g) => g.area), ['Pala', 'No area']);
+      expect(r.groups.first.shops.map((s) => s.id), ['2', '1']);
+      expect(r.total, const Money(45000));
+      expect(r.showsBills, isTrue);
+      final text = overdueReportText(r);
+      expect(text, contains('Past 30 days credit — JMJ'));
+      expect(text, contains('Shop 2: ₹300.00 · 40 days past limit'));
+      expect(text, contains('Sales · 2 (10 Aug 2026): ₹300.00 due · 40 days past limit'));
+    });
+
+    test('text has no bills when they are hidden', () {
+      final r = buildOverdueReport(
+        companyName: 'JMJ',
+        creditDays: 1,
+        generatedAt: DateTime(2026, 9, 29),
+        shops: [OverdueShop.fromJson(row('1', 'Pala', 100, 1, bills: false))],
+      );
+      expect(r.showsBills, isFalse);
+      expect(overdueReportText(r), contains('Past 1 day credit'));
+      expect(overdueReportText(r), isNot(contains('Sales')));
     });
   });
 

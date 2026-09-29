@@ -83,7 +83,7 @@ final class AnalyticsSortControllerProvider extends $NotifierProvider<AnalyticsS
   }
 }
 
-String _$analyticsSortControllerHash() => r'f27cd9dcec112165185fbd1f46627bdaeaaea865';
+String _$analyticsSortControllerHash() => r'4814d2633d953115a53044732aa59c1b76b8a46a';
 
 abstract class _$AnalyticsSortController extends $Notifier<AnalyticsSort> {
   AnalyticsSort build();
@@ -245,4 +245,76 @@ final class PaymentSummaryFamily extends $Family with $FunctionalFamilyOverride<
 
   @override
   String toString() => r'paymentSummaryProvider';
+}
+
+/// Overdue 30 days ago with the same credit period, for the trend line.
+
+@ProviderFor(overdueMonthAgo)
+final overdueMonthAgoProvider = OverdueMonthAgoFamily._();
+
+/// Overdue 30 days ago with the same credit period, for the trend line.
+
+final class OverdueMonthAgoProvider extends $FunctionalProvider<AsyncValue<Money?>, Money?, FutureOr<Money?>>
+    with $FutureModifier<Money?>, $FutureProvider<Money?> {
+  /// Overdue 30 days ago with the same credit period, for the trend line.
+  OverdueMonthAgoProvider._({required OverdueMonthAgoFamily super.from, required String super.argument})
+    : super(
+        retry: null,
+        name: r'overdueMonthAgoProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$overdueMonthAgoHash();
+
+  @override
+  String toString() {
+    return r'overdueMonthAgoProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  $FutureProviderElement<Money?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<Money?> create(Ref ref) {
+    final argument = this.argument as String;
+    return overdueMonthAgo(ref, argument);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is OverdueMonthAgoProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$overdueMonthAgoHash() => r'0d696dd66cf8ff5c171718dccb1bbdba821d5657';
+
+/// Overdue 30 days ago with the same credit period, for the trend line.
+
+final class OverdueMonthAgoFamily extends $Family with $FunctionalFamilyOverride<FutureOr<Money?>, String> {
+  OverdueMonthAgoFamily._()
+    : super(
+        retry: null,
+        name: r'overdueMonthAgoProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  /// Overdue 30 days ago with the same credit period, for the trend line.
+
+  OverdueMonthAgoProvider call(String companyId) => OverdueMonthAgoProvider._(argument: companyId, from: this);
+
+  @override
+  String toString() => r'overdueMonthAgoProvider';
 }
