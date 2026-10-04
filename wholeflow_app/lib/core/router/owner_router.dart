@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/widgets/states.dart';
 import '../../features/analytics/presentation/analytics_screen.dart';
 import '../../features/analytics/presentation/shop_payments_screen.dart';
 import '../../features/auth/presentation/auth_screens.dart';
@@ -22,13 +24,13 @@ import '../../features/stock/stock_screen.dart';
 import '../../features/suppliers/presentation/supplier_detail_screen.dart';
 import '../../features/sync_health/presentation/sync_health_screen.dart';
 
-part 'app_router.g.dart';
+part 'owner_router.g.dart';
 
-const _authRoutes = {'/splash', '/login', '/change-password'};
+const _authRoutes = {'/splash', '/login', '/change-password', '/not-owner'};
 
-/// Where the router should send the user, given the session; null = stay.
+/// Where the owner router should send the user, given the session; null = stay.
 @visibleForTesting
-String? redirectFor(AsyncValue<Session> session, String location) {
+String? ownerRedirectFor(AsyncValue<Session> session, String location) {
   if (!session.hasValue) return location == '/splash' ? null : '/splash';
   final s = session.value!;
   switch (s) {
@@ -36,17 +38,14 @@ String? redirectFor(AsyncValue<Session> session, String location) {
       return location == '/login' ? null : '/login';
     case SignedIn(:final user, :final mustChangePassword):
       if (mustChangePassword) return location == '/change-password' ? null : '/change-password';
+      if (!user.isOwner) return location == '/not-owner' ? null : '/not-owner';
       if (_authRoutes.contains(location)) return '/dashboard';
-      // Staff may open /stock (Inventory only) and /stock/item/..., but not
-      // purchase bills or suppliers.
-      final ownerOnly = const ['/staff', '/sync-health', '/analytics', '/purchases', '/suppliers'].any(location.startsWith);
-      if (ownerOnly && !user.isOwner) return '/dashboard';
       return null;
   }
 }
 
 @Riverpod(keepAlive: true)
-GoRouter router(Ref ref) {
+GoRouter ownerRouter(Ref ref) {
   final refresh = ValueNotifier(0);
   ref
     ..listen(sessionControllerProvider, (_, _) => refresh.value++)
@@ -55,16 +54,16 @@ GoRouter router(Ref ref) {
   final router = GoRouter(
     initialLocation: '/splash',
     refreshListenable: refresh,
-    redirect: (context, state) => redirectFor(ref.read(sessionControllerProvider), state.matchedLocation),
+    redirect: (context, state) => ownerRedirectFor(ref.read(sessionControllerProvider), state.matchedLocation),
     routes: [
       GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/change-password', builder: (context, state) => const ForcePasswordChangeScreen()),
+      GoRoute(path: '/not-owner', builder: (context, state) => const NotOwnerScreen()),
       GoRoute(
         path: '/shop/:id',
         builder: (context, state) => ShopDetailScreen(shopId: state.pathParameters['id']!),
       ),
-      // Opened from Settings; the fifth tab is Stock.
       GoRoute(path: '/staff', builder: (context, state) => const StaffListScreen()),
       GoRoute(path: '/staff/new', builder: (context, state) => const StaffFormScreen()),
       GoRoute(
@@ -117,4 +116,33 @@ GoRouter router(Ref ref) {
   );
   ref.onDispose(router.dispose);
   return router;
+}
+
+/// Shown when a staff member attempts to open the WholeFlow Owner app.
+class NotOwnerScreen extends ConsumerWidget {
+  const NotOwnerScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('WholeFlow Owner')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(Insets.xl),
+          child: EmptyState(
+            icon: Icons.admin_panel_settings_outlined,
+            title: 'Owner access required',
+            message:
+                'This app is for Business Owners. You are signed in with a Staff account.\n\n'
+                'Please open the WholeFlow Staff app to sign in.',
+            action: FilledButton.tonalIcon(
+              onPressed: () => ref.read(sessionControllerProvider.notifier).signOut(),
+              icon: const Icon(Icons.logout_rounded),
+              label: const Text('Sign out'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

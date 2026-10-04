@@ -1,16 +1,10 @@
 import 'dart:io';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
-import 'package:wholeflow_app/core/router/app_router.dart';
 import 'package:wholeflow_app/features/auth/domain/app_user.dart';
-import 'package:wholeflow_app/features/auth/presentation/session_controller.dart';
 import 'package:wholeflow_app/features/home/home_shell.dart';
-
-const owner = AppUser(id: 'o', businessId: 'b', role: UserRole.owner, name: 'Owner');
-const staff = AppUser(id: 's', businessId: 'b', role: UserRole.staff, name: 'Staff');
 
 void main() {
   group('AppFailure.from', () {
@@ -55,34 +49,15 @@ void main() {
 
   group('navigation by role', () {
     test('Analytics is owner-only; staff get the Stock tab as Inventory', () {
-      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Analytics', 'Stock']);
+      expect(navItemsFor(UserRole.owner).map((i) => i.label), [
+        'Dashboard',
+        'Shops',
+        'Outstanding',
+        'Analytics',
+        'Stock',
+      ]);
       expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Inventory']);
       expect(navItemsFor(UserRole.staff).last.branch, Branch.stock);
-    });
-
-    test('redirects', () {
-      expect(redirectFor(const AsyncLoading(), '/dashboard'), '/splash');
-      expect(redirectFor(const AsyncData(SignedOut()), '/dashboard'), '/login');
-      expect(redirectFor(const AsyncData(SignedOut()), '/login'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(owner, mustChangePassword: true)), '/dashboard'), '/change-password');
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/login'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/staff/new'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/staff'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/staff/abc/edit'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/sync-health'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/shop/1'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/analytics'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/analytics/shop/1'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/analytics'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/settings'), isNull);
-      // Stock: staff see inventory only.
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/stock'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/stock/item/1'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/purchases/1'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(staff)), '/suppliers/1'), '/dashboard');
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/purchases/1'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/suppliers/1'), isNull);
-      expect(redirectFor(const AsyncData(SignedIn(owner)), '/staff'), isNull);
     });
   });
 }

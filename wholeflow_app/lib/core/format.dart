@@ -36,7 +36,7 @@ String formatQty(double qty, [String? unit]) {
 /// Parses a PostgREST `numeric` quantity (JSON number or string).
 double parseQty(Object? value) => switch (value) {
   null => 0.0,
-  num v => v.toDouble(),
+  final num v => v.toDouble(),
   _ => double.tryParse(value.toString()) ?? 0,
 };
 

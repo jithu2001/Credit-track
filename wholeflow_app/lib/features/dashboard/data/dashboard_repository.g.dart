@@ -12,7 +12,13 @@ part of 'dashboard_repository.dart';
 @ProviderFor(dashboardRepository)
 final dashboardRepositoryProvider = DashboardRepositoryProvider._();
 
-final class DashboardRepositoryProvider extends $FunctionalProvider<DashboardRepository, DashboardRepository, DashboardRepository>
+final class DashboardRepositoryProvider
+    extends
+        $FunctionalProvider<
+          DashboardRepository,
+          DashboardRepository,
+          DashboardRepository
+        >
     with $Provider<DashboardRepository> {
   DashboardRepositoryProvider._()
     : super(
@@ -30,7 +36,9 @@ final class DashboardRepositoryProvider extends $FunctionalProvider<DashboardRep
 
   @$internal
   @override
-  $ProviderElement<DashboardRepository> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<DashboardRepository> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   DashboardRepository create(Ref ref) {
@@ -39,8 +47,12 @@ final class DashboardRepositoryProvider extends $FunctionalProvider<DashboardRep
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(DashboardRepository value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<DashboardRepository>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DashboardRepository>(value),
+    );
   }
 }
 
-String _$dashboardRepositoryHash() => r'1b265059a38f838c4b3f735947e707ab41436ec2';
+String _$dashboardRepositoryHash() =>
+    r'1b265059a38f838c4b3f735947e707ab41436ec2';

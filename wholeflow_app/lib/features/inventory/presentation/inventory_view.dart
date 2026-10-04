@@ -207,7 +207,7 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
                 padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
                 child: Text('Stock group', style: context.text.titleMedium),
               ),
-              RadioListTile<String>(value: allGroups, title: const Text('All groups')),
+              const RadioListTile<String>(value: allGroups, title: Text('All groups')),
               for (final g in groups) RadioListTile<String>(value: g, title: Text(groupLabel(g))),
             ],
           ),

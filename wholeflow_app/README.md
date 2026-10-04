@@ -23,9 +23,17 @@ The app needs only the project URL and the **publishable (anon) key**. Never put
 ```bash
 cp env/example.json env/dev.json      # fill in SUPABASE_URL and SUPABASE_ANON_KEY
 flutter pub get
-flutter run --dart-define-from-file=env/dev.json
-flutter build apk --release --dart-define-from-file=env/dev.json
+
+# WholeFlow Owner (full business control, analytics, staff admin, sync health, stock valuation)
+flutter run --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/dev.json
+flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/dev.json
+
+# WholeFlow Staff (lean, lightweight for 1-2 GB phones: assigned shops, dues, quantities)
+flutter run --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/dev.json
+flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/dev.json
 ```
+
+Both apps can be installed and run side-by-side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). The Owner app keeps the v0.3.0 application id, so existing installs update in place to WholeFlow Owner; staff on v0.3.0 see an "Owner access required" screen and need to install WholeFlow Staff. Owner is the default flavor, so a plain `flutter run` builds it.
 
 `env/*.json` is gitignored except `example.json`. A build without these values shows a "missing Supabase settings" screen.
 
