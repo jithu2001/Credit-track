@@ -19,6 +19,25 @@ class ShopFilterController extends _$ShopFilterController {
   void clear() => state = const ShopFilter();
 }
 
+enum ShopsView {
+  all('All shops'),
+  dues('Dues'),
+  overdue('Overdue');
+
+  const ShopsView(this.label);
+  final String label;
+}
+
+/// Which list the Shops tab shows; opens on Dues and keeps the last choice
+/// while the app runs.
+@Riverpod(keepAlive: true)
+class ShopsViewController extends _$ShopsViewController {
+  @override
+  ShopsView build() => ShopsView.dues;
+
+  void set(ShopsView v) => state = v;
+}
+
 class ShopPage {
   const ShopPage({required this.items, required this.hasMore, this.loadingMore = false, this.loadMoreError});
 

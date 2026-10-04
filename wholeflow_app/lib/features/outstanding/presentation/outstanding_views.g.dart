@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'outstanding_screen.dart';
+part of 'outstanding_views.dart';
 
 // **************************************************************************
 // RiverpodGenerator
@@ -86,65 +86,6 @@ final class OutstandingReportFamily extends $Family
   String toString() => r'outstandingReportProvider';
 }
 
-/// Which list the Outstanding screen shows. A view setting only: kept in memory.
-
-@ProviderFor(OutstandingViewController)
-final outstandingViewControllerProvider = OutstandingViewControllerProvider._();
-
-/// Which list the Outstanding screen shows. A view setting only: kept in memory.
-final class OutstandingViewControllerProvider
-    extends $NotifierProvider<OutstandingViewController, OutstandingView> {
-  /// Which list the Outstanding screen shows. A view setting only: kept in memory.
-  OutstandingViewControllerProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'outstandingViewControllerProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$outstandingViewControllerHash();
-
-  @$internal
-  @override
-  OutstandingViewController create() => OutstandingViewController();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(OutstandingView value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<OutstandingView>(value),
-    );
-  }
-}
-
-String _$outstandingViewControllerHash() =>
-    r'36056b3f22440368c9c0df17137623d9051c71ed';
-
-/// Which list the Outstanding screen shows. A view setting only: kept in memory.
-
-abstract class _$OutstandingViewController extends $Notifier<OutstandingView> {
-  OutstandingView build();
-  @$mustCallSuper
-  @override
-  WhenComplete runBuild() {
-    final ref = this.ref as $Ref<OutstandingView, OutstandingView>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<OutstandingView, OutstandingView>,
-              OutstandingView,
-              Object?,
-              Object?
-            >;
-    return element.handleCreate(ref, build);
-  }
-}
-
 /// Shops past the credit period; the period is shared with Analytics.
 
 @ProviderFor(overdueReport)
@@ -227,4 +168,63 @@ final class OverdueReportFamily extends $Family
 
   @override
   String toString() => r'overdueReportProvider';
+}
+
+/// How Shops → Overdue orders its shops. A view setting only: kept in memory.
+
+@ProviderFor(OverdueSortController)
+final overdueSortControllerProvider = OverdueSortControllerProvider._();
+
+/// How Shops → Overdue orders its shops. A view setting only: kept in memory.
+final class OverdueSortControllerProvider
+    extends $NotifierProvider<OverdueSortController, OverdueSort> {
+  /// How Shops → Overdue orders its shops. A view setting only: kept in memory.
+  OverdueSortControllerProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'overdueSortControllerProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$overdueSortControllerHash();
+
+  @$internal
+  @override
+  OverdueSortController create() => OverdueSortController();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(OverdueSort value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<OverdueSort>(value),
+    );
+  }
+}
+
+String _$overdueSortControllerHash() =>
+    r'9b09c63e81331c75dc6a6a62b98fe54743f4f499';
+
+/// How Shops → Overdue orders its shops. A view setting only: kept in memory.
+
+abstract class _$OverdueSortController extends $Notifier<OverdueSort> {
+  OverdueSort build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<OverdueSort, OverdueSort>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<OverdueSort, OverdueSort>,
+              OverdueSort,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
 }

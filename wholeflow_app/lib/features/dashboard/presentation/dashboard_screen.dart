@@ -18,6 +18,7 @@ import '../../auth/presentation/session_controller.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../../shops/presentation/shop_tile.dart';
+import '../../shops/presentation/shop_list_controller.dart';
 import 'dashboard_providers.dart';
 import 'freshness_banner.dart';
 
@@ -122,7 +123,13 @@ class _DashboardBody extends ConsumerWidget {
         Row(
           children: [
             Expanded(child: Text('Top dues', style: context.text.titleMedium)),
-            TextButton(onPressed: () => context.go('/outstanding'), child: const Text('View all')),
+            TextButton(
+              onPressed: () {
+                ref.read(shopsViewControllerProvider.notifier).set(ShopsView.dues);
+                context.go('/shops');
+              },
+              child: const Text('View all'),
+            ),
           ],
         ),
         const SizedBox(height: Insets.s),
@@ -149,7 +156,7 @@ class _DashboardBody extends ConsumerWidget {
   }
 }
 
-/// Owner-only: overdue under the current credit period, linking to Analytics.
+/// Owner-only: overdue under the current credit period, linking to Payment insights.
 class _OverdueCard extends ConsumerWidget {
   const _OverdueCard({required this.companyId});
 
@@ -167,7 +174,7 @@ class _OverdueCard extends ConsumerWidget {
     return Card.filled(
       color: bg,
       child: InkWell(
-        onTap: () => context.go('/analytics'),
+        onTap: () => context.push('/insights'),
         child: Padding(
           padding: const EdgeInsets.all(Insets.l),
           child: Row(

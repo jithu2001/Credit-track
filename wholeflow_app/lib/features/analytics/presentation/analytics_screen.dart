@@ -7,9 +7,7 @@ import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
-import '../../company/presentation/company_switcher.dart';
-import '../../home/account_button.dart';
-import '../../outstanding/presentation/outstanding_screen.dart';
+import '../../shops/presentation/shop_list_controller.dart';
 import '../domain/payment_analysis.dart';
 import 'analytics_providers.dart';
 import 'analytics_widgets.dart';
@@ -32,17 +30,17 @@ enum HabitFilter {
   };
 }
 
-/// Owner-only: how much is overdue and whether it is improving, how shops pay
-/// in general, and each shop's habit. Chasing today's dues happens in
-/// Outstanding → Past credit limit, which this screen links to.
-class AnalyticsScreen extends ConsumerStatefulWidget {
-  const AnalyticsScreen({super.key});
+/// Owner-only, opened from the Dashboard overdue card: how much is overdue and
+/// whether it is improving, how shops pay in general, and each shop's habit.
+/// Chasing today's dues happens in Shops → Overdue, which this screen links to.
+class PaymentInsightsScreen extends ConsumerStatefulWidget {
+  const PaymentInsightsScreen({super.key});
 
   @override
-  ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
+  ConsumerState<PaymentInsightsScreen> createState() => _PaymentInsightsScreenState();
 }
 
-class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
+class _PaymentInsightsScreenState extends ConsumerState<PaymentInsightsScreen> {
   HabitFilter _filter = HabitFilter.all;
 
   @override
@@ -50,10 +48,7 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
     final company = ref.watch(activeCompanyProvider).value;
     final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
     return Scaffold(
-      appBar: AppBar(
-        title: const CompanyTitle(screen: 'Analytics'),
-        actions: const [AccountButton()],
-      ),
+      appBar: AppBar(title: const Text('Payment insights')),
       body: company == null
           ? const SizedBox.shrink()
           : RefreshIndicator(
@@ -245,8 +240,8 @@ class _OverviewCard extends ConsumerWidget {
                 icon: const Icon(Icons.phone_forwarded_outlined),
                 label: const Text('See who to call'),
                 onPressed: () {
-                  ref.read(outstandingViewControllerProvider.notifier).set(OutstandingView.overdue);
-                  context.go('/outstanding');
+                  ref.read(shopsViewControllerProvider.notifier).set(ShopsView.overdue);
+                  context.go('/shops');
                 },
               ),
             ],

@@ -7,7 +7,7 @@ import '../auth/presentation/session_controller.dart';
 import '../company/presentation/company_providers.dart';
 import '../dashboard/presentation/dashboard_providers.dart';
 import '../inventory/presentation/inventory_providers.dart';
-import '../outstanding/presentation/outstanding_screen.dart';
+import '../outstanding/presentation/outstanding_views.dart';
 import '../purchases/presentation/purchase_providers.dart';
 import '../shop_detail/presentation/shop_detail_providers.dart';
 import '../shops/presentation/shop_list_controller.dart';

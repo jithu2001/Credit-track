@@ -12,7 +12,6 @@ import '../../features/auth/presentation/session_controller.dart';
 import '../../features/dashboard/presentation/dashboard_screen.dart';
 import '../../features/home/home_shell.dart';
 import '../../features/inventory/presentation/stock_item_screen.dart';
-import '../../features/outstanding/presentation/outstanding_screen.dart';
 import '../../features/purchases/presentation/purchase_detail_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
@@ -76,6 +75,7 @@ GoRouter ownerRouter(Ref ref) {
       ),
       GoRoute(path: '/sync-health', builder: (context, state) => const SyncHealthScreen()),
       GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
+      GoRoute(path: '/insights', builder: (context, state) => const PaymentInsightsScreen()),
       GoRoute(
         path: '/analytics/shop/:id',
         builder: (context, state) => ShopPaymentsScreen(shopId: state.pathParameters['id']!),
@@ -92,6 +92,10 @@ GoRouter ownerRouter(Ref ref) {
         path: '/suppliers/:id',
         builder: (context, state) => SupplierDetailScreen(supplierId: state.pathParameters['id']!),
       ),
+      // Outstanding is now the Dues and Overdue views of the Shops tab.
+      GoRoute(path: '/outstanding', redirect: (context, state) => '/shops'),
+      // The Analytics tab is now Payment insights, opened from the Dashboard.
+      GoRoute(path: '/analytics', redirect: (context, state) => '/insights'),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => HomeShell(navigationShell: shell),
         branches: [
@@ -100,12 +104,6 @@ GoRouter ownerRouter(Ref ref) {
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/shops', builder: (context, state) => const ShopsScreen())],
-          ),
-          StatefulShellBranch(
-            routes: [GoRoute(path: '/outstanding', builder: (context, state) => const OutstandingScreen())],
-          ),
-          StatefulShellBranch(
-            routes: [GoRoute(path: '/analytics', builder: (context, state) => const AnalyticsScreen())],
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/stock', builder: (context, state) => const StockScreen())],

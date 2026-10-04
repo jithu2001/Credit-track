@@ -14,10 +14,6 @@ import '../../../core/widgets/states.dart';
 import '../../analytics/presentation/analytics_providers.dart';
 import '../../analytics/presentation/analytics_widgets.dart';
 import '../../company/domain/company.dart';
-import '../../company/presentation/company_providers.dart';
-import '../../company/presentation/company_switcher.dart';
-import '../../home/account_button.dart';
-import '../../home/refresh.dart';
 import '../../shops/data/shop_repository.dart';
 import '../../shops/presentation/shop_tile.dart';
 import '../data/overdue_repository.dart';
@@ -25,29 +21,12 @@ import '../data/report_pdf.dart';
 import '../domain/outstanding_report.dart';
 import '../domain/overdue_report.dart';
 
-part 'outstanding_screen.g.dart';
+part 'outstanding_views.g.dart';
 
 @riverpod
 Future<OutstandingReport> outstandingReport(Ref ref, Company company) async {
   final shops = await ref.watch(shopRepositoryProvider).outstanding(company.id);
   return buildOutstandingReport(companyName: company.companyName, shops: shops, generatedAt: DateTime.now());
-}
-
-enum OutstandingView {
-  all('All dues'),
-  overdue('Past credit limit');
-
-  const OutstandingView(this.label);
-  final String label;
-}
-
-/// Which list the Outstanding screen shows. A view setting only: kept in memory.
-@Riverpod(keepAlive: true)
-class OutstandingViewController extends _$OutstandingViewController {
-  @override
-  OutstandingView build() => OutstandingView.all;
-
-  void set(OutstandingView v) => state = v;
 }
 
 /// Shops past the credit period; the period is shared with Analytics.
@@ -59,153 +38,173 @@ Future<OverdueReport> overdueReport(Ref ref, Company company) async {
   return buildOverdueReport(companyName: company.companyName, creditDays: days, shops: shops, generatedAt: now);
 }
 
-class OutstandingScreen extends ConsumerWidget {
-  const OutstandingScreen({super.key});
+enum OverdueSort {
+  area('By area'),
+  amount('Most overdue first'),
+  days('Most days late first'),
+  name('Name A–Z');
 
+  const OverdueSort(this.label);
+  final String label;
+}
+
+/// How Shops → Overdue orders its shops. A view setting only: kept in memory.
+@Riverpod(keepAlive: true)
+class OverdueSortController extends _$OverdueSortController {
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final company = ref.watch(activeCompanyProvider).value;
-    final view = ref.watch(outstandingViewControllerProvider);
-    final report = company == null || view != OutstandingView.all ? null : ref.watch(outstandingReportProvider(company));
-    final overdue = company == null || view != OutstandingView.overdue ? null : ref.watch(overdueReportProvider(company));
-    final VoidCallback? onShare = switch (view) {
-      OutstandingView.all => switch (report?.value) {
-        final r? when r.groups.isNotEmpty => () => _shareAll(context, r),
-        _ => null,
-      },
-      OutstandingView.overdue => switch (overdue?.value) {
-        final r? when r.groups.isNotEmpty => () => _shareOverdue(context, r),
-        _ => null,
-      },
-    };
-    return Scaffold(
-      appBar: AppBar(
-        title: const CompanyTitle(screen: 'Outstanding'),
-        actions: [
-          IconButton(tooltip: 'Share report', icon: const Icon(Icons.share_rounded), onPressed: onShare),
-          const AccountButton(),
+  OverdueSort build() => OverdueSort.area;
+
+  void set(OverdueSort s) => state = s;
+}
+
+/// Every shop in [report] as one list, for the sorts other than by area.
+List<OverdueShop> sortedOverdueShops(OverdueReport report, OverdueSort sort) {
+  int byName(OverdueShop a, OverdueShop b) => a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  final list = [for (final g in report.groups) ...g.shops];
+  switch (sort) {
+    case OverdueSort.area:
+      break;
+    case OverdueSort.amount:
+      list.sort((a, b) {
+        final c = b.overdue.compareTo(a.overdue);
+        return c != 0 ? c : byName(a, b);
+      });
+    case OverdueSort.days:
+      list.sort((a, b) {
+        final c = b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
+        return c != 0 ? c : b.overdue.compareTo(a.overdue);
+      });
+    case OverdueSort.name:
+      list.sort(byName);
+  }
+  return list;
+}
+
+/// Shops (and their areas) whose name, phone or area contains [query].
+bool _matches(String query, String name, String? phone, String? area) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return true;
+  return name.toLowerCase().contains(q) || (phone ?? '').toLowerCase().contains(q) || areaLabel(area).toLowerCase().contains(q);
+}
+
+/// [report] narrowed to the shops matching the search, with totals recomputed.
+OutstandingReport filterDuesReport(OutstandingReport report, String query) => query.trim().isEmpty
+    ? report
+    : buildOutstandingReport(
+        companyName: report.companyName,
+        generatedAt: report.generatedAt,
+        shops: [
+          for (final g in report.groups)
+            for (final s in g.shops)
+              if (_matches(query, s.name, s.phone, s.area)) s,
+        ],
+      );
+
+/// [report] narrowed to the shops matching the search, with totals recomputed.
+OverdueReport filterOverdueReport(OverdueReport report, String query) => query.trim().isEmpty
+    ? report
+    : buildOverdueReport(
+        companyName: report.companyName,
+        creditDays: report.creditDays,
+        generatedAt: report.generatedAt,
+        shops: [
+          for (final g in report.groups)
+            for (final s in g.shops)
+              if (_matches(query, s.name, s.phone, s.area)) s,
+        ],
+      );
+
+Future<void> shareDuesReport(BuildContext context, OutstandingReport report) => _share(
+  context,
+  subject: 'Outstanding — ${report.companyName}',
+  fileStem: 'outstanding-${_slug(report.companyName)}',
+  text: () => outstandingReportText(report),
+  pdf: () => outstandingReportPdf(report),
+);
+
+Future<void> shareOverdueReport(BuildContext context, OverdueReport report) => _share(
+  context,
+  subject: 'Past ${plural(report.creditDays, 'day')} credit — ${report.companyName}',
+  fileStem: 'overdue-${report.creditDays}d-${_slug(report.companyName)}',
+  text: () => overdueReportText(report),
+  pdf: () => overdueReportPdf(report),
+);
+
+String _slug(String name) => name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '').toLowerCase();
+
+Future<void> _share(
+  BuildContext context, {
+  required String subject,
+  required String fileStem,
+  required String Function() text,
+  required Future<Uint8List> Function() pdf,
+}) async {
+  final format = await showModalBottomSheet<String>(
+    context: context,
+    useRootNavigator: true,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.notes_rounded),
+            title: const Text('Share as text'),
+            subtitle: const Text('Good for WhatsApp'),
+            onTap: () => Navigator.pop(context, 'text'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.picture_as_pdf_outlined),
+            title: const Text('Share as PDF'),
+            onTap: () => Navigator.pop(context, 'pdf'),
+          ),
+          const SizedBox(height: Insets.s),
         ],
       ),
-      body: company == null
-          ? const SizedBox.shrink()
-          : Column(
-              children: [
-                ContentWidth(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(Insets.l, Insets.s, Insets.l, Insets.s),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: SegmentedButton<OutstandingView>(
-                        key: const Key('outstanding-view'),
-                        segments: [for (final v in OutstandingView.values) ButtonSegment(value: v, label: Text(v.label))],
-                        selected: {view},
-                        showSelectedIcon: false,
-                        onSelectionChanged: (s) => ref.read(outstandingViewControllerProvider.notifier).set(s.first),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: () => refreshCompanyData(ref),
-                    child: switch (view) {
-                      OutstandingView.all => _AllDues(company: company, report: report!),
-                      OutstandingView.overdue => ContentWidth(
-                        child: _OverdueList(report: overdue!, onRetry: () => ref.invalidate(overdueReportProvider(company))),
-                      ),
-                    },
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  Future<void> _shareAll(BuildContext context, OutstandingReport report) => _share(
-    context,
-    subject: 'Outstanding — ${report.companyName}',
-    fileStem: 'outstanding-${_slug(report.companyName)}',
-    text: () => outstandingReportText(report),
-    pdf: () => outstandingReportPdf(report),
+    ),
   );
-
-  Future<void> _shareOverdue(BuildContext context, OverdueReport report) => _share(
-    context,
-    subject: 'Past ${plural(report.creditDays, 'day')} credit — ${report.companyName}',
-    fileStem: 'overdue-${report.creditDays}d-${_slug(report.companyName)}',
-    text: () => overdueReportText(report),
-    pdf: () => overdueReportPdf(report),
-  );
-
-  static String _slug(String name) =>
-      name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '').toLowerCase();
-
-  Future<void> _share(
-    BuildContext context, {
-    required String subject,
-    required String fileStem,
-    required String Function() text,
-    required Future<Uint8List> Function() pdf,
-  }) async {
-    final format = await showModalBottomSheet<String>(
-      context: context,
-      useRootNavigator: true,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.notes_rounded),
-              title: const Text('Share as text'),
-              subtitle: const Text('Good for WhatsApp'),
-              onTap: () => Navigator.pop(context, 'text'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.picture_as_pdf_outlined),
-              title: const Text('Share as PDF'),
-              onTap: () => Navigator.pop(context, 'pdf'),
-            ),
-            const SizedBox(height: Insets.s),
-          ],
+  if (format == null) return;
+  try {
+    if (format == 'text') {
+      await SharePlus.instance.share(ShareParams(text: text(), subject: subject));
+    } else {
+      final bytes = await pdf();
+      final name = '$fileStem.pdf';
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
+          fileNameOverrides: [name],
+          subject: subject,
         ),
-      ),
-    );
-    if (format == null) return;
-    try {
-      if (format == 'text') {
-        await SharePlus.instance.share(ShareParams(text: text(), subject: subject));
-      } else {
-        final bytes = await pdf();
-        final name = '$fileStem.pdf';
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
-            fileNameOverrides: [name],
-            subject: subject,
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) showMessage(context, AppFailure.from(e).message);
+      );
     }
+  } catch (e) {
+    if (context.mounted) showMessage(context, AppFailure.from(e).message);
   }
 }
 
-class _AllDues extends ConsumerWidget {
-  const _AllDues({required this.company, required this.report});
+/// Shops that owe money, grouped by area with a grand total (Shops → Dues).
+class DuesView extends ConsumerWidget {
+  const DuesView({super.key, required this.company, required this.report, this.searching = false});
 
   final Company company;
   final AsyncValue<OutstandingReport> report;
+  final bool searching;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return switch (report) {
       AsyncValue(:final value?) when value.groups.isEmpty => ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
-          SizedBox(height: Insets.xxl),
-          EmptyState(icon: Icons.celebration_outlined, title: 'Nothing outstanding', message: 'No shop owes anything right now.'),
+        children: [
+          const SizedBox(height: Insets.xxl),
+          searching
+              ? const _NoMatch()
+              : const EmptyState(
+                  icon: Icons.celebration_outlined,
+                  title: 'Nothing outstanding',
+                  message: 'No shop owes anything right now.',
+                ),
         ],
       ),
       AsyncValue(:final value?) => ContentWidth(child: _ReportList(report: value)),
@@ -288,7 +287,7 @@ class _ReportList extends StatelessWidget {
             child: _TotalCard(
               label: 'Grand total',
               amount: report.total,
-              detail: '${report.shopCount} shops in ${report.groups.length} areas',
+              detail: '${plural(report.shopCount, 'shop')} in ${plural(report.groups.length, 'area')}',
             ),
           ),
         ),
@@ -308,12 +307,29 @@ class _ReportList extends StatelessWidget {
   }
 }
 
-/// Credit-period chips stay on top while the list loads, fails or is empty.
-class _OverdueList extends StatelessWidget {
-  const _OverdueList({required this.report, required this.onRetry});
+class _NoMatch extends StatelessWidget {
+  const _NoMatch();
+
+  @override
+  Widget build(BuildContext context) =>
+      const EmptyState(icon: Icons.search_off_rounded, title: 'No shops match', message: 'Try a different search.');
+}
+
+/// Shops past the credit period (Shops → Overdue). The credit-period chips
+/// stay on top while the list loads, fails or is empty.
+class OverdueView extends StatelessWidget {
+  const OverdueView({
+    super.key,
+    required this.report,
+    required this.onRetry,
+    this.searching = false,
+    this.sort = OverdueSort.area,
+  });
 
   final AsyncValue<OverdueReport> report;
   final VoidCallback onRetry;
+  final bool searching;
+  final OverdueSort sort;
 
   @override
   Widget build(BuildContext context) {
@@ -326,11 +342,13 @@ class _OverdueList extends StatelessWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.only(top: Insets.xl),
-                child: EmptyState(
-                  icon: Icons.verified_outlined,
-                  title: 'No shop is past the limit',
-                  message: 'Every unpaid bill is within ${plural(value.creditDays, 'day')}.',
-                ),
+                child: searching
+                    ? const _NoMatch()
+                    : EmptyState(
+                        icon: Icons.verified_outlined,
+                        title: 'No shop is past the limit',
+                        message: 'Every unpaid bill is within ${plural(value.creditDays, 'day')}.',
+                      ),
               ),
             ),
           ],
@@ -349,6 +367,12 @@ class _OverdueList extends StatelessWidget {
       ],
     );
   }
+
+  Widget _flatList(List<OverdueShop> shops) => SliverList.separated(
+    itemCount: shops.length,
+    separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
+    itemBuilder: (context, i) => OverdueShopTile(key: ValueKey(shops[i].id), shop: shops[i], showArea: true),
+  );
 
   List<Widget> _reportSlivers(BuildContext context, OverdueReport r) => [
     SliverPadding(
@@ -371,25 +395,31 @@ class _OverdueList extends StatelessWidget {
         ),
       ),
     ),
-    for (final g in r.groups) ...[
-      SliverToBoxAdapter(
-        child: _AreaHeader(title: '${g.area} (${g.shops.length})', amount: g.subtotal),
-      ),
-      SliverList.separated(
-        itemCount: g.shops.length,
-        separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
-        itemBuilder: (context, i) => OverdueShopTile(key: ValueKey(g.shops[i].id), shop: g.shops[i]),
-      ),
-    ],
+    if (sort == OverdueSort.area)
+      for (final g in r.groups) ...[
+        SliverToBoxAdapter(
+          child: _AreaHeader(title: '${g.area} (${g.shops.length})', amount: g.subtotal),
+        ),
+        SliverList.separated(
+          itemCount: g.shops.length,
+          separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
+          itemBuilder: (context, i) => OverdueShopTile(key: ValueKey(g.shops[i].id), shop: g.shops[i]),
+        ),
+      ]
+    else
+      _flatList(sortedOverdueShops(r, sort)),
   ];
 }
 
 /// A shop past the limit. With bills it expands to list them; without (staff
 /// who may not see transactions) it opens the shop like any other tile.
 class OverdueShopTile extends StatefulWidget {
-  const OverdueShopTile({super.key, required this.shop});
+  const OverdueShopTile({super.key, required this.shop, this.showArea = false});
 
   final OverdueShop shop;
+
+  /// In the flat sorts there are no area headers, so the row names its area.
+  final bool showArea;
 
   @override
   State<OverdueShopTile> createState() => _OverdueShopTileState();
@@ -413,6 +443,7 @@ class _OverdueShopTileState extends State<OverdueShopTile> {
       fontFeatures: const [FontFeature.tabularFigures()],
     );
     final details = [
+      if (widget.showArea) areaLabel(s.area),
       daysPastLimit(s.maxDaysOverdue),
       plural(s.billCount, 'bill'),
       if (s.phone != null && s.phone!.trim().isNotEmpty) s.phone!.trim(),

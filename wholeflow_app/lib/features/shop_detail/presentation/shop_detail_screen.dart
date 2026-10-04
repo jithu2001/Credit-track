@@ -8,6 +8,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/balance_text.dart';
 import '../../../core/widgets/phone_tile.dart';
 import '../../../core/widgets/states.dart';
+import '../../analytics/presentation/shop_payments_screen.dart';
+import '../../auth/presentation/session_controller.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../shops/domain/shop.dart';
 import 'shop_detail_providers.dart';
@@ -40,6 +42,8 @@ class _Loaded extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showStatement = ref.watch(canViewTransactionsProvider(shop.companyId));
+    // How this shop pays (habit, unpaid and paid bills): owners only, like the rest of payment insights.
+    final showPayments = showStatement && (ref.watch(currentUserProvider)?.isOwner ?? false);
     final title = Text(shop.name, maxLines: 1, overflow: TextOverflow.ellipsis);
     Future<void> refresh() async {
       ref.invalidate(shopDetailProvider(shop.id));
@@ -58,14 +62,15 @@ class _Loaded extends ConsumerWidget {
       );
     }
     return DefaultTabController(
-      length: 2,
+      length: showPayments ? 3 : 2,
       child: Scaffold(
         appBar: AppBar(
           title: title,
-          bottom: const TabBar(
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Details'),
-              Tab(text: 'Statement'),
+              const Tab(text: 'Details'),
+              const Tab(text: 'Statement'),
+              if (showPayments) const Tab(text: 'Payments'),
             ],
           ),
         ),
@@ -73,6 +78,7 @@ class _Loaded extends ConsumerWidget {
           children: [
             details,
             StatementView(shop: shop),
+            if (showPayments) ShopPaymentsView(shopId: shop.id),
           ],
         ),
       ),

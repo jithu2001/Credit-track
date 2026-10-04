@@ -67,6 +67,69 @@ abstract class _$ShopFilterController extends $Notifier<ShopFilter> {
   }
 }
 
+/// Which list the Shops tab shows; opens on Dues and keeps the last choice
+/// while the app runs.
+
+@ProviderFor(ShopsViewController)
+final shopsViewControllerProvider = ShopsViewControllerProvider._();
+
+/// Which list the Shops tab shows; opens on Dues and keeps the last choice
+/// while the app runs.
+final class ShopsViewControllerProvider
+    extends $NotifierProvider<ShopsViewController, ShopsView> {
+  /// Which list the Shops tab shows; opens on Dues and keeps the last choice
+  /// while the app runs.
+  ShopsViewControllerProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'shopsViewControllerProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$shopsViewControllerHash();
+
+  @$internal
+  @override
+  ShopsViewController create() => ShopsViewController();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(ShopsView value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<ShopsView>(value),
+    );
+  }
+}
+
+String _$shopsViewControllerHash() =>
+    r'd686a5116f343458a970e10da9d8bf8096baf806';
+
+/// Which list the Shops tab shows; opens on Dues and keeps the last choice
+/// while the app runs.
+
+abstract class _$ShopsViewController extends $Notifier<ShopsView> {
+  ShopsView build();
+  @$mustCallSuper
+  @override
+  WhenComplete runBuild() {
+    final ref = this.ref as $Ref<ShopsView, ShopsView>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<ShopsView, ShopsView>,
+              ShopsView,
+              Object?,
+              Object?
+            >;
+    return element.handleCreate(ref, build);
+  }
+}
+
 /// Infinite-scroll list of shops for a company with the current filter.
 
 @ProviderFor(ShopList)

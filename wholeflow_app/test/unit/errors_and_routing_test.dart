@@ -48,15 +48,9 @@ void main() {
   });
 
   group('navigation by role', () {
-    test('Analytics is owner-only; staff get the Stock tab as Inventory', () {
-      expect(navItemsFor(UserRole.owner).map((i) => i.label), [
-        'Dashboard',
-        'Shops',
-        'Outstanding',
-        'Analytics',
-        'Stock',
-      ]);
-      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Inventory']);
+    test('owners get Stock; staff get the Stock tab as Inventory', () {
+      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Stock']);
+      expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Inventory']);
       expect(navItemsFor(UserRole.staff).last.branch, Branch.stock);
     });
   });

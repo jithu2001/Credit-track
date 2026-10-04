@@ -14,6 +14,7 @@ import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
+import '../../shops/presentation/shop_list_controller.dart';
 import '../../shops/presentation/shop_tile.dart';
 import 'dashboard_providers.dart';
 import 'dashboard_widgets.dart';
@@ -119,7 +120,13 @@ class _StaffDashboardBody extends ConsumerWidget {
         Row(
           children: [
             Expanded(child: Text('Top dues', style: context.text.titleMedium)),
-            TextButton(onPressed: () => context.go('/outstanding'), child: const Text('View all')),
+            TextButton(
+              onPressed: () {
+                ref.read(shopsViewControllerProvider.notifier).set(ShopsView.dues);
+                context.go('/shops');
+              },
+              child: const Text('View all'),
+            ),
           ],
         ),
         const SizedBox(height: Insets.s),

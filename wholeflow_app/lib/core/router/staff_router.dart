@@ -11,7 +11,6 @@ import '../../features/dashboard/presentation/staff_dashboard_screen.dart';
 import '../../features/home/staff_home_shell.dart';
 import '../../features/inventory/presentation/staff_inventory_screen.dart';
 import '../../features/inventory/presentation/stock_item_screen.dart';
-import '../../features/outstanding/presentation/outstanding_screen.dart';
 import '../../features/settings/presentation/staff_settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
 import '../../features/shops/presentation/shops_screen.dart';
@@ -61,6 +60,8 @@ GoRouter staffRouter(Ref ref) {
         path: '/stock/item/:id',
         builder: (context, state) => StockItemScreen(itemId: state.pathParameters['id']!),
       ),
+      // Outstanding is now the Dues and Overdue views of the Shops tab.
+      GoRoute(path: '/outstanding', redirect: (context, state) => '/shops'),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => StaffHomeShell(navigationShell: shell),
         branches: [
@@ -69,9 +70,6 @@ GoRouter staffRouter(Ref ref) {
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/shops', builder: (context, state) => const ShopsScreen())],
-          ),
-          StatefulShellBranch(
-            routes: [GoRoute(path: '/outstanding', builder: (context, state) => const OutstandingScreen())],
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/inventory', builder: (context, state) => const StaffInventoryScreen())],

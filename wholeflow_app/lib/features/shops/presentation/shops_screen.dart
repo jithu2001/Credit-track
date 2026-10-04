@@ -10,10 +10,13 @@ import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
+import '../../outstanding/presentation/outstanding_views.dart';
 import '../domain/shop.dart';
 import 'shop_list_controller.dart';
 import 'shop_tile.dart';
 
+/// The Shops tab: every shop (All shops), shops that owe money grouped by area
+/// (Dues), and shops past the credit period (Overdue), with one search.
 class ShopsScreen extends ConsumerStatefulWidget {
   const ShopsScreen({super.key});
 
@@ -43,20 +46,54 @@ class _ShopsScreenState extends ConsumerState<ShopsScreen> {
   Widget build(BuildContext context) {
     final company = ref.watch(activeCompanyProvider).value;
     final filter = ref.watch(shopFilterControllerProvider);
+    final view = ref.watch(shopsViewControllerProvider);
+    final dues = company == null || view != ShopsView.dues ? null : ref.watch(outstandingReportProvider(company));
+    final overdue = company == null || view != ShopsView.overdue ? null : ref.watch(overdueReportProvider(company));
+    // Share always sends the whole report, not just the search matches.
+    final VoidCallback? onShare = switch (view) {
+      ShopsView.all => null,
+      ShopsView.dues => switch (dues?.value) {
+        final r? when r.groups.isNotEmpty => () => shareDuesReport(context, r),
+        _ => null,
+      },
+      ShopsView.overdue => switch (overdue?.value) {
+        final r? when r.groups.isNotEmpty => () => shareOverdueReport(context, r),
+        _ => null,
+      },
+    };
+    final searching = filter.query.trim().isNotEmpty;
     return Scaffold(
       appBar: AppBar(
         title: const CompanyTitle(screen: 'Shops'),
         actions: [
-          IconButton(tooltip: 'Sort', icon: const Icon(Icons.sort_rounded), onPressed: () => _showSort(context)),
+          if (view != ShopsView.dues)
+            IconButton(tooltip: 'Sort', icon: const Icon(Icons.sort_rounded), onPressed: () => _showSort(context, view)),
+          if (view != ShopsView.all)
+            IconButton(tooltip: 'Share report', icon: const Icon(Icons.share_rounded), onPressed: onShare),
           const AccountButton(),
         ],
       ),
       body: company == null
           ? const SizedBox.shrink()
-          : ContentWidth(
-              child: Column(
-                children: [
-                  Padding(
+          : Column(
+              children: [
+                ContentWidth(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(Insets.l, Insets.s, Insets.l, 0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: SegmentedButton<ShopsView>(
+                        key: const Key('shops-view'),
+                        segments: [for (final v in ShopsView.values) ButtonSegment(value: v, label: Text(v.label))],
+                        selected: {view},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (s) => ref.read(shopsViewControllerProvider.notifier).set(s.first),
+                      ),
+                    ),
+                  ),
+                ),
+                ContentWidth(
+                  child: Padding(
                     padding: const EdgeInsets.fromLTRB(Insets.l, Insets.s, Insets.l, Insets.s),
                     child: SearchBar(
                       controller: _search,
@@ -81,50 +118,99 @@ class _ShopsScreenState extends ConsumerState<ShopsScreen> {
                       elevation: const WidgetStatePropertyAll(0),
                     ),
                   ),
-                  _FilterRow(companyId: company.id, filter: filter),
+                ),
+                if (view == ShopsView.all) ...[
+                  ContentWidth(
+                    child: _FilterRow(companyId: company.id, filter: filter),
+                  ),
                   const Divider(height: 1),
-                  Expanded(child: _ShopListView(companyId: company.id)),
-                ],
-              ),
+                  Expanded(
+                    child: ContentWidth(child: _ShopListView(companyId: company.id)),
+                  ),
+                ] else
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: () => refreshCompanyData(ref),
+                      child: switch (view) {
+                        ShopsView.overdue => ContentWidth(
+                          child: OverdueView(
+                            report: overdue!.whenData((r) => filterOverdueReport(r, filter.query)),
+                            searching: searching,
+                            sort: ref.watch(overdueSortControllerProvider),
+                            onRetry: () => ref.invalidate(overdueReportProvider(company)),
+                          ),
+                        ),
+                        _ => DuesView(
+                          company: company,
+                          report: dues!.whenData((r) => filterDuesReport(r, filter.query)),
+                          searching: searching,
+                        ),
+                      },
+                    ),
+                  ),
+              ],
             ),
     );
   }
 
-  Future<void> _showSort(BuildContext context) {
+  Future<void> _showSort(BuildContext context, ShopsView view) {
     dismissKeyboard();
     return showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
       showDragHandle: true,
       builder: (context) => Consumer(
-        builder: (context, ref, _) {
-          final sort = ref.watch(shopFilterControllerProvider).sort;
-          return SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
-                  child: Text('Sort by', style: context.text.titleMedium),
+        builder: (context, ref, _) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
+                child: Text('Sort by', style: context.text.titleMedium),
+              ),
+              if (view == ShopsView.overdue)
+                _SortOptions<OverdueSort>(
+                  values: OverdueSort.values,
+                  selected: ref.watch(overdueSortControllerProvider),
+                  label: (s) => s.label,
+                  onSelected: ref.read(overdueSortControllerProvider.notifier).set,
+                )
+              else
+                _SortOptions<ShopSort>(
+                  values: ShopSort.values,
+                  selected: ref.watch(shopFilterControllerProvider).sort,
+                  label: (s) => s.label,
+                  onSelected: ref.read(shopFilterControllerProvider.notifier).setSort,
                 ),
-                RadioGroup<ShopSort>(
-                  groupValue: sort,
-                  onChanged: (s) {
-                    if (s != null) ref.read(shopFilterControllerProvider.notifier).setSort(s);
-                    Navigator.of(context).pop();
-                  },
-                  child: Column(
-                    children: [for (final s in ShopSort.values) RadioListTile<ShopSort>(value: s, title: Text(s.label))],
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
+            ],
+          ),
+        ),
       ),
     );
   }
+}
+
+/// Radio list for a sort sheet; picking one closes the sheet.
+class _SortOptions<T> extends StatelessWidget {
+  const _SortOptions({required this.values, required this.selected, required this.label, required this.onSelected});
+
+  final List<T> values;
+  final T selected;
+  final String Function(T) label;
+  final ValueChanged<T> onSelected;
+
+  @override
+  Widget build(BuildContext context) => RadioGroup<T>(
+    groupValue: selected,
+    onChanged: (v) {
+      if (v != null) onSelected(v);
+      Navigator.of(context).pop();
+    },
+    child: Column(
+      children: [for (final v in values) RadioListTile<T>(value: v, title: Text(label(v)))],
+    ),
+  );
 }
 
 class _FilterRow extends ConsumerWidget {
@@ -142,7 +228,8 @@ class _FilterRow extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: Insets.l, vertical: Insets.s),
         children: [
-          for (final b in BalanceFilter.values.skip(1)) ...[
+          // "Owes us" is the Dues view.
+          for (final b in const [BalanceFilter.credit, BalanceFilter.settled]) ...[
             FilterChip(
               label: Text(b.label),
               selected: filter.balance == b,

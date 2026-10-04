@@ -15,8 +15,7 @@ import 'refresh.dart';
 const staffNavItems = [
   NavItem(0, 'Dashboard', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded),
   NavItem(1, 'Shops', Icons.storefront_outlined, Icons.storefront_rounded),
-  NavItem(2, 'Outstanding', Icons.request_quote_outlined, Icons.request_quote_rounded),
-  NavItem(3, 'Inventory', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
+  NavItem(2, 'Inventory', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
 ];
 
 class StaffHomeShell extends ConsumerStatefulWidget {

@@ -27,23 +27,38 @@ class ShopPaymentsScreen extends ConsumerWidget {
         title: Text(profile?.shop.name ?? 'Payments', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: 'Open statement',
-            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Open shop',
+            icon: const Icon(Icons.storefront_outlined),
             onPressed: () => context.push('/shop/$shopId'),
           ),
         ],
       ),
-      body: switch (summary) {
-        null => const SizedBox.shrink(),
-        AsyncValue(hasValue: true) when profile == null => const EmptyState(
-          icon: Icons.receipt_long_outlined,
-          title: 'No bills for this shop',
-        ),
-        AsyncValue(hasValue: true) => _Body(profile: profile!, creditDays: summary.value!.creditDays),
-        AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company!.id))),
-        _ => const SkeletonList(),
-      },
+      body: ShopPaymentsView(shopId: shopId),
     );
+  }
+}
+
+/// The body of [ShopPaymentsScreen]; also the shop screen's Payments tab (owners).
+class ShopPaymentsView extends ConsumerWidget {
+  const ShopPaymentsView({super.key, required this.shopId});
+
+  final String shopId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final company = ref.watch(activeCompanyProvider).value;
+    final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
+    final profile = summary?.value?.shops.where((p) => p.shop.id == shopId).firstOrNull;
+    return switch (summary) {
+      null => const SizedBox.shrink(),
+      AsyncValue(hasValue: true) when profile == null => const EmptyState(
+        icon: Icons.receipt_long_outlined,
+        title: 'No bills for this shop',
+      ),
+      AsyncValue(hasValue: true) => _Body(profile: profile!, creditDays: summary.value!.creditDays),
+      AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company!.id))),
+      _ => const SkeletonList(),
+    };
   }
 }
 

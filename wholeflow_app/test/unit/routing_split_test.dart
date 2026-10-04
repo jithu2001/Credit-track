@@ -30,16 +30,13 @@ void main() {
     });
 
     test('Force password change redirects to /change-password', () {
-      expect(
-        ownerRedirectFor(const AsyncData(SignedIn(ownerUser, mustChangePassword: true)), '/dashboard'),
-        '/change-password',
-      );
+      expect(ownerRedirectFor(const AsyncData(SignedIn(ownerUser, mustChangePassword: true)), '/dashboard'), '/change-password');
     });
   });
 
   group('Staff App Routing', () {
-    test('navigation items have 4 tabs: Dashboard, Shops, Outstanding, Inventory', () {
-      expect(staffNavItems.map((i) => i.label), ['Dashboard', 'Shops', 'Outstanding', 'Inventory']);
+    test('navigation items have 3 tabs: Dashboard, Shops, Inventory', () {
+      expect(staffNavItems.map((i) => i.label), ['Dashboard', 'Shops', 'Inventory']);
     });
 
     test('SignedOut redirects to /login', () {
@@ -61,10 +58,7 @@ void main() {
     });
 
     test('Force password change redirects to /change-password', () {
-      expect(
-        staffRedirectFor(const AsyncData(SignedIn(staffUser, mustChangePassword: true)), '/dashboard'),
-        '/change-password',
-      );
+      expect(staffRedirectFor(const AsyncData(SignedIn(staffUser, mustChangePassword: true)), '/dashboard'), '/change-password');
     });
   });
 }

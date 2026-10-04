@@ -21,7 +21,6 @@ import 'package:wholeflow_app/features/dashboard/presentation/dashboard_screen.d
 import 'package:wholeflow_app/features/home/home_shell.dart';
 import 'package:wholeflow_app/features/outstanding/data/overdue_repository.dart';
 import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
-import 'package:wholeflow_app/features/outstanding/presentation/outstanding_screen.dart';
 import 'package:wholeflow_app/features/shop_detail/data/transaction_repository.dart';
 import 'package:wholeflow_app/features/shop_detail/presentation/shop_detail_screen.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
@@ -122,8 +121,16 @@ void main() {
   });
 
   group('shops list', () {
+    Future<void> openAllShops(WidgetTester tester) async {
+      await tester.pump();
+      await tester.tap(find.text('All shops'));
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('loading shows skeletons', (tester) async {
       await pumpScreen(tester, const ShopsScreen(), overrides: await baseOverrides(shopRepo: FakeShopRepository(pending: true)));
+      await tester.pump();
+      await tester.tap(find.text('All shops'));
       await tester.pump();
       await tester.pump();
       expect(find.bySemanticsLabel('Loading'), findsWidgets);
@@ -131,7 +138,7 @@ void main() {
 
     testWidgets('data rows show balance with side', (tester) async {
       await pumpScreen(tester, const ShopsScreen(), overrides: await baseOverrides());
-      await tester.pumpAndSettle();
+      await openAllShops(tester);
       expect(find.text('PRINCE TYRES -- RAJAKKAD'), findsOneWidget);
       expect(find.text('₹1,23,456.00 Dr'), findsOneWidget);
       expect(find.text('₹5,000.00 Cr'), findsOneWidget);
@@ -140,7 +147,7 @@ void main() {
 
     testWidgets('empty state offers to clear filters', (tester) async {
       await pumpScreen(tester, const ShopsScreen(), overrides: await baseOverrides(shopRepo: FakeShopRepository()));
-      await tester.pumpAndSettle();
+      await openAllShops(tester);
       expect(find.text('No shops match'), findsOneWidget);
       expect(find.text('Clear filters'), findsOneWidget);
     });
@@ -151,7 +158,7 @@ void main() {
         const ShopsScreen(),
         overrides: await baseOverrides(shopRepo: FakeShopRepository(error: const AppFailure(FailureKind.network))),
       );
-      await tester.pumpAndSettle();
+      await openAllShops(tester);
       expect(find.text("You're offline"), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
     });
@@ -159,10 +166,51 @@ void main() {
     testWidgets('balance filter chip changes the query', (tester) async {
       final repo = FakeShopRepository(shops: shops);
       await pumpScreen(tester, const ShopsScreen(), overrides: await baseOverrides(shopRepo: repo));
+      await openAllShops(tester);
+      expect(find.widgetWithText(FilterChip, 'Owes us'), findsNothing, reason: 'the Dues view replaces it');
+      await tester.tap(find.widgetWithText(FilterChip, 'In credit'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilterChip, 'Owes us'));
+      expect(repo.requested.last.balance, BalanceFilter.credit);
+    });
+  });
+
+  group('shops dues', () {
+    const owing = [...shops, ShopSummary(id: 's4', name: 'ROYAL TYRES -- PALA', area: 'Pala', receivable: Money(200000))];
+
+    testWidgets('opens on Dues: shops that owe, by area, with the grand total', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopsScreen(),
+        overrides: await baseOverrides(shopRepo: FakeShopRepository(shops: owing)),
+      );
       await tester.pumpAndSettle();
-      expect(repo.requested.last.balance, BalanceFilter.owes);
+      expect(find.text('Grand total'), findsOneWidget);
+      expect(find.text('₹1,25,456.00'), findsOneWidget);
+      expect(find.text('PRINCE TYRES -- RAJAKKAD'), findsOneWidget);
+      expect(find.text('ROYAL TYRES -- PALA'), findsOneWidget);
+      expect(find.text('KERALA AUTO -- PALA'), findsNothing);
+      expect(find.byTooltip('Share report'), findsOneWidget);
+      expect(find.byTooltip('Sort'), findsNothing);
+    });
+
+    testWidgets('search narrows the dues and recomputes the total', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopsScreen(),
+        overrides: await baseOverrides(shopRepo: FakeShopRepository(shops: owing)),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(SearchBar), 'pala');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('ROYAL TYRES -- PALA'), findsOneWidget);
+      expect(find.text('PRINCE TYRES -- RAJAKKAD'), findsNothing);
+      expect(find.text('1 shop in 1 area'), findsOneWidget);
+
+      await tester.enterText(find.byType(SearchBar), 'nobody');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(find.text('No shops match'), findsOneWidget);
     });
   });
 
@@ -189,6 +237,7 @@ void main() {
       await pumpScreen(tester, const ShopDetailScreen(shopId: 's1'), overrides: await overrides(owner, const []));
       await tester.pumpAndSettle();
       expect(find.text('Statement'), findsOneWidget);
+      expect(find.text('Payments'), findsOneWidget);
       expect(find.byTooltip('Call 9847012345'), findsOneWidget);
       expect(find.byTooltip('WhatsApp 9847012345'), findsOneWidget);
     });
@@ -203,6 +252,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Statement'), findsNothing);
+      expect(find.text('Payments'), findsNothing);
       expect(find.text('Owes you'), findsOneWidget);
     });
 
@@ -279,7 +329,7 @@ void main() {
 
   group('analytics', () {
     testWidgets('explains overdue, trend and habits in plain words, and reacts to the period', (tester) async {
-      await pumpScreen(tester, const AnalyticsScreen(), overrides: await baseOverrides(), size: const Size(900, 2000));
+      await pumpScreen(tester, const PaymentInsightsScreen(), overrides: await baseOverrides(), size: const Size(900, 2000));
       await tester.pumpAndSettle();
       // 30 days: the ₹10,000 bill from 50 days ago is past the limit.
       expect(find.text('Overdue now'), findsOneWidget);
@@ -321,10 +371,10 @@ void main() {
     });
   });
 
-  group('outstanding past credit limit', () {
+  group('shops overdue', () {
     Future<void> openOverdue(WidgetTester tester) async {
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Past credit limit'));
+      await tester.tap(find.text('Overdue'));
       await tester.pumpAndSettle();
     }
 
@@ -332,7 +382,7 @@ void main() {
       final repo = FakeOverdueRepository([overdueShop()]);
       await pumpScreen(
         tester,
-        const OutstandingScreen(),
+        const ShopsScreen(),
         overrides: await baseOverrides(overdueRepo: repo),
         size: const Size(900, 1600),
       );
@@ -358,7 +408,7 @@ void main() {
     testWidgets('staff without transaction access get amounts but no bills', (tester) async {
       await pumpScreen(
         tester,
-        const OutstandingScreen(),
+        const ShopsScreen(),
         overrides: await baseOverrides(user: staffUser, overdueRepo: FakeOverdueRepository([overdueShop(withBills: false)])),
       );
       await openOverdue(tester);
@@ -368,8 +418,45 @@ void main() {
       expect(find.textContaining('Sales · S1'), findsNothing);
     });
 
+    testWidgets('sort: one list, most overdue first, rows name their area', (tester) async {
+      final big = OverdueShop.fromJson({
+        'shop_id': 's2',
+        'name': 'ROYAL TYRES -- PALA',
+        'area': 'Pala',
+        'receivable': 9000,
+        'overdue': 9000,
+        'max_days_overdue': 5,
+        'overdue_bills': 1,
+        'bills_visible': false,
+      });
+      await pumpScreen(
+        tester,
+        const ShopsScreen(),
+        overrides: await baseOverrides(overdueRepo: FakeOverdueRepository([overdueShop(), big])),
+        size: const Size(900, 1600),
+      );
+      await openOverdue(tester);
+      // By area: Pala before Rajakkad, under area headers.
+      expect(find.text('Pala (1)'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Sort'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Most days late first'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pala (1)'), findsNothing);
+      final prince = find.text('PRINCE TYRES -- RAJAKKAD'), royal = find.text('ROYAL TYRES -- PALA');
+      expect(tester.getTopLeft(prince).dy, lessThan(tester.getTopLeft(royal).dy));
+      expect(find.text('Rajakkad · 20 days past limit · 1 bill'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Sort'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Most overdue first'));
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(royal).dy, lessThan(tester.getTopLeft(prince).dy));
+    });
+
     testWidgets('empty state names the period', (tester) async {
-      await pumpScreen(tester, const OutstandingScreen(), overrides: await baseOverrides());
+      await pumpScreen(tester, const ShopsScreen(), overrides: await baseOverrides());
       await openOverdue(tester);
       expect(find.text('No shop is past the limit'), findsOneWidget);
       expect(find.text('Every unpaid bill is within 30 days.'), findsOneWidget);
