@@ -207,7 +207,7 @@ final class OverdueSortControllerProvider
 }
 
 String _$overdueSortControllerHash() =>
-    r'9b09c63e81331c75dc6a6a62b98fe54743f4f499';
+    r'72eed1e63267063eda85f92143d486031b011ac0';
 
 /// How Shops → Overdue orders its shops. A view setting only: kept in memory.
 

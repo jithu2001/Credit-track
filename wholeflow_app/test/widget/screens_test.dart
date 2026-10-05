@@ -7,6 +7,7 @@ import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/providers.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
 import 'package:wholeflow_app/core/widgets/balance_text.dart';
+import 'package:wholeflow_app/core/widgets/multi_picker_sheet.dart';
 import 'package:wholeflow_app/features/analytics/data/analytics_repository.dart';
 import 'package:wholeflow_app/features/analytics/presentation/analytics_screen.dart';
 import 'package:wholeflow_app/features/auth/data/auth_repository.dart';
@@ -27,6 +28,21 @@ import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
 import 'package:wholeflow_app/features/shops/domain/shop.dart';
 import 'package:wholeflow_app/features/shops/presentation/shop_tile.dart';
 import 'package:wholeflow_app/features/shops/presentation/shops_screen.dart';
+import 'package:wholeflow_app/features/sites/data/site_repository.dart';
+import 'package:wholeflow_app/features/sites/domain/site.dart';
+import 'package:wholeflow_app/features/sites/presentation/site_editor_screen.dart';
+import 'package:wholeflow_app/features/sites/presentation/sites_screen.dart';
+import 'package:wholeflow_app/features/visits/data/shop_location_repository.dart';
+import 'package:wholeflow_app/features/visits/domain/shop_location.dart';
+import 'package:wholeflow_app/features/visits/presentation/suggestions_screen.dart';
+import 'package:wholeflow_app/features/visits/data/visit_repository.dart';
+import 'package:wholeflow_app/features/visits/domain/visit.dart';
+import 'package:wholeflow_app/features/visits/presentation/check_in_screen.dart';
+import 'package:wholeflow_app/features/visits/presentation/plans_screen.dart';
+import 'package:wholeflow_app/features/visits/presentation/staff_visits_screen.dart';
+import 'package:wholeflow_app/core/location/location_service.dart';
+import 'package:wholeflow_app/features/staff/domain/staff.dart';
+import 'package:wholeflow_app/features/staff/presentation/staff_providers.dart';
 import 'package:wholeflow_app/features/staff/presentation/staff_form_screen.dart';
 
 import 'helpers.dart';
@@ -35,9 +51,30 @@ const companyA = Company(id: 'co-a', companyName: 'JMJ Marketing', syncStatus: '
 const companyB = Company(id: 'co-b', companyName: 'JK Tyres', syncStatus: 'SYNCED');
 
 const shops = [
-  ShopSummary(id: 's1', name: 'PRINCE TYRES -- RAJAKKAD', area: 'Rajakkad', phone: '9847012345', receivable: Money(12345600)),
-  ShopSummary(id: 's2', name: 'KERALA AUTO -- PALA', area: 'Pala', receivable: Money(-500000)),
-  ShopSummary(id: 's3', name: 'SETTLED STORES', area: 'Pala'),
+  ShopSummary(
+    id: 's1',
+    name: 'PRINCE TYRES -- RAJAKKAD',
+    area: 'Rajakkad',
+    phone: '9847012345',
+    receivable: Money(12345600),
+    siteId: 'site-r',
+    siteName: 'Rajakkad',
+  ),
+  ShopSummary(
+    id: 's2',
+    name: 'KERALA AUTO -- PALA',
+    area: 'Pala',
+    receivable: Money(-500000),
+    siteId: 'site-p',
+    siteName: 'Pala',
+  ),
+  ShopSummary(id: 's3', name: 'SETTLED STORES', area: 'Pala', siteId: 'site-p', siteName: 'Pala'),
+];
+
+const sites = [
+  Site(id: 'site-p', companyId: 'co-a', name: 'Pala'),
+  Site(id: 'site-r', companyId: 'co-a', name: 'Rajakkad'),
+  Site(id: 'site-b', companyId: 'co-b', name: 'Kply'),
 ];
 
 Future<List<Override>> baseOverrides({
@@ -47,6 +84,11 @@ Future<List<Override>> baseOverrides({
   FakeShopRepository? shopRepo,
   FakeDashboardRepository? dashboard,
   FakeOverdueRepository? overdueRepo,
+  FakeSiteRepository? siteRepo,
+  FakeShopLocationRepository? locationRepo,
+  FakeVisitRepository? visitRepo,
+  LocationReading? location,
+  bool devMode = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -60,6 +102,15 @@ Future<List<Override>> baseOverrides({
     dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository()),
     analyticsRepositoryProvider.overrideWithValue(FakeAnalyticsRepository()),
     overdueRepositoryProvider.overrideWithValue(overdueRepo ?? FakeOverdueRepository()),
+    siteRepositoryProvider.overrideWithValue(siteRepo ?? FakeSiteRepository(sitesList: sites)),
+    shopLocationRepositoryProvider.overrideWithValue(locationRepo ?? FakeShopLocationRepository()),
+    visitRepositoryProvider.overrideWithValue(visitRepo ?? FakeVisitRepository()),
+    locationServiceProvider.overrideWithValue(
+      FakeLocationService(
+        location ?? const LocationReading(latitude: 9.85, longitude: 76.97, accuracyMeters: 10, isMocked: false),
+        devMode: devMode,
+      ),
+    ),
   ];
 }
 
@@ -68,6 +119,8 @@ OverdueShop overdueShop({bool withBills = true}) => OverdueShop.fromJson({
   'shop_id': 's1',
   'name': 'PRINCE TYRES -- RAJAKKAD',
   'area': 'Rajakkad',
+  'site_id': 'site-r',
+  'site_name': 'Rajakkad',
   'phone': null,
   'receivable': 6000,
   'overdue': 3000,
@@ -175,9 +228,19 @@ void main() {
   });
 
   group('shops dues', () {
-    const owing = [...shops, ShopSummary(id: 's4', name: 'ROYAL TYRES -- PALA', area: 'Pala', receivable: Money(200000))];
+    const owing = [
+      ...shops,
+      ShopSummary(
+        id: 's4',
+        name: 'ROYAL TYRES -- PALA',
+        area: 'Pala',
+        receivable: Money(200000),
+        siteId: 'site-p',
+        siteName: 'Pala',
+      ),
+    ];
 
-    testWidgets('opens on Dues: shops that owe, by area, with the grand total', (tester) async {
+    testWidgets('opens on Dues: shops that owe, by site, with the grand total', (tester) async {
       await pumpScreen(
         tester,
         const ShopsScreen(),
@@ -205,7 +268,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('ROYAL TYRES -- PALA'), findsOneWidget);
       expect(find.text('PRINCE TYRES -- RAJAKKAD'), findsNothing);
-      expect(find.text('1 shop in 1 area'), findsOneWidget);
+      expect(find.text('1 shop in 1 site'), findsOneWidget);
 
       await tester.enterText(find.byType(SearchBar), 'nobody');
       await tester.pump(const Duration(milliseconds: 400));
@@ -232,6 +295,29 @@ void main() {
       ),
       transactionRepositoryProvider.overrideWithValue(FakeTransactionRepository()),
     ];
+
+    testWidgets('owner sees the shop has no location and can set it; staff do not see an empty one', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: await overrides(owner, const []),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Not set. Staff check-ins wait for your approval.'), findsOneWidget);
+      expect(find.byKey(const Key('edit-location')), findsOneWidget);
+    });
+
+    testWidgets('staff see no location card while the shop has no pin', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: await overrides(staffUser, const [CompanyAccess(userId: 'staff-1', companyId: 'co-a')]),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Shop location'), findsNothing);
+    });
 
     testWidgets('owner sees the Statement tab', (tester) async {
       await pumpScreen(tester, const ShopDetailScreen(shopId: 's1'), overrides: await overrides(owner, const []));
@@ -267,6 +353,255 @@ void main() {
     });
   });
 
+  group('sites', () {
+    const report = [
+      SiteReportRow(
+        siteId: 'site-p',
+        siteName: 'Pala',
+        shops: 2,
+        shopsWithDues: 1,
+        outstanding: Money(12345600),
+        advance: Money.zero,
+        sales: Money(7000000),
+        returns: Money.zero,
+        collections: Money(3000000),
+      ),
+      SiteReportRow(siteId: null, siteName: null, shops: 1, shopsWithDues: 0, outstanding: Money.zero, advance: Money.zero),
+    ];
+
+    testWidgets('lists each site with dues, sales and collections, and shops in no site', (tester) async {
+      await pumpScreen(
+        tester,
+        const SitesScreen(),
+        overrides: await baseOverrides(
+          siteRepo: FakeSiteRepository(sitesList: sites, reportRows: report),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Pala'), findsOneWidget);
+      expect(find.text('2 shops'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Outstanding ₹1,23,456\.00')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Sales ₹70,000\.00')), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp(r'^Collected ₹30,000\.00')), findsOneWidget);
+      expect(find.text('Shops in no site'), findsOneWidget);
+      expect(find.text('New site'), findsOneWidget);
+      // Without transaction access the row has no money figures to show.
+      expect(find.bySemanticsLabel(RegExp(r'^Sales')), findsOneWidget);
+    });
+
+    testWidgets('new site: name required, shops chosen, moves from another site confirmed', (tester) async {
+      final repo = FakeSiteRepository(
+        sitesList: sites,
+        shops: const [
+          SiteShop(id: 's1', name: 'PRINCE TYRES -- RAJAKKAD', area: 'Rajakkad', siteId: 'site-r'),
+          SiteShop(id: 's9', name: 'NEW SHOP', area: 'Pala'),
+        ],
+      );
+      await pumpRoutedScreen(tester, const SiteEditorScreen(), overrides: await baseOverrides(siteRepo: repo));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('in Rajakkad', findRichText: true), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('save-site')));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a name'), findsOneWidget);
+
+      await tester.enterText(find.byKey(const Key('site-name')), 'Town');
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'PRINCE TYRES -- RAJAKKAD'));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'NEW SHOP'));
+      await tester.pump();
+      expect(find.text('Create site with 2 shops'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('save-site')));
+      await tester.pumpAndSettle();
+      expect(find.text('Move 1 shop?'), findsOneWidget);
+      await tester.tap(find.text('Move and save'));
+      await tester.pumpAndSettle();
+      expect(repo.created, ['Town']);
+      expect(repo.saved['site-1'], {'s1', 's9'});
+      expect(find.text('at /sites/site-1'), findsOneWidget, reason: 'opens the new site');
+    });
+
+    testWidgets('By area adds every shop of the chosen Tally areas', (tester) async {
+      final repo = FakeSiteRepository(
+        sitesList: sites,
+        shops: const [
+          SiteShop(id: 'a', name: 'SHOP A', area: 'Pala'),
+          SiteShop(id: 'b', name: 'SHOP B', area: 'Pala'),
+          SiteShop(id: 'c', name: 'SHOP C', area: 'Rajakkad'),
+        ],
+      );
+      await pumpScreen(tester, const SiteEditorScreen(), overrides: await baseOverrides(siteRepo: repo));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('By area'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: find.byType(MultiPickerSheet), matching: find.text('Pala')));
+      await tester.pump();
+      await tester.tap(find.text('Add shops of 1 area'));
+      await tester.pumpAndSettle();
+      expect(find.text('Create site with 2 shops'), findsOneWidget);
+    });
+  });
+
+  testWidgets('location suggestions: approve pins the shop and leaves the list', (tester) async {
+    final repo = FakeShopLocationRepository(
+      suggestions: [
+        LocationSuggestion(
+          id: 'g1',
+          shopId: 's1',
+          shopName: 'PRINCE TYRES -- RAJAKKAD',
+          staffName: 'Ravi',
+          latitude: 9.85,
+          longitude: 76.97,
+          accuracyM: 12,
+          createdAt: DateTime(2026, 10, 5, 10, 30),
+        ),
+      ],
+    );
+    await pumpRoutedScreen(tester, const SuggestionsScreen(), overrides: await baseOverrides(locationRepo: repo));
+    await tester.pumpAndSettle();
+    expect(find.text('PRINCE TYRES -- RAJAKKAD'), findsOneWidget);
+    expect(find.textContaining('Ravi'), findsOneWidget);
+    expect(find.textContaining('GPS ±12 m'), findsOneWidget);
+    await tester.tap(find.text('Approve pin'));
+    await tester.pumpAndSettle();
+    expect(repo.reviewed, [('g1', true)]);
+    expect(find.text('Nothing to review'), findsOneWidget);
+  });
+
+  group('visits', () {
+    VisitTask task(String id, String shop, VisitState state) => VisitTask(
+      taskId: id,
+      companyId: 'co-a',
+      staffId: 'staff-1',
+      staffName: 'Ravi',
+      shopId: 's-$id',
+      shopName: shop,
+      siteName: 'Pala',
+      visitDate: DateTime.now(),
+      state: state,
+    );
+
+    testWidgets('staff Today: progress, shops still to visit first', (tester) async {
+      final repo = FakeVisitRepository(
+        taskList: [task('1', 'DONE SHOP', VisitState.verified), task('2', 'NEXT SHOP', VisitState.pending)],
+      );
+      await pumpScreen(
+        tester,
+        const StaffVisitsScreen(),
+        overrides: await baseOverrides(user: staffUser, visitRepo: repo),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 2 shops checked in'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('NEXT SHOP')).dy, lessThan(tester.getTopLeft(find.text('DONE SHOP')).dy));
+      expect(find.text('To visit'), findsOneWidget);
+      expect(find.text('Checked in'), findsOneWidget);
+    });
+
+    testWidgets('check-in: out of range is refused with the distance; in range is accepted', (tester) async {
+      final repo = FakeVisitRepository(
+        answer: const CheckInResult(result: 'rejected', reason: 'out_of_range', distanceM: 312, radiusM: 100),
+      );
+      final pins = FakeShopLocationRepository(
+        pins: {'s-2': const ShopLocation(shopId: 's-2', latitude: 9.85, longitude: 76.97, radiusM: 100)},
+      );
+      await pumpRoutedScreen(
+        tester,
+        CheckInScreen(task: task('2', 'NEXT SHOP', VisitState.pending)),
+        overrides: await baseOverrides(user: staffUser, visitRepo: repo, locationRepo: pins),
+        size: const Size(400, 1200),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('0 m from the shop'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Owner away');
+      await tester.tap(find.byKey(const Key('check-in')));
+      await tester.pumpAndSettle();
+      expect(find.text('Check-in refused: 312 m from the shop (allowed 100 m)'), findsOneWidget);
+      expect(repo.checkIns.single, ('2', 'Owner away'));
+
+      repo.answer = const CheckInResult(result: 'verified', distanceM: 4, radiusM: 100);
+      await tester.tap(find.byKey(const Key('check-in')));
+      await tester.pumpAndSettle();
+      expect(find.text('Checked in at NEXT SHOP'), findsOneWidget);
+    });
+
+    testWidgets('check-in: a small shop radius under the GPS accuracy says to wait for a better fix', (tester) async {
+      final pins = FakeShopLocationRepository(
+        pins: {'s-2': const ShopLocation(shopId: 's-2', latitude: 9.85, longitude: 76.97, radiusM: 5)},
+      );
+      await pumpRoutedScreen(
+        tester,
+        CheckInScreen(task: task('2', 'TINY SHOP', VisitState.pending)),
+        overrides: await baseOverrides(user: staffUser, locationRepo: pins),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining("rougher than this shop's 5 m limit"), findsOneWidget);
+    });
+
+    testWidgets('check-in: Developer options on shows the warning and keeps Check in off', (tester) async {
+      final repo = FakeVisitRepository();
+      await pumpRoutedScreen(
+        tester,
+        CheckInScreen(task: task('2', 'NEXT SHOP', VisitState.pending)),
+        overrides: await baseOverrides(user: staffUser, visitRepo: repo, devMode: true),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Check-in disabled'), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Check-in is off while Developer options are on'), findsOneWidget);
+      final button = tester.widget<ButtonStyleButton>(find.byKey(const Key('check-in')));
+      expect(button.onPressed, isNull);
+      expect(repo.checkIns, isEmpty);
+    });
+
+    testWidgets('plan editor offers only staff who check in, then their sites', (tester) async {
+      final staff = [
+        const StaffMember(
+          id: 'staff-1',
+          role: UserRole.staff,
+          name: 'Ravi',
+          requiresCheckIn: true,
+          companies: [
+            CompanyAccess(userId: 'staff-1', companyId: 'co-a', fullCompany: false, siteIds: ['site-p']),
+          ],
+        ),
+        const StaffMember(
+          id: 'staff-2',
+          role: UserRole.staff,
+          name: 'Office Anu',
+          companies: [CompanyAccess(userId: 'staff-2', companyId: 'co-a')],
+        ),
+      ];
+      final repo = FakeVisitRepository();
+      await pumpRoutedScreen(
+        tester,
+        const PlanEditorScreen(),
+        overrides: [
+          ...await baseOverrides(visitRepo: repo),
+          staffMembersProvider.overrideWith((ref) async => staff),
+        ],
+        size: const Size(400, 1200),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('plan-staff')));
+      await tester.pumpAndSettle();
+      expect(find.text('Office Anu'), findsNothing);
+      await tester.tap(find.text('Ravi').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('plan-site-staff-1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Rajakkad'), findsNothing, reason: 'Ravi has only Pala');
+      await tester.tap(find.text('Pala').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('save-plan')));
+      await tester.pumpAndSettle();
+      expect(repo.created.single['site'], 'site-p');
+      expect(find.text('base page'), findsOneWidget, reason: 'went back after saving');
+      expect(repo.created.single['staff'], 'staff-1');
+    });
+  });
+
   group('staff form', () {
     testWidgets('requires at least one company', (tester) async {
       await pumpScreen(
@@ -288,13 +623,55 @@ void main() {
       await tester.tap(find.widgetWithText(CheckboxListTile, 'JK Tyres'));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('company-error')), findsNothing);
-      expect(find.text('All areas'), findsOneWidget);
+      expect(find.text('Full company'), findsOneWidget);
       expect(find.text('Can view transactions'), findsOneWidget);
 
       await tester.ensureVisible(find.byKey(const Key('staff-submit')));
       await tester.tap(find.byKey(const Key('staff-submit')));
       await tester.pumpAndSettle();
-      expect(find.text('Ravi will see: JK Tyres (all areas)'), findsOneWidget);
+      expect(find.text('Ravi will see: JK Tyres (full company)'), findsOneWidget);
+      expect(find.text('No shop check-in.'), findsOneWidget);
+    });
+
+    testWidgets('limited to sites: needs a site, then names it; check-in can be turned on', (tester) async {
+      await pumpScreen(
+        tester,
+        const StaffFormScreen(),
+        overrides: await baseOverrides(companies: const [companyA, companyB]),
+        size: const Size(400, 1600),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('staff-name')), 'Ravi');
+      await tester.enterText(find.byKey(const Key('staff-email')), 'ravi@example.com');
+      await tester.tap(find.byKey(const Key('staff-check-in')));
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'JMJ Marketing'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Full company'));
+      await tester.pumpAndSettle();
+      expect(find.text('Choose sites'), findsOneWidget);
+
+      await tester.ensureVisible(find.byKey(const Key('staff-submit')));
+      await tester.tap(find.byKey(const Key('staff-submit')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sites-error')), findsOneWidget);
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.ensureVisible(find.text('Choose sites'));
+      await tester.tap(find.text('Choose sites'));
+      await tester.pumpAndSettle();
+      // Only JMJ's sites are offered.
+      expect(find.widgetWithText(CheckboxListTile, 'Kply'), findsNothing);
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Pala'));
+      await tester.pump();
+      await tester.tap(find.text('Apply (1)'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sites-error')), findsNothing);
+
+      await tester.ensureVisible(find.byKey(const Key('staff-submit')));
+      await tester.tap(find.byKey(const Key('staff-submit')));
+      await tester.pumpAndSettle();
+      expect(find.text('Ravi will see: JMJ Marketing (Pala)'), findsOneWidget);
+      expect(find.text('They must check in at shops on planned visit days.'), findsOneWidget);
     });
   });
 
@@ -418,11 +795,13 @@ void main() {
       expect(find.textContaining('Sales · S1'), findsNothing);
     });
 
-    testWidgets('sort: one list, most overdue first, rows name their area', (tester) async {
+    testWidgets('sort: one list, most overdue first, rows name their site', (tester) async {
       final big = OverdueShop.fromJson({
         'shop_id': 's2',
         'name': 'ROYAL TYRES -- PALA',
         'area': 'Pala',
+        'site_id': 'site-p',
+        'site_name': 'Pala',
         'receivable': 9000,
         'overdue': 9000,
         'max_days_overdue': 5,
@@ -436,7 +815,7 @@ void main() {
         size: const Size(900, 1600),
       );
       await openOverdue(tester);
-      // By area: Pala before Rajakkad, under area headers.
+      // By site: Pala before Rajakkad, under site headers.
       expect(find.text('Pala (1)'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Sort'));

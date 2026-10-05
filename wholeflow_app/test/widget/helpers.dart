@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
@@ -22,6 +23,13 @@ import 'package:wholeflow_app/features/shop_detail/data/transaction_repository.d
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
 import 'package:wholeflow_app/features/shops/domain/shop.dart';
+import 'package:wholeflow_app/features/sites/data/site_repository.dart';
+import 'package:wholeflow_app/features/sites/domain/site.dart';
+import 'package:wholeflow_app/features/visits/data/shop_location_repository.dart';
+import 'package:wholeflow_app/features/visits/domain/shop_location.dart';
+import 'package:wholeflow_app/features/visits/data/visit_repository.dart';
+import 'package:wholeflow_app/features/visits/domain/visit.dart';
+import 'package:wholeflow_app/core/location/location_service.dart';
 
 const owner = AppUser(id: 'owner-1', businessId: 'biz', role: UserRole.owner, name: 'Owner');
 const staffUser = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Ravi');
@@ -42,6 +50,43 @@ Future<void> pumpScreen(
       child: MaterialApp(theme: theme ?? AppTheme.light(), home: child),
     ),
   );
+}
+
+/// Like [pumpScreen], under a GoRouter: [child] over a base page, and any
+/// other location shows its path, so tests can see where a screen navigated.
+Future<void> pumpRoutedScreen(
+  WidgetTester tester,
+  Widget child, {
+  List<Override> overrides = const [],
+  Size size = const Size(400, 800),
+}) async {
+  tester.view.physicalSize = size * tester.view.devicePixelRatio;
+  addTearDown(tester.view.reset);
+  // [child] is pushed over a base page, so screens that pop after saving can.
+  final router = GoRouter(
+    initialLocation: '/base',
+    routes: [
+      GoRoute(
+        path: '/base',
+        builder: (context, state) => const Scaffold(body: Text('base page')),
+      ),
+      GoRoute(path: '/screen', builder: (context, state) => child),
+      GoRoute(
+        path: '/:rest(.*)',
+        builder: (context, state) => Scaffold(body: Text('at ${state.uri.path}')),
+      ),
+    ],
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: overrides,
+      retry: (_, _) => null,
+      child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+    ),
+  );
+  unawaited(router.push('/screen'));
+  await tester.pump();
 }
 
 class FakeAuthRepository implements AuthRepository {
@@ -114,6 +159,126 @@ class FakeShopRepository implements ShopRepository {
   Future<List<ShopSummary>> outstanding(String companyId) async => shops;
 }
 
+/// Sites in memory; records what the editor saves.
+class FakeSiteRepository implements SiteRepository {
+  FakeSiteRepository({this.sitesList = const [], this.shops = const [], this.reportRows = const []});
+
+  List<Site> sitesList;
+  final List<SiteShop> shops;
+  final List<SiteReportRow> reportRows;
+  final Map<String, Set<String>> saved = {};
+  final List<String> created = [];
+
+  @override
+  Future<List<Site>> sites(String companyId) async => sitesList.where((s) => s.companyId == companyId).toList();
+  @override
+  Future<List<Site>> allSites() async => sitesList;
+  @override
+  Future<String> create(String companyId, String name, Set<String> shopIds) async {
+    final id = 'site-${created.length + 1}';
+    created.add(name);
+    sitesList = [...sitesList, Site(id: id, companyId: companyId, name: name)];
+    saved[id] = shopIds;
+    return id;
+  }
+
+  @override
+  Future<void> rename(String siteId, String name) async {}
+  @override
+  Future<void> delete(String siteId) async {}
+  @override
+  Future<void> setShops(String siteId, Set<String> shopIds) async => saved[siteId] = shopIds;
+  @override
+  Future<List<SiteShop>> companyShops(String companyId) async => shops;
+  @override
+  Future<List<ShopSummary>> siteShops(String siteId) async => const [];
+  @override
+  Future<List<SiteReportRow>> report(String companyId, DateTime from, DateTime to) async => reportRows;
+}
+
+/// A phone that is always at [reading].
+class FakeLocationService implements LocationService {
+  const FakeLocationService(this.reading, {this.devMode = false});
+
+  final LocationReading reading;
+  final bool devMode;
+
+  @override
+  Future<LocationReading> current({Duration timeout = const Duration(seconds: 20)}) async => reading;
+  @override
+  Future<bool> developerModeOn() async => devMode;
+  @override
+  Future<void> openSettings() async {}
+  @override
+  Future<void> openDeveloperSettings() async {}
+}
+
+/// Tasks in memory; check-in answers with [answer] and records the call.
+class FakeVisitRepository implements VisitRepository {
+  FakeVisitRepository({this.taskList = const [], this.answer = const CheckInResult(result: 'verified')});
+
+  List<VisitTask> taskList;
+  CheckInResult answer;
+  final List<(String, String?)> checkIns = [];
+  final List<Map<String, Object?>> created = [];
+
+  @override
+  Future<void> ensureTasks(DateTime from, DateTime to) async {}
+  @override
+  Future<List<VisitTask>> tasks(DateTime from, DateTime to, {String? companyId, String? staffId}) async => taskList;
+  @override
+  Future<List<VisitPlan>> plans(String companyId) async => const [];
+  @override
+  Future<void> createPlans({
+    required String siteId,
+    required String staffId,
+    DateTime? date,
+    Set<int> weekdays = const {},
+    DateTime? startsOn,
+    DateTime? endsOn,
+  }) async => created.add({'site': siteId, 'staff': staffId, 'date': date, 'weekdays': weekdays});
+  @override
+  Future<void> setPlanActive(String planId, bool active) async {}
+  @override
+  Future<void> deletePlan(String planId) async {}
+  @override
+  Future<ShopVisit?> visit(String visitId) async => null;
+  @override
+  Future<List<FailedAttempt>> failedAttempts(String taskId) async => const [];
+  @override
+  Future<CheckInResult> checkIn(String taskId, LocationReading r, {required bool developerMode, String? note}) async {
+    checkIns.add((taskId, note));
+    return answer;
+  }
+
+  @override
+  Future<void> addNote(String visitId, String note) async {}
+}
+
+/// Pins by shop id; records reviews.
+class FakeShopLocationRepository implements ShopLocationRepository {
+  FakeShopLocationRepository({Map<String, ShopLocation>? pins, this.suggestions = const []}) : pins = pins ?? {};
+
+  final Map<String, ShopLocation> pins;
+  List<LocationSuggestion> suggestions;
+  final List<(String, bool)> reviewed = [];
+
+  @override
+  Future<ShopLocation?> location(String shopId) async => pins[shopId];
+  @override
+  Future<void> setLocation(String shopId, double lat, double lng, int radiusM) async =>
+      pins[shopId] = ShopLocation(shopId: shopId, latitude: lat, longitude: lng, radiusM: radiusM);
+  @override
+  Future<void> clearLocation(String shopId) async => pins.remove(shopId);
+  @override
+  Future<List<LocationSuggestion>> pendingSuggestions() async => suggestions;
+  @override
+  Future<void> review(String suggestionId, {required bool approve, int radiusM = ShopLocation.defaultRadius}) async {
+    reviewed.add((suggestionId, approve));
+    suggestions = suggestions.where((s) => s.id != suggestionId).toList();
+  }
+}
+
 /// Returns [shops] for every credit period and records the periods asked for.
 class FakeOverdueRepository implements OverdueRepository {
   FakeOverdueRepository([this.shops = const []]);
@@ -164,11 +329,11 @@ class FakeAnalyticsRepository implements AnalyticsRepository {
         ShopOpening(
           id: 's1',
           name: 'PRINCE TYRES -- RAJAKKAD',
-          area: 'Rajakkad',
+          siteName: 'Rajakkad',
           opening: Money.zero,
           receivable: Money(1000000),
         ),
-        ShopOpening(id: 's2', name: 'KERALA AUTO -- PALA', area: 'Pala', opening: Money.zero, receivable: Money.zero),
+        ShopOpening(id: 's2', name: 'KERALA AUTO -- PALA', siteName: 'Pala', opening: Money.zero, receivable: Money.zero),
       ],
       txns: [
         PaymentTxn(

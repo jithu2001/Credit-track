@@ -14,6 +14,8 @@ _ShopSummary _$ShopSummaryFromJson(Map<String, dynamic> json) => _ShopSummary(
   receivable: json['receivable'] == null
       ? Money.zero
       : const MoneyConverter().fromJson(json['receivable']),
+  siteId: json['site_id'] as String?,
+  siteName: _readSiteName(json, 'site_name') as String?,
 );
 
 Map<String, dynamic> _$ShopSummaryToJson(_ShopSummary instance) =>
@@ -23,6 +25,8 @@ Map<String, dynamic> _$ShopSummaryToJson(_ShopSummary instance) =>
       'area': instance.area,
       'phone': instance.phone,
       'receivable': const MoneyConverter().toJson(instance.receivable),
+      'site_id': instance.siteId,
+      'site_name': instance.siteName,
     };
 
 _ShopDetail _$ShopDetailFromJson(Map<String, dynamic> json) => _ShopDetail(
@@ -56,6 +60,8 @@ _ShopDetail _$ShopDetailFromJson(Map<String, dynamic> json) => _ShopDetail(
   syncedAt: json['synced_at'] == null
       ? null
       : DateTime.parse(json['synced_at'] as String),
+  siteId: json['site_id'] as String?,
+  siteName: _readSiteName(json, 'site_name') as String?,
 );
 
 Map<String, dynamic> _$ShopDetailToJson(_ShopDetail instance) =>
@@ -80,4 +86,6 @@ Map<String, dynamic> _$ShopDetailToJson(_ShopDetail instance) =>
       'opening_balance_type': instance.openingBalanceType,
       'receivable': const MoneyConverter().toJson(instance.receivable),
       'synced_at': instance.syncedAt?.toIso8601String(),
+      'site_id': instance.siteId,
+      'site_name': instance.siteName,
     };

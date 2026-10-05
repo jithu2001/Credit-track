@@ -295,7 +295,7 @@ as DateTime?,
 /// @nodoc
 mixin _$CompanyAccess {
 
- String get userId; String get companyId; List<String> get areas; bool get canViewTransactions;
+ String get userId; String get companyId; bool get fullCompany;@JsonKey(includeFromJson: false, includeToJson: false) List<String> get siteIds; bool get canViewTransactions;
 /// Create a copy of CompanyAccess
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -309,20 +309,20 @@ $CompanyAccessCopyWith<CompanyAccess> get copyWith => _$CompanyAccessCopyWithImp
 @override
 bool operator ==(Object other) {
   final _this = this as CompanyAccess;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompanyAccess&&(identical(other.userId, _this.userId) || other.userId == _this.userId)&&(identical(other.companyId, _this.companyId) || other.companyId == _this.companyId)&&const DeepCollectionEquality().equals(other.areas, _this.areas)&&(identical(other.canViewTransactions, _this.canViewTransactions) || other.canViewTransactions == _this.canViewTransactions));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompanyAccess&&(identical(other.userId, _this.userId) || other.userId == _this.userId)&&(identical(other.companyId, _this.companyId) || other.companyId == _this.companyId)&&(identical(other.fullCompany, _this.fullCompany) || other.fullCompany == _this.fullCompany)&&const DeepCollectionEquality().equals(other.siteIds, _this.siteIds)&&(identical(other.canViewTransactions, _this.canViewTransactions) || other.canViewTransactions == _this.canViewTransactions));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as CompanyAccess;
-  return Object.hash(runtimeType,_this.userId,_this.companyId,const DeepCollectionEquality().hash(_this.areas),_this.canViewTransactions);
+  return Object.hash(runtimeType,_this.userId,_this.companyId,_this.fullCompany,const DeepCollectionEquality().hash(_this.siteIds),_this.canViewTransactions);
 }
 
 @override
 String toString() {
   final _this = this as CompanyAccess;
-  return 'CompanyAccess(userId: ${_this.userId}, companyId: ${_this.companyId}, areas: ${_this.areas}, canViewTransactions: ${_this.canViewTransactions})';
+  return 'CompanyAccess(userId: ${_this.userId}, companyId: ${_this.companyId}, fullCompany: ${_this.fullCompany}, siteIds: ${_this.siteIds}, canViewTransactions: ${_this.canViewTransactions})';
 }
 
 
@@ -333,7 +333,7 @@ abstract mixin class $CompanyAccessCopyWith<$Res>  {
   factory $CompanyAccessCopyWith(CompanyAccess value, $Res Function(CompanyAccess) _then) = _$CompanyAccessCopyWithImpl;
 @useResult
 $Res call({
- String userId, String companyId, List<String> areas, bool canViewTransactions
+ String userId, String companyId, bool fullCompany,@JsonKey(includeFromJson: false, includeToJson: false) List<String> siteIds, bool canViewTransactions
 });
 
 
@@ -350,11 +350,12 @@ class _$CompanyAccessCopyWithImpl<$Res>
 
 /// Create a copy of CompanyAccess
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? userId = null,Object? companyId = null,Object? areas = null,Object? canViewTransactions = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? userId = null,Object? companyId = null,Object? fullCompany = null,Object? siteIds = null,Object? canViewTransactions = null,}) {
   return _then(CompanyAccess(
 userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,companyId: null == companyId ? _self.companyId : companyId // ignore: cast_nullable_to_non_nullable
-as String,areas: null == areas ? _self.areas : areas // ignore: cast_nullable_to_non_nullable
+as String,fullCompany: null == fullCompany ? _self.fullCompany : fullCompany // ignore: cast_nullable_to_non_nullable
+as bool,siteIds: null == siteIds ? _self.siteIds : siteIds // ignore: cast_nullable_to_non_nullable
 as List<String>,canViewTransactions: null == canViewTransactions ? _self.canViewTransactions : canViewTransactions // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
@@ -441,10 +442,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String userId,  String companyId,  List<String> areas,  bool canViewTransactions)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String userId,  String companyId,  bool fullCompany, @JsonKey(includeFromJson: false, includeToJson: false)  List<String> siteIds,  bool canViewTransactions)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CompanyAccess() when $default != null:
-return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.userId,_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   return orElse();
 
 }
@@ -462,10 +463,10 @@ return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactio
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String userId,  String companyId,  List<String> areas,  bool canViewTransactions)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String userId,  String companyId,  bool fullCompany, @JsonKey(includeFromJson: false, includeToJson: false)  List<String> siteIds,  bool canViewTransactions)  $default,) {final _that = this;
 switch (_that) {
 case _CompanyAccess():
-return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.userId,_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -482,10 +483,10 @@ return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactio
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String userId,  String companyId,  List<String> areas,  bool canViewTransactions)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String userId,  String companyId,  bool fullCompany, @JsonKey(includeFromJson: false, includeToJson: false)  List<String> siteIds,  bool canViewTransactions)?  $default,) {final _that = this;
 switch (_that) {
 case _CompanyAccess() when $default != null:
-return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.userId,_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   return null;
 
 }
@@ -496,17 +497,18 @@ return $default(_that.userId,_that.companyId,_that.areas,_that.canViewTransactio
 /// @nodoc
 @JsonSerializable()
 
-class _CompanyAccess extends CompanyAccess {
-  const _CompanyAccess({required this.userId, required this.companyId,  List<String> areas = const <String>[], this.canViewTransactions = true}): _areas = areas,super._();
+class _CompanyAccess implements CompanyAccess {
+  const _CompanyAccess({required this.userId, required this.companyId, this.fullCompany = true, @JsonKey(includeFromJson: false, includeToJson: false)  List<String> siteIds = const <String>[], this.canViewTransactions = true}): _siteIds = siteIds;
   factory _CompanyAccess.fromJson(Map<String, dynamic> json) => _$CompanyAccessFromJson(json);
 
 @override final  String userId;
 @override final  String companyId;
- final  List<String> _areas;
-@override@JsonKey() List<String> get areas {
-  if (_areas is EqualUnmodifiableListView) return _areas;
+@override@JsonKey() final  bool fullCompany;
+ final  List<String> _siteIds;
+@override@JsonKey(includeFromJson: false, includeToJson: false) List<String> get siteIds {
+  if (_siteIds is EqualUnmodifiableListView) return _siteIds;
   // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(_areas);
+  return EqualUnmodifiableListView(_siteIds);
 }
 
 @override@JsonKey() final  bool canViewTransactions;
@@ -524,18 +526,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CompanyAccess&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.companyId, companyId) || other.companyId == companyId)&&const DeepCollectionEquality().equals(other.areas, _areas)&&(identical(other.canViewTransactions, canViewTransactions) || other.canViewTransactions == canViewTransactions));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CompanyAccess&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.companyId, companyId) || other.companyId == companyId)&&(identical(other.fullCompany, fullCompany) || other.fullCompany == fullCompany)&&const DeepCollectionEquality().equals(other.siteIds, _siteIds)&&(identical(other.canViewTransactions, canViewTransactions) || other.canViewTransactions == canViewTransactions));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,userId,companyId,const DeepCollectionEquality().hash(_areas),canViewTransactions);
+    return Object.hash(runtimeType,userId,companyId,fullCompany,const DeepCollectionEquality().hash(_siteIds),canViewTransactions);
 }
 
 @override
 String toString() {
-    return 'CompanyAccess(userId: $userId, companyId: $companyId, areas: $areas, canViewTransactions: $canViewTransactions)';
+    return 'CompanyAccess(userId: $userId, companyId: $companyId, fullCompany: $fullCompany, siteIds: $siteIds, canViewTransactions: $canViewTransactions)';
 }
 
 
@@ -546,7 +548,7 @@ abstract mixin class _$CompanyAccessCopyWith<$Res> implements $CompanyAccessCopy
   factory _$CompanyAccessCopyWith(_CompanyAccess value, $Res Function(_CompanyAccess) _then) = __$CompanyAccessCopyWithImpl;
 @override @useResult
 $Res call({
- String userId, String companyId, List<String> areas, bool canViewTransactions
+ String userId, String companyId, bool fullCompany,@JsonKey(includeFromJson: false, includeToJson: false) List<String> siteIds, bool canViewTransactions
 });
 
 
@@ -563,11 +565,12 @@ class __$CompanyAccessCopyWithImpl<$Res>
 
 /// Create a copy of CompanyAccess
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? userId = null,Object? companyId = null,Object? areas = null,Object? canViewTransactions = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? userId = null,Object? companyId = null,Object? fullCompany = null,Object? siteIds = null,Object? canViewTransactions = null,}) {
   return _then(_CompanyAccess(
 userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,companyId: null == companyId ? _self.companyId : companyId // ignore: cast_nullable_to_non_nullable
-as String,areas: null == areas ? _self._areas : areas // ignore: cast_nullable_to_non_nullable
+as String,fullCompany: null == fullCompany ? _self.fullCompany : fullCompany // ignore: cast_nullable_to_non_nullable
+as bool,siteIds: null == siteIds ? _self._siteIds : siteIds // ignore: cast_nullable_to_non_nullable
 as List<String>,canViewTransactions: null == canViewTransactions ? _self.canViewTransactions : canViewTransactions // ignore: cast_nullable_to_non_nullable
 as bool,
   ));

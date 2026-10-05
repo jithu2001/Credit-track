@@ -18,6 +18,7 @@ import '../../auth/presentation/session_controller.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../../shops/presentation/shop_tile.dart';
+import '../../visits/presentation/visits_today_card.dart';
 import '../../shops/presentation/shop_list_controller.dart';
 import 'dashboard_providers.dart';
 import 'freshness_banner.dart';
@@ -118,6 +119,7 @@ class _DashboardBody extends ConsumerWidget {
         if (ref.watch(currentUserProvider)?.isOwner ?? false) ...[
           const SizedBox(height: Insets.m),
           _OverdueCard(companyId: company.id),
+          VisitsTodayCard(companyId: company.id),
         ],
         const SizedBox(height: Insets.xl),
         Row(

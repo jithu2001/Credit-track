@@ -12,6 +12,8 @@ import '../../analytics/presentation/shop_payments_screen.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../shops/domain/shop.dart';
+import '../../sites/domain/site.dart';
+import '../../visits/presentation/shop_location_card.dart';
 import 'shop_detail_providers.dart';
 import 'statement_view.dart';
 
@@ -103,6 +105,16 @@ class _DetailsTab extends StatelessWidget {
           _BalanceCard(shop: shop),
           const SizedBox(height: Insets.l),
           Card.outlined(
+            child: ListTile(
+              leading: const Icon(Icons.location_city_outlined),
+              title: Text(siteLabel(shop.siteName)),
+              subtitle: const Text('Site'),
+            ),
+          ),
+          const SizedBox(height: Insets.l),
+          ShopLocationCard(shopId: shop.id),
+          const SizedBox(height: Insets.l),
+          Card.outlined(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -117,12 +129,7 @@ class _DetailsTab extends StatelessWidget {
                   ListTile(leading: const Icon(Icons.person_outline), title: Text(shop.contactPerson!.trim())),
                 if (shop.email?.trim().isNotEmpty ?? false)
                   ListTile(leading: const Icon(Icons.email_outlined), title: Text(shop.email!.trim())),
-                if (address != null)
-                  ListTile(
-                    leading: const Icon(Icons.location_on_outlined),
-                    title: Text(address),
-                    subtitle: Text(areaLabel(shop.area)),
-                  ),
+                if (address != null) ListTile(leading: const Icon(Icons.location_on_outlined), title: Text(address)),
                 if (shop.gstin?.trim().isNotEmpty ?? false)
                   ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),

@@ -17,7 +17,8 @@ import 'refresh.dart';
 abstract final class Branch {
   static const dashboard = 0;
   static const shops = 1;
-  static const stock = 2;
+  static const sites = 2;
+  static const stock = 3;
 }
 
 class NavItem {
@@ -29,17 +30,18 @@ class NavItem {
   final IconData selectedIcon;
 }
 
-/// The navigation destinations a role gets. The Stock tab is "Inventory" for
-/// staff, who see only that part of it. Payment insights (owners) opens from
+/// The navigation destinations a role gets. Sites is owner-only; the Stock
+/// tab is "Inventory" for staff, who see only that part of it. Payment insights (owners) opens from
 /// the Dashboard overdue card.
 /// Settings (and, for owners, Staff) is behind the avatar in every app bar
 /// (M3: at most five tabs).
 List<NavItem> navItemsFor(UserRole role) => [
   const NavItem(Branch.dashboard, 'Dashboard', Icons.space_dashboard_outlined, Icons.space_dashboard_rounded),
   const NavItem(Branch.shops, 'Shops', Icons.storefront_outlined, Icons.storefront_rounded),
-  if (role == UserRole.owner)
-    const NavItem(Branch.stock, 'Stock', Icons.inventory_2_outlined, Icons.inventory_2_rounded)
-  else
+  if (role == UserRole.owner) ...const [
+    NavItem(Branch.sites, 'Sites', Icons.location_city_outlined, Icons.location_city_rounded),
+    NavItem(Branch.stock, 'Stock', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
+  ] else
     const NavItem(Branch.stock, 'Inventory', Icons.inventory_2_outlined, Icons.inventory_2_rounded),
 ];
 
@@ -69,9 +71,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
-    // Area filters belong to a company: drop them when the company changes.
+    // Site filters belong to a company: drop them when the company changes.
     ref.listen(activeCompanyProvider.select((c) => c.value?.id), (prev, next) {
-      if (prev != null && prev != next) ref.read(shopFilterControllerProvider.notifier).setAreas(const {});
+      if (prev != null && prev != next) ref.read(shopFilterControllerProvider.notifier).setSites(const {});
     });
 
     final user = ref.watch(currentUserProvider);

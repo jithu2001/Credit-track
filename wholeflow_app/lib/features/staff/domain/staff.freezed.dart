@@ -16,7 +16,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$StaffMember {
 
- String get id; UserRole get role; String get name; String? get email; bool get isActive; DateTime? get createdAt;@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> get companies;
+ String get id; UserRole get role; String get name; String? get email; bool get isActive; bool get requiresCheckIn; DateTime? get createdAt;@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> get companies;
 /// Create a copy of StaffMember
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -30,20 +30,20 @@ $StaffMemberCopyWith<StaffMember> get copyWith => _$StaffMemberCopyWithImpl<Staf
 @override
 bool operator ==(Object other) {
   final _this = this as StaffMember;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is StaffMember&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.role, _this.role) || other.role == _this.role)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.email, _this.email) || other.email == _this.email)&&(identical(other.isActive, _this.isActive) || other.isActive == _this.isActive)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&const DeepCollectionEquality().equals(other.companies, _this.companies));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is StaffMember&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.role, _this.role) || other.role == _this.role)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.email, _this.email) || other.email == _this.email)&&(identical(other.isActive, _this.isActive) || other.isActive == _this.isActive)&&(identical(other.requiresCheckIn, _this.requiresCheckIn) || other.requiresCheckIn == _this.requiresCheckIn)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&const DeepCollectionEquality().equals(other.companies, _this.companies));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as StaffMember;
-  return Object.hash(runtimeType,_this.id,_this.role,_this.name,_this.email,_this.isActive,_this.createdAt,const DeepCollectionEquality().hash(_this.companies));
+  return Object.hash(runtimeType,_this.id,_this.role,_this.name,_this.email,_this.isActive,_this.requiresCheckIn,_this.createdAt,const DeepCollectionEquality().hash(_this.companies));
 }
 
 @override
 String toString() {
   final _this = this as StaffMember;
-  return 'StaffMember(id: ${_this.id}, role: ${_this.role}, name: ${_this.name}, email: ${_this.email}, isActive: ${_this.isActive}, createdAt: ${_this.createdAt}, companies: ${_this.companies})';
+  return 'StaffMember(id: ${_this.id}, role: ${_this.role}, name: ${_this.name}, email: ${_this.email}, isActive: ${_this.isActive}, requiresCheckIn: ${_this.requiresCheckIn}, createdAt: ${_this.createdAt}, companies: ${_this.companies})';
 }
 
 
@@ -54,7 +54,7 @@ abstract mixin class $StaffMemberCopyWith<$Res>  {
   factory $StaffMemberCopyWith(StaffMember value, $Res Function(StaffMember) _then) = _$StaffMemberCopyWithImpl;
 @useResult
 $Res call({
- String id, UserRole role, String name, String? email, bool isActive, DateTime? createdAt,@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> companies
+ String id, UserRole role, String name, String? email, bool isActive, bool requiresCheckIn, DateTime? createdAt,@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> companies
 });
 
 
@@ -71,13 +71,14 @@ class _$StaffMemberCopyWithImpl<$Res>
 
 /// Create a copy of StaffMember
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? role = null,Object? name = null,Object? email = freezed,Object? isActive = null,Object? createdAt = freezed,Object? companies = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? role = null,Object? name = null,Object? email = freezed,Object? isActive = null,Object? requiresCheckIn = null,Object? createdAt = freezed,Object? companies = null,}) {
   return _then(StaffMember(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as UserRole,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String?,isActive: null == isActive ? _self.isActive : isActive // ignore: cast_nullable_to_non_nullable
+as bool,requiresCheckIn: null == requiresCheckIn ? _self.requiresCheckIn : requiresCheckIn // ignore: cast_nullable_to_non_nullable
 as bool,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,companies: null == companies ? _self.companies : companies // ignore: cast_nullable_to_non_nullable
 as List<CompanyAccess>,
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  bool requiresCheckIn,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _StaffMember() when $default != null:
-return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.createdAt,_that.companies);case _:
+return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.requiresCheckIn,_that.createdAt,_that.companies);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  bool requiresCheckIn,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)  $default,) {final _that = this;
 switch (_that) {
 case _StaffMember():
-return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.createdAt,_that.companies);case _:
+return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.requiresCheckIn,_that.createdAt,_that.companies);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  UserRole role,  String name,  String? email,  bool isActive,  bool requiresCheckIn,  DateTime? createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies)?  $default,) {final _that = this;
 switch (_that) {
 case _StaffMember() when $default != null:
-return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.createdAt,_that.companies);case _:
+return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.requiresCheckIn,_that.createdAt,_that.companies);case _:
   return null;
 
 }
@@ -221,7 +222,7 @@ return $default(_that.id,_that.role,_that.name,_that.email,_that.isActive,_that.
 @JsonSerializable()
 
 class _StaffMember extends StaffMember {
-  const _StaffMember({required this.id, required this.role, this.name = '', this.email, this.isActive = true, this.createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies = const <CompanyAccess>[]}): _companies = companies,super._();
+  const _StaffMember({required this.id, required this.role, this.name = '', this.email, this.isActive = true, this.requiresCheckIn = false, this.createdAt, @JsonKey(includeFromJson: false, includeToJson: false)  List<CompanyAccess> companies = const <CompanyAccess>[]}): _companies = companies,super._();
   factory _StaffMember.fromJson(Map<String, dynamic> json) => _$StaffMemberFromJson(json);
 
 @override final  String id;
@@ -229,6 +230,7 @@ class _StaffMember extends StaffMember {
 @override@JsonKey() final  String name;
 @override final  String? email;
 @override@JsonKey() final  bool isActive;
+@override@JsonKey() final  bool requiresCheckIn;
 @override final  DateTime? createdAt;
  final  List<CompanyAccess> _companies;
 @override@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> get companies {
@@ -251,18 +253,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _StaffMember&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.companies, _companies));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _StaffMember&&(identical(other.id, id) || other.id == id)&&(identical(other.role, role) || other.role == role)&&(identical(other.name, name) || other.name == name)&&(identical(other.email, email) || other.email == email)&&(identical(other.isActive, isActive) || other.isActive == isActive)&&(identical(other.requiresCheckIn, requiresCheckIn) || other.requiresCheckIn == requiresCheckIn)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.companies, _companies));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,role,name,email,isActive,createdAt,const DeepCollectionEquality().hash(_companies));
+    return Object.hash(runtimeType,id,role,name,email,isActive,requiresCheckIn,createdAt,const DeepCollectionEquality().hash(_companies));
 }
 
 @override
 String toString() {
-    return 'StaffMember(id: $id, role: $role, name: $name, email: $email, isActive: $isActive, createdAt: $createdAt, companies: $companies)';
+    return 'StaffMember(id: $id, role: $role, name: $name, email: $email, isActive: $isActive, requiresCheckIn: $requiresCheckIn, createdAt: $createdAt, companies: $companies)';
 }
 
 
@@ -273,7 +275,7 @@ abstract mixin class _$StaffMemberCopyWith<$Res> implements $StaffMemberCopyWith
   factory _$StaffMemberCopyWith(_StaffMember value, $Res Function(_StaffMember) _then) = __$StaffMemberCopyWithImpl;
 @override @useResult
 $Res call({
- String id, UserRole role, String name, String? email, bool isActive, DateTime? createdAt,@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> companies
+ String id, UserRole role, String name, String? email, bool isActive, bool requiresCheckIn, DateTime? createdAt,@JsonKey(includeFromJson: false, includeToJson: false) List<CompanyAccess> companies
 });
 
 
@@ -290,13 +292,14 @@ class __$StaffMemberCopyWithImpl<$Res>
 
 /// Create a copy of StaffMember
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? role = null,Object? name = null,Object? email = freezed,Object? isActive = null,Object? createdAt = freezed,Object? companies = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? role = null,Object? name = null,Object? email = freezed,Object? isActive = null,Object? requiresCheckIn = null,Object? createdAt = freezed,Object? companies = null,}) {
   return _then(_StaffMember(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,role: null == role ? _self.role : role // ignore: cast_nullable_to_non_nullable
 as UserRole,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
 as String,email: freezed == email ? _self.email : email // ignore: cast_nullable_to_non_nullable
 as String?,isActive: null == isActive ? _self.isActive : isActive // ignore: cast_nullable_to_non_nullable
+as bool,requiresCheckIn: null == requiresCheckIn ? _self.requiresCheckIn : requiresCheckIn // ignore: cast_nullable_to_non_nullable
 as bool,createdAt: freezed == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,companies: null == companies ? _self._companies : companies // ignore: cast_nullable_to_non_nullable
 as List<CompanyAccess>,
@@ -309,7 +312,7 @@ as List<CompanyAccess>,
 /// @nodoc
 mixin _$CompanyGrant {
 
- String get companyId; Set<String> get areas; bool get canViewTransactions;
+ String get companyId; bool get fullCompany; Set<String> get siteIds; bool get canViewTransactions;
 /// Create a copy of CompanyGrant
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -321,20 +324,20 @@ $CompanyGrantCopyWith<CompanyGrant> get copyWith => _$CompanyGrantCopyWithImpl<C
 @override
 bool operator ==(Object other) {
   final _this = this as CompanyGrant;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompanyGrant&&(identical(other.companyId, _this.companyId) || other.companyId == _this.companyId)&&const DeepCollectionEquality().equals(other.areas, _this.areas)&&(identical(other.canViewTransactions, _this.canViewTransactions) || other.canViewTransactions == _this.canViewTransactions));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CompanyGrant&&(identical(other.companyId, _this.companyId) || other.companyId == _this.companyId)&&(identical(other.fullCompany, _this.fullCompany) || other.fullCompany == _this.fullCompany)&&const DeepCollectionEquality().equals(other.siteIds, _this.siteIds)&&(identical(other.canViewTransactions, _this.canViewTransactions) || other.canViewTransactions == _this.canViewTransactions));
 }
 
 
 @override
 int get hashCode {
   final _this = this as CompanyGrant;
-  return Object.hash(runtimeType,_this.companyId,const DeepCollectionEquality().hash(_this.areas),_this.canViewTransactions);
+  return Object.hash(runtimeType,_this.companyId,_this.fullCompany,const DeepCollectionEquality().hash(_this.siteIds),_this.canViewTransactions);
 }
 
 @override
 String toString() {
   final _this = this as CompanyGrant;
-  return 'CompanyGrant(companyId: ${_this.companyId}, areas: ${_this.areas}, canViewTransactions: ${_this.canViewTransactions})';
+  return 'CompanyGrant(companyId: ${_this.companyId}, fullCompany: ${_this.fullCompany}, siteIds: ${_this.siteIds}, canViewTransactions: ${_this.canViewTransactions})';
 }
 
 
@@ -345,7 +348,7 @@ abstract mixin class $CompanyGrantCopyWith<$Res>  {
   factory $CompanyGrantCopyWith(CompanyGrant value, $Res Function(CompanyGrant) _then) = _$CompanyGrantCopyWithImpl;
 @useResult
 $Res call({
- String companyId, Set<String> areas, bool canViewTransactions
+ String companyId, bool fullCompany, Set<String> siteIds, bool canViewTransactions
 });
 
 
@@ -362,10 +365,11 @@ class _$CompanyGrantCopyWithImpl<$Res>
 
 /// Create a copy of CompanyGrant
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? companyId = null,Object? areas = null,Object? canViewTransactions = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? companyId = null,Object? fullCompany = null,Object? siteIds = null,Object? canViewTransactions = null,}) {
   return _then(CompanyGrant(
 companyId: null == companyId ? _self.companyId : companyId // ignore: cast_nullable_to_non_nullable
-as String,areas: null == areas ? _self.areas : areas // ignore: cast_nullable_to_non_nullable
+as String,fullCompany: null == fullCompany ? _self.fullCompany : fullCompany // ignore: cast_nullable_to_non_nullable
+as bool,siteIds: null == siteIds ? _self.siteIds : siteIds // ignore: cast_nullable_to_non_nullable
 as Set<String>,canViewTransactions: null == canViewTransactions ? _self.canViewTransactions : canViewTransactions // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
@@ -452,10 +456,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String companyId,  Set<String> areas,  bool canViewTransactions)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String companyId,  bool fullCompany,  Set<String> siteIds,  bool canViewTransactions)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _CompanyGrant() when $default != null:
-return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   return orElse();
 
 }
@@ -473,10 +477,10 @@ return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String companyId,  Set<String> areas,  bool canViewTransactions)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String companyId,  bool fullCompany,  Set<String> siteIds,  bool canViewTransactions)  $default,) {final _that = this;
 switch (_that) {
 case _CompanyGrant():
-return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -493,10 +497,10 @@ return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String companyId,  Set<String> areas,  bool canViewTransactions)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String companyId,  bool fullCompany,  Set<String> siteIds,  bool canViewTransactions)?  $default,) {final _that = this;
 switch (_that) {
 case _CompanyGrant() when $default != null:
-return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
+return $default(_that.companyId,_that.fullCompany,_that.siteIds,_that.canViewTransactions);case _:
   return null;
 
 }
@@ -508,15 +512,16 @@ return $default(_that.companyId,_that.areas,_that.canViewTransactions);case _:
 
 
 class _CompanyGrant extends CompanyGrant {
-  const _CompanyGrant({required this.companyId,  Set<String> areas = const <String>{}, this.canViewTransactions = true}): _areas = areas,super._();
+  const _CompanyGrant({required this.companyId, this.fullCompany = true,  Set<String> siteIds = const <String>{}, this.canViewTransactions = true}): _siteIds = siteIds,super._();
   
 
 @override final  String companyId;
- final  Set<String> _areas;
-@override@JsonKey() Set<String> get areas {
-  if (_areas is EqualUnmodifiableSetView) return _areas;
+@override@JsonKey() final  bool fullCompany;
+ final  Set<String> _siteIds;
+@override@JsonKey() Set<String> get siteIds {
+  if (_siteIds is EqualUnmodifiableSetView) return _siteIds;
   // ignore: implicit_dynamic_type
-  return EqualUnmodifiableSetView(_areas);
+  return EqualUnmodifiableSetView(_siteIds);
 }
 
 @override@JsonKey() final  bool canViewTransactions;
@@ -531,18 +536,18 @@ _$CompanyGrantCopyWith<_CompanyGrant> get copyWith => __$CompanyGrantCopyWithImp
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CompanyGrant&&(identical(other.companyId, companyId) || other.companyId == companyId)&&const DeepCollectionEquality().equals(other.areas, _areas)&&(identical(other.canViewTransactions, canViewTransactions) || other.canViewTransactions == canViewTransactions));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _CompanyGrant&&(identical(other.companyId, companyId) || other.companyId == companyId)&&(identical(other.fullCompany, fullCompany) || other.fullCompany == fullCompany)&&const DeepCollectionEquality().equals(other.siteIds, _siteIds)&&(identical(other.canViewTransactions, canViewTransactions) || other.canViewTransactions == canViewTransactions));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,companyId,const DeepCollectionEquality().hash(_areas),canViewTransactions);
+    return Object.hash(runtimeType,companyId,fullCompany,const DeepCollectionEquality().hash(_siteIds),canViewTransactions);
 }
 
 @override
 String toString() {
-    return 'CompanyGrant(companyId: $companyId, areas: $areas, canViewTransactions: $canViewTransactions)';
+    return 'CompanyGrant(companyId: $companyId, fullCompany: $fullCompany, siteIds: $siteIds, canViewTransactions: $canViewTransactions)';
 }
 
 
@@ -553,7 +558,7 @@ abstract mixin class _$CompanyGrantCopyWith<$Res> implements $CompanyGrantCopyWi
   factory _$CompanyGrantCopyWith(_CompanyGrant value, $Res Function(_CompanyGrant) _then) = __$CompanyGrantCopyWithImpl;
 @override @useResult
 $Res call({
- String companyId, Set<String> areas, bool canViewTransactions
+ String companyId, bool fullCompany, Set<String> siteIds, bool canViewTransactions
 });
 
 
@@ -570,10 +575,11 @@ class __$CompanyGrantCopyWithImpl<$Res>
 
 /// Create a copy of CompanyGrant
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? companyId = null,Object? areas = null,Object? canViewTransactions = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? companyId = null,Object? fullCompany = null,Object? siteIds = null,Object? canViewTransactions = null,}) {
   return _then(_CompanyGrant(
 companyId: null == companyId ? _self.companyId : companyId // ignore: cast_nullable_to_non_nullable
-as String,areas: null == areas ? _self._areas : areas // ignore: cast_nullable_to_non_nullable
+as String,fullCompany: null == fullCompany ? _self.fullCompany : fullCompany // ignore: cast_nullable_to_non_nullable
+as bool,siteIds: null == siteIds ? _self._siteIds : siteIds // ignore: cast_nullable_to_non_nullable
 as Set<String>,canViewTransactions: null == canViewTransactions ? _self.canViewTransactions : canViewTransactions // ignore: cast_nullable_to_non_nullable
 as bool,
   ));

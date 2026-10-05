@@ -35,8 +35,9 @@ void main() {
   });
 
   group('Staff App Routing', () {
-    test('navigation items have 3 tabs: Dashboard, Shops, Inventory', () {
-      expect(staffNavItems.map((i) => i.label), ['Dashboard', 'Shops', 'Inventory']);
+    test('navigation: Visits only for staff who check in at shops', () {
+      expect(staffNavItemsFor(checksIn: false).map((i) => i.label), ['Dashboard', 'Shops', 'Inventory']);
+      expect(staffNavItemsFor(checksIn: true).map((i) => i.label), ['Dashboard', 'Shops', 'Visits', 'Inventory']);
     });
 
     test('SignedOut redirects to /login', () {

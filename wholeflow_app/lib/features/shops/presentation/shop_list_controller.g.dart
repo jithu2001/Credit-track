@@ -45,7 +45,7 @@ final class ShopFilterControllerProvider
 }
 
 String _$shopFilterControllerHash() =>
-    r'6c3478cb6da48e8e96bbb31bf17dab7cb2284377';
+    r'cade8acfbab6ef6d923dd369b33279381382942d';
 
 /// The shop list's search/filter/sort; kept while the app runs.
 

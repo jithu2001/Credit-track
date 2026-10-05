@@ -36,7 +36,7 @@ class AnalyticsRepository {
       final shopRows = await fetchAll(
         (from, to) => _client
             .from('shops')
-            .select('id,name,area,phone,opening_balance_amount,opening_balance_type,receivable')
+            .select('id,name,phone,opening_balance_amount,opening_balance_type,receivable,sites(name)')
             .eq('company_id', companyId)
             .isFilter('deleted_at', null)
             .order('id')
@@ -61,7 +61,7 @@ class AnalyticsRepository {
           ShopOpening(
             id: r['id'] as String,
             name: r['name'] as String,
-            area: r['area'] as String?,
+            siteName: (r['sites'] as Map?)?['name'] as String?,
             phone: r['phone'] as String?,
             opening: Money.fromSide(r['opening_balance_amount'], r['opening_balance_type'] as String?),
             receivable: Money.parse(r['receivable']),

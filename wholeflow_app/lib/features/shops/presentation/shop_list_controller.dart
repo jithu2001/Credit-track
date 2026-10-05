@@ -14,7 +14,7 @@ class ShopFilterController extends _$ShopFilterController {
 
   void setQuery(String q) => state = state.copyWith(query: q);
   void setBalance(BalanceFilter b) => state = state.copyWith(balance: b);
-  void setAreas(Set<String> areas) => state = state.copyWith(areas: areas);
+  void setSites(Set<String> siteIds) => state = state.copyWith(siteIds: siteIds);
   void setSort(ShopSort s) => state = state.copyWith(sort: s);
   void clear() => state = const ShopFilter();
 }

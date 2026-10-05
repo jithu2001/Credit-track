@@ -37,6 +37,12 @@ const backend: Backend = {
     return (data ?? []).map((r: { id: string }) => r.id.toLowerCase());
   },
 
+  async sitesOfBusiness(businessId) {
+    const { data, error } = await admin.from("sites").select("id,company_id").eq("business_id", businessId);
+    if (error) fail("list-sites", error);
+    return (data ?? []) as { id: string; company_id: string }[];
+  },
+
   async createAuthUser({ email, password, metadata }) {
     const { data, error } = await admin.auth.admin.createUser({
       email,

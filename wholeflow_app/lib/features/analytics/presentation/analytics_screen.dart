@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../shops/presentation/shop_list_controller.dart';
+import '../../sites/domain/site.dart';
 import '../domain/payment_analysis.dart';
 import 'analytics_providers.dart';
 import 'analytics_widgets.dart';
@@ -348,7 +349,7 @@ class _ShopRow extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 HabitBadge(habit: p.habit(creditDays)),
-                Text(areaLabel(p.shop.area), style: muted),
+                Text(siteLabel(p.shop.siteName), style: muted),
               ],
             ),
             const SizedBox(height: Insets.xs),

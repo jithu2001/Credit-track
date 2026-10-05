@@ -19,13 +19,14 @@ abstract class StaffMember with _$StaffMember {
     @Default('') String name,
     String? email,
     @Default(true) bool isActive,
+    @Default(false) bool requiresCheckIn,
     DateTime? createdAt,
     @JsonKey(includeFromJson: false, includeToJson: false) @Default(<CompanyAccess>[]) List<CompanyAccess> companies,
   }) = _StaffMember;
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => _$StaffMemberFromJson(json);
 
-  static const columns = 'id,role,name,email,is_active,created_at';
+  static const columns = 'id,role,name,email,is_active,requires_check_in,created_at';
 
   bool get isOwner => role == UserRole.owner;
   bool get hasNoCompany => !isOwner && companies.isEmpty;
@@ -39,35 +40,48 @@ abstract class CompanyGrant with _$CompanyGrant {
 
   const factory CompanyGrant({
     required String companyId,
-    @Default(<String>{}) Set<String> areas,
+    @Default(true) bool fullCompany,
+    @Default(<String>{}) Set<String> siteIds,
     @Default(true) bool canViewTransactions,
   }) = _CompanyGrant;
 
-  factory CompanyGrant.fromAccess(CompanyAccess a) =>
-      CompanyGrant(companyId: a.companyId, areas: a.areas.toSet(), canViewTransactions: a.canViewTransactions);
+  factory CompanyGrant.fromAccess(CompanyAccess a) => CompanyGrant(
+    companyId: a.companyId,
+    fullCompany: a.fullCompany,
+    siteIds: a.fullCompany ? const {} : a.siteIds.toSet(),
+    canViewTransactions: a.canViewTransactions,
+  );
+
+  /// Limited to sites, but none chosen: the server refuses this.
+  bool get needsSites => !fullCompany && siteIds.isEmpty;
 
   /// Body shape expected by the manage-staff function.
   Map<String, Object?> toRequest() => {
     'company_id': companyId,
-    'areas': (areas.toList()..sort()),
+    'full_company': fullCompany,
+    'site_ids': fullCompany ? const <String>[] : (siteIds.toList()..sort()),
     'can_view_transactions': canViewTransactions,
   };
 }
 
-/// "Ravi will see: JMJ Marketing (all areas), JK Tyres (Pala, Rajakkad; no transactions)".
-String accessSummary(String name, List<CompanyGrant> grants, Map<String, String> companyNames) {
+/// "Ravi will see: JMJ Marketing (full company), JK Tyres (Town, Hills; no transactions)".
+String accessSummary(String name, List<CompanyGrant> grants, Map<String, String> companyNames, Map<String, String> siteNames) {
   final who = name.trim().isEmpty ? 'This staff member' : name.trim();
   if (grants.isEmpty) return "$who won't see any company's data.";
-  final parts = [for (final g in grants) '${companyNames[g.companyId] ?? 'Unknown company'} (${describeGrant(g)})'];
+  final parts = [for (final g in grants) '${companyNames[g.companyId] ?? 'Unknown company'} (${describeGrant(g, siteNames)})'];
   return '$who will see: ${parts.join(', ')}';
 }
 
-/// "all areas" / "Pala, Rajakkad; no transactions".
-String describeGrant(CompanyGrant g) {
-  final areas = g.areas.isEmpty
-      ? 'all areas'
-      : (g.areas.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()))).join(', ');
-  return g.canViewTransactions ? areas : '$areas; no transactions';
+/// "full company" / "Town, Hills; no transactions".
+String describeGrant(CompanyGrant g, Map<String, String> siteNames) {
+  final sites = g.fullCompany
+      ? 'full company'
+      : g.siteIds.isEmpty
+      ? 'no sites'
+      : (g.siteIds.map((id) => siteNames[id] ?? 'Removed site').toList()
+              ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase())))
+            .join(', ');
+  return g.canViewTransactions ? sites : '$sites; no transactions';
 }
 
 // No 0/O/1/l/I: passwords are read out or typed by hand.

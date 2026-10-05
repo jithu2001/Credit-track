@@ -14,6 +14,10 @@ import '../../features/inventory/presentation/stock_item_screen.dart';
 import '../../features/settings/presentation/staff_settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
 import '../../features/shops/presentation/shops_screen.dart';
+import '../../features/visits/domain/visit.dart';
+import '../../features/visits/presentation/check_in_screen.dart';
+import '../../features/visits/presentation/staff_visits_screen.dart';
+import '../../features/visits/presentation/visit_detail_screen.dart';
 
 part 'staff_router.g.dart';
 
@@ -62,6 +66,14 @@ GoRouter staffRouter(Ref ref) {
       ),
       // Outstanding is now the Dues and Overdue views of the Shops tab.
       GoRoute(path: '/outstanding', redirect: (context, state) => '/shops'),
+      GoRoute(
+        path: '/visits/check-in',
+        builder: (context, state) => _withTask(state, (t) => CheckInScreen(task: t)),
+      ),
+      GoRoute(
+        path: '/visits/task',
+        builder: (context, state) => _withTask(state, (t) => VisitDetailScreen(task: t)),
+      ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, shell) => StaffHomeShell(navigationShell: shell),
         branches: [
@@ -74,12 +86,22 @@ GoRouter staffRouter(Ref ref) {
           StatefulShellBranch(
             routes: [GoRoute(path: '/inventory', builder: (context, state) => const StaffInventoryScreen())],
           ),
+          StatefulShellBranch(
+            routes: [GoRoute(path: '/visits', builder: (context, state) => const StaffVisitsScreen())],
+          ),
         ],
       ),
     ],
   );
   ref.onDispose(router.dispose);
   return router;
+}
+
+/// Visit screens get their task from the list that opened them; a cold deep
+/// link has none, so it goes back to the Visits tab.
+Widget _withTask(GoRouterState state, Widget Function(VisitTask) build) {
+  final task = state.extra;
+  return task is VisitTask ? build(task) : const StaffVisitsScreen();
 }
 
 /// Shown when a Business Owner attempts to open the WholeFlow Staff app.

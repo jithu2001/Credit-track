@@ -48,8 +48,8 @@ void main() {
   });
 
   group('navigation by role', () {
-    test('owners get Stock; staff get the Stock tab as Inventory', () {
-      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Stock']);
+    test('owners get Sites and Stock; staff get the Stock tab as Inventory', () {
+      expect(navItemsFor(UserRole.owner).map((i) => i.label), ['Dashboard', 'Shops', 'Sites', 'Stock']);
       expect(navItemsFor(UserRole.staff).map((i) => i.label), ['Dashboard', 'Shops', 'Inventory']);
       expect(navItemsFor(UserRole.staff).last.branch, Branch.stock);
     });

@@ -15,8 +15,8 @@
 --   Shop Z (Pala):     sale 100 paid in full → never overdue.
 --   Shop W (Rajakkad): sale 400 on 09-20 → within 30 days.
 --   Shop V (no area):  Dr opening 250, no vouchers → dated 04-01.
--- Users: owner_a; staff_t (all areas, may see transactions);
---        staff_p (Pala only, may not see transactions); owner_b (other business).
+-- Users: owner_a; staff_t (full company, may see transactions);
+--        staff_p (site Pala only, may not see transactions); owner_b (other business).
 
 begin;
 
@@ -52,9 +52,9 @@ insert into public.users (id, business_id, role, name, email, is_active) values
 insert into public.tally_companies (id, business_id, tally_company_id, company_name, period_from, books_from) values
   ('c1000000-0000-0000-0000-0000000000a1', 'b1000000-0000-0000-0000-00000000000a', 'od-guid-a1', 'Company A1', '2026-04-01', '2020-04-01');
 
-insert into public.staff_company_access (user_id, company_id, business_id, areas, can_view_transactions) values
-  ('a1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-0000000000a1', 'b1000000-0000-0000-0000-00000000000a', '{}',       true),
-  ('a1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-0000000000a1', 'b1000000-0000-0000-0000-00000000000a', '{"pala"}', false);
+insert into public.staff_company_access (user_id, company_id, business_id, full_company, can_view_transactions) values
+  ('a1000000-0000-0000-0000-000000000002', 'c1000000-0000-0000-0000-0000000000a1', 'b1000000-0000-0000-0000-00000000000a', true,  true),
+  ('a1000000-0000-0000-0000-000000000003', 'c1000000-0000-0000-0000-0000000000a1', 'b1000000-0000-0000-0000-00000000000a', false, false);
 
 insert into public.shops (id, business_id, company_id, tally_ledger_id, name, area, opening_balance_amount, opening_balance_type, receivable, synced_at) values
   ('d1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-00000000000a', 'c1000000-0000-0000-0000-0000000000a1', 'lx', 'Shop X', 'Rajakkad', 1000, 'DR', 600, now()),
@@ -62,6 +62,14 @@ insert into public.shops (id, business_id, company_id, tally_ledger_id, name, ar
   ('d1000000-0000-0000-0000-000000000003', 'b1000000-0000-0000-0000-00000000000a', 'c1000000-0000-0000-0000-0000000000a1', 'lz', 'Shop Z', 'Pala',        0, '',     0, now()),
   ('d1000000-0000-0000-0000-000000000004', 'b1000000-0000-0000-0000-00000000000a', 'c1000000-0000-0000-0000-0000000000a1', 'lw', 'Shop W', 'Rajakkad',    0, '',   400, now()),
   ('d1000000-0000-0000-0000-000000000005', 'b1000000-0000-0000-0000-00000000000a', 'c1000000-0000-0000-0000-0000000000a1', 'lv', 'Shop V', null,        250, 'DR', 250, now());
+
+-- Site "Pala" holds Y and Z; staff_p has only that site.
+insert into public.sites (id, business_id, company_id, name) values
+  ('e1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-00000000000a', 'c1000000-0000-0000-0000-0000000000a1', 'Pala');
+update public.shops set site_id = 'e1000000-0000-0000-0000-000000000001'
+where id in ('d1000000-0000-0000-0000-000000000002', 'd1000000-0000-0000-0000-000000000003');
+insert into public.staff_site_access (user_id, site_id, business_id) values
+  ('a1000000-0000-0000-0000-000000000003', 'e1000000-0000-0000-0000-000000000001', 'b1000000-0000-0000-0000-00000000000a');
 
 insert into public.transactions
   (business_id, company_id, shop_id, tally_voucher_id, tally_ledger_id, transaction_date, voucher_type, voucher_number, category, debit, credit, amount, synced_at, deleted_at)
@@ -131,7 +139,8 @@ reset role;
 delete from r;
 select pg_temp.act_as('a1000000-0000-0000-0000-000000000003');
 insert into r select * from public.overdue_shops('c1000000-0000-0000-0000-0000000000a1', 30, '2026-09-29');
-select pg_temp.check((select count(*) from r) = 1, 'staff_p: only the Pala shop');
+select pg_temp.check((select count(*) from r) = 1, 'staff_p: only the Pala site shop');
+select pg_temp.check((select site_name from r where name = 'Shop Y') = 'Pala', 'staff_p: rows carry their site');
 select pg_temp.check((select overdue from r where name = 'Shop Y') = 800, 'staff_p: amount still shown');
 select pg_temp.check((select max_days_overdue from r where name = 'Shop Y') = 70, 'staff_p: days still shown');
 select pg_temp.check((select not bills_visible and bills is null from r where name = 'Shop Y'), 'staff_p: no bills');

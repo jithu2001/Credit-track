@@ -21,10 +21,17 @@ export interface UserRow {
   is_active: boolean;
 }
 
+/** Per company: the whole company, or only the shops in the listed sites. */
 export interface CompanyAccess {
   company_id: string;
-  areas: string[];
+  full_company: boolean;
+  site_ids: string[];
   can_view_transactions: boolean;
+}
+
+export interface SiteRef {
+  id: string;
+  company_id: string;
 }
 
 export interface Backend {
@@ -32,6 +39,7 @@ export interface Backend {
   authUserId(jwt: string): Promise<string | null>;
   getUser(id: string): Promise<UserRow | null>;
   companyIdsOfBusiness(businessId: string): Promise<string[]>;
+  sitesOfBusiness(businessId: string): Promise<SiteRef[]>;
   /** Throws ApiError("EMAIL_TAKEN") when the address is registered already. */
   createAuthUser(p: { email: string; password: string; metadata: Record<string, unknown> }): Promise<string>;
   deleteAuthUser(id: string): Promise<void>;
@@ -46,7 +54,11 @@ export interface Backend {
   ): Promise<void>;
   /** Replaces the assignment set in one transaction (admin_set_staff_companies). */
   setStaffCompanies(userId: string, businessId: string, actor: string, companies: CompanyAccess[]): Promise<void>;
-  updateUserRow(id: string, businessId: string, patch: { name?: string; is_active?: boolean }): Promise<void>;
+  updateUserRow(
+    id: string,
+    businessId: string,
+    patch: { name?: string; is_active?: boolean; requires_check_in?: boolean },
+  ): Promise<void>;
 }
 
 export type ErrorCode = "UNAUTHENTICATED" | "NOT_OWNER" | "INVALID_INPUT" | "EMAIL_TAKEN" | "NOT_FOUND" | "INTERNAL";
@@ -135,6 +147,12 @@ async function dispatch(body: Record<string, unknown>, caller: UserRow, backend:
       await backend.setStaffCompanies(target.id, caller.business_id, caller.id, companies);
       return { id: target.id, companies };
     }
+    case "set_check_in": {
+      const target = await requireStaff(body.user_id, caller, backend);
+      if (typeof body.required !== "boolean") throw new ApiError("INVALID_INPUT", "required must be true or false.");
+      await backend.updateUserRow(target.id, caller.business_id, { requires_check_in: body.required });
+      return { id: target.id, requires_check_in: body.required };
+    }
     case "set_active": {
       const target = await requireStaff(body.user_id, caller, backend);
       if (typeof body.active !== "boolean") throw new ApiError("INVALID_INPUT", "active must be true or false.");
@@ -160,6 +178,8 @@ async function createStaff(body: Record<string, unknown>, caller: UserRow, backe
   if (!EMAIL.test(email) || email.length > 254) throw new ApiError("INVALID_INPUT", "Enter a valid email address.");
   const password = requirePassword(body.password);
   const companies = await parseCompanies(body.companies, caller, backend, true);
+  const checkIn = body.requires_check_in ?? false;
+  if (typeof checkIn !== "boolean") throw new ApiError("INVALID_INPUT", "requires_check_in must be true or false.");
 
   const id = await backend.createAuthUser({
     email,
@@ -168,6 +188,7 @@ async function createStaff(body: Record<string, unknown>, caller: UserRow, backe
   });
   try {
     await backend.insertStaff({ id, business_id: caller.business_id, name, email, created_by: caller.id, companies });
+    if (checkIn) await backend.updateUserRow(id, caller.business_id, { requires_check_in: true });
   } catch (e) {
     try {
       await backend.deleteAuthUser(id);
@@ -176,7 +197,7 @@ async function createStaff(body: Record<string, unknown>, caller: UserRow, backe
     }
     throw e;
   }
-  return { id, email, name, role: "STAFF", is_active: true, companies };
+  return { id, email, name, role: "STAFF", is_active: true, requires_check_in: checkIn, companies };
 }
 
 async function requireStaff(userId: unknown, caller: UserRow, backend: Backend): Promise<UserRow> {
@@ -205,6 +226,9 @@ async function parseCompanies(v: unknown, caller: UserRow, backend: Backend, req
   if (!Array.isArray(v)) throw new ApiError("INVALID_INPUT", "companies must be a list.");
   if (requireOne && v.length === 0) throw new ApiError("INVALID_INPUT", "Assign at least one company.");
   const allowed = new Set(await backend.companyIdsOfBusiness(caller.business_id));
+  const siteCompany = new Map(
+    (await backend.sitesOfBusiness(caller.business_id)).map((s) => [s.id.toLowerCase(), s.company_id.toLowerCase()]),
+  );
   const seen = new Set<string>();
   const out: CompanyAccess[] = [];
   for (const item of v) {
@@ -216,14 +240,22 @@ async function parseCompanies(v: unknown, caller: UserRow, backend: Backend, req
     }
     if (seen.has(id)) continue;
     seen.add(id);
-    const areasIn = c.areas ?? [];
-    if (!Array.isArray(areasIn) || areasIn.some((a) => typeof a !== "string")) {
-      throw new ApiError("INVALID_INPUT", "areas must be a list of names.");
+    const full = c.full_company ?? true;
+    if (typeof full !== "boolean") throw new ApiError("INVALID_INPUT", "full_company must be true or false.");
+    const sitesIn = c.site_ids ?? [];
+    if (!Array.isArray(sitesIn) || sitesIn.some((s) => typeof s !== "string")) {
+      throw new ApiError("INVALID_INPUT", "site_ids must be a list.");
     }
-    const areas = [...new Set((areasIn as string[]).map((a) => a.trim()).filter((a) => a.length > 0))];
+    const siteIds = full ? [] : [...new Set((sitesIn as string[]).map((s) => s.toLowerCase()))];
+    if (siteIds.some((s) => siteCompany.get(s) !== id)) {
+      throw new ApiError("INVALID_INPUT", "A selected site does not belong to that company.");
+    }
+    if (!full && siteIds.length === 0) {
+      throw new ApiError("INVALID_INPUT", "Choose at least one site, or give the full company.");
+    }
     const cvt = c.can_view_transactions ?? true;
     if (typeof cvt !== "boolean") throw new ApiError("INVALID_INPUT", "can_view_transactions must be true or false.");
-    out.push({ company_id: id, areas, can_view_transactions: cvt });
+    out.push({ company_id: id, full_company: full, site_ids: siteIds, can_view_transactions: cvt });
   }
   return out;
 }

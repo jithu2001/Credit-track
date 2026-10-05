@@ -16,12 +16,21 @@ import '../../features/purchases/presentation/purchase_detail_screen.dart';
 import '../../features/settings/presentation/settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
 import '../../features/shops/presentation/shops_screen.dart';
+import '../../features/sites/presentation/site_detail_screen.dart';
+import '../../features/sites/presentation/site_editor_screen.dart';
+import '../../features/sites/presentation/sites_screen.dart';
 import '../../features/staff/presentation/staff_detail_screen.dart';
 import '../../features/staff/presentation/staff_form_screen.dart';
 import '../../features/staff/presentation/staff_list_screen.dart';
 import '../../features/stock/stock_screen.dart';
 import '../../features/suppliers/presentation/supplier_detail_screen.dart';
 import '../../features/sync_health/presentation/sync_health_screen.dart';
+import '../../features/visits/domain/visit.dart';
+import '../../features/visits/presentation/location_editor_screen.dart';
+import '../../features/visits/presentation/plans_screen.dart';
+import '../../features/visits/presentation/staff_visit_history_screen.dart';
+import '../../features/visits/presentation/visit_detail_screen.dart';
+import '../../features/visits/presentation/suggestions_screen.dart';
 
 part 'owner_router.g.dart';
 
@@ -76,6 +85,33 @@ GoRouter ownerRouter(Ref ref) {
       GoRoute(path: '/sync-health', builder: (context, state) => const SyncHealthScreen()),
       GoRoute(path: '/settings', builder: (context, state) => const SettingsScreen()),
       GoRoute(path: '/insights', builder: (context, state) => const PaymentInsightsScreen()),
+      GoRoute(path: '/sites/new', builder: (context, state) => const SiteEditorScreen()),
+      GoRoute(
+        path: '/shop/:id/location',
+        builder: (context, state) => LocationEditorScreen(shopId: state.pathParameters['id']!),
+      ),
+      GoRoute(path: '/locations/review', builder: (context, state) => const SuggestionsScreen()),
+      GoRoute(path: '/visits/plans', builder: (context, state) => const PlansScreen()),
+      GoRoute(
+        path: '/staff/:id/visits',
+        builder: (context, state) => StaffVisitHistoryScreen(staffId: state.pathParameters['id']!),
+      ),
+      GoRoute(path: '/visits/plans/new', builder: (context, state) => const PlanEditorScreen()),
+      GoRoute(
+        path: '/visits/task',
+        builder: (context, state) => switch (state.extra) {
+          final VisitTask t => VisitDetailScreen(task: t),
+          _ => const PlansScreen(),
+        },
+      ),
+      GoRoute(
+        path: '/sites/:id',
+        builder: (context, state) => SiteDetailScreen(siteId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/sites/:id/edit',
+        builder: (context, state) => SiteEditorScreen(siteId: state.pathParameters['id']!),
+      ),
       GoRoute(
         path: '/analytics/shop/:id',
         builder: (context, state) => ShopPaymentsScreen(shopId: state.pathParameters['id']!),
@@ -104,6 +140,9 @@ GoRouter ownerRouter(Ref ref) {
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/shops', builder: (context, state) => const ShopsScreen())],
+          ),
+          StatefulShellBranch(
+            routes: [GoRoute(path: '/sites', builder: (context, state) => const SitesScreen())],
           ),
           StatefulShellBranch(
             routes: [GoRoute(path: '/stock', builder: (context, state) => const StockScreen())],

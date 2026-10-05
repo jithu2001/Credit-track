@@ -9,7 +9,7 @@ part 'overdue_repository.g.dart';
 
 /// Shops past the credit period, aged on the server by `overdue_shops()`
 /// (migration 0004), so staff who may not read transactions still get the
-/// amounts and days. The function limits shops to the caller's areas and
+/// amounts and days. The function limits shops to the caller's sites and
 /// leaves bills out when the caller may not see transactions.
 class OverdueRepository {
   OverdueRepository(this._client);

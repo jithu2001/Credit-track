@@ -26,9 +26,7 @@ _CompanyAccess _$CompanyAccessFromJson(Map<String, dynamic> json) =>
     _CompanyAccess(
       userId: json['user_id'] as String,
       companyId: json['company_id'] as String,
-      areas:
-          (json['areas'] as List<dynamic>?)?.map((e) => e as String).toList() ??
-          const <String>[],
+      fullCompany: json['full_company'] as bool? ?? true,
       canViewTransactions: json['can_view_transactions'] as bool? ?? true,
     );
 
@@ -36,6 +34,6 @@ Map<String, dynamic> _$CompanyAccessToJson(_CompanyAccess instance) =>
     <String, dynamic>{
       'user_id': instance.userId,
       'company_id': instance.companyId,
-      'areas': instance.areas,
+      'full_company': instance.fullCompany,
       'can_view_transactions': instance.canViewTransactions,
     };

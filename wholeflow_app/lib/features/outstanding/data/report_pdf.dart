@@ -36,7 +36,7 @@ Future<Uint8List> outstandingReportPdf(OutstandingReport r) {
             padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: pw.Row(
               children: [
-                pw.Expanded(child: pw.Text(g.area, style: bold)),
+                pw.Expanded(child: pw.Text(g.site, style: bold)),
                 pw.Text(formatInrPlain(g.subtotal), style: bold),
               ],
             ),
@@ -97,7 +97,7 @@ Future<Uint8List> overdueReportPdf(OverdueReport r) {
             padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: pw.Row(
               children: [
-                pw.Expanded(child: pw.Text(g.area, style: bold)),
+                pw.Expanded(child: pw.Text(g.site, style: bold)),
                 pw.Text(formatInrPlain(g.subtotal), style: bold),
               ],
             ),

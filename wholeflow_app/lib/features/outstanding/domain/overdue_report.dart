@@ -1,5 +1,6 @@
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
+import '../../sites/domain/site.dart';
 
 /// An unpaid bill past the credit period, from `overdue_shops()`.
 class OverdueBill {
@@ -38,6 +39,8 @@ class OverdueShop {
     this.area,
     this.phone,
     this.bills,
+    this.siteId,
+    this.siteName,
   });
 
   factory OverdueShop.fromJson(Map<String, dynamic> json) => OverdueShop(
@@ -52,9 +55,12 @@ class OverdueShop {
     bills: json['bills_visible'] == true && json['bills'] is List
         ? [for (final b in json['bills'] as List) OverdueBill.fromJson(b as Map<String, dynamic>)]
         : null,
+    siteId: json['site_id'] as String?,
+    siteName: json['site_name'] as String?,
   );
 
-  static const columns = 'shop_id,name,area,phone,receivable,overdue,max_days_overdue,overdue_bills,bills_visible,bills';
+  static const columns =
+      'shop_id,name,area,phone,receivable,overdue,max_days_overdue,overdue_bills,bills_visible,bills,site_id,site_name';
 
   final String id;
   final String name;
@@ -71,19 +77,25 @@ class OverdueShop {
 
   /// Oldest first; null when the user may not see transactions.
   final List<OverdueBill>? bills;
+
+  /// Null when the shop is in no site.
+  final String? siteId;
+  final String? siteName;
 }
 
-class OverdueAreaGroup {
-  const OverdueAreaGroup(this.area, this.shops, this.subtotal);
+class OverdueSiteGroup {
+  const OverdueSiteGroup(this.siteId, this.site, this.shops, this.subtotal);
 
-  final String area;
+  /// Null for the shops in no site.
+  final String? siteId;
+  final String site;
 
   /// Most overdue amount first.
   final List<OverdueShop> shops;
   final Money subtotal;
 }
 
-/// Shops past the credit period, grouped by area with subtotals.
+/// Shops past the credit period, grouped by site with subtotals.
 class OverdueReport {
   const OverdueReport({
     required this.companyName,
@@ -97,8 +109,8 @@ class OverdueReport {
   final int creditDays;
   final DateTime generatedAt;
 
-  /// Areas A–Z, "No area" last.
-  final List<OverdueAreaGroup> groups;
+  /// Sites A–Z, "No site" last.
+  final List<OverdueSiteGroup> groups;
   final Money total;
 
   int get shopCount => groups.fold(0, (n, g) => n + g.shops.length);
@@ -113,29 +125,19 @@ OverdueReport buildOverdueReport({
   required List<OverdueShop> shops,
   required DateTime generatedAt,
 }) {
-  final byArea = <String, List<OverdueShop>>{};
-  for (final s in shops.where((s) => s.overdue.isPositive)) {
-    byArea.putIfAbsent(areaLabel(s.area), () => []).add(s);
-  }
-  const noArea = 'No area';
-  final names = byArea.keys.toList()
-    ..sort((a, b) {
-      if (a == noArea) return 1;
-      if (b == noArea) return -1;
-      return a.toLowerCase().compareTo(b.toLowerCase());
-    });
-  var total = Money.zero;
-  final groups = <OverdueAreaGroup>[];
-  for (final name in names) {
-    final list = byArea[name]!
-      ..sort((a, b) {
-        final c = b.overdue.compareTo(a.overdue);
-        return c != 0 ? c : b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
-      });
-    final subtotal = list.fold(Money.zero, (sum, s) => sum + s.overdue);
-    total += subtotal;
-    groups.add(OverdueAreaGroup(name, list, subtotal));
-  }
+  final groups = [
+    for (final (id, name, list) in groupBySite(shops.where((s) => s.overdue.isPositive), (s) => s.siteId, (s) => s.siteName))
+      OverdueSiteGroup(
+        id,
+        name,
+        list..sort((a, b) {
+          final c = b.overdue.compareTo(a.overdue);
+          return c != 0 ? c : b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
+        }),
+        list.fold(Money.zero, (sum, s) => sum + s.overdue),
+      ),
+  ];
+  final total = groups.fold(Money.zero, (sum, g) => sum + g.subtotal);
   return OverdueReport(companyName: companyName, creditDays: creditDays, generatedAt: generatedAt, groups: groups, total: total);
 }
 
@@ -151,7 +153,7 @@ String overdueReportText(OverdueReport r) {
     ..writeln('Overdue: ${formatInr(r.total)} (${plural(r.shopCount, 'shop')})')
     ..writeln();
   for (final g in r.groups) {
-    b.writeln('${g.area} — ${formatInr(g.subtotal)}');
+    b.writeln('${g.site} — ${formatInr(g.subtotal)}');
     for (final s in g.shops) {
       b.writeln('  • ${s.name}: ${formatInr(s.overdue)} · ${daysPastLimit(s.maxDaysOverdue)}');
       for (final bill in s.bills ?? const <OverdueBill>[]) {

@@ -1,6 +1,6 @@
 // deno test supabase/functions/manage-staff/handler_test.ts
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { ApiError, type Backend, type CompanyAccess, handle, type UserRow } from "./handler.ts";
+import { ApiError, type Backend, type CompanyAccess, handle, type SiteRef, type UserRow } from "./handler.ts";
 
 const BIZ_A = "b0000000-0000-0000-0000-00000000000a";
 const BIZ_B = "b0000000-0000-0000-0000-00000000000b";
@@ -11,12 +11,20 @@ const STAFF_B = "a0000000-0000-0000-0000-000000000004";
 const CO_A1 = "c0000000-0000-0000-0000-0000000000a1";
 const CO_A2 = "c0000000-0000-0000-0000-0000000000a2";
 const CO_B1 = "c0000000-0000-0000-0000-0000000000b1";
+const SITE_A2_PALA = "e0000000-0000-0000-0000-0000000000a1";
+const SITE_A2_KPLY = "e0000000-0000-0000-0000-0000000000a2";
+const SITE_B1 = "e0000000-0000-0000-0000-0000000000b1";
 
 class FakeBackend implements Backend {
   users = new Map<string, UserRow>();
   authUsers = new Map<string, { email: string; password: string; metadata: Record<string, unknown>; ban?: string }>();
   access = new Map<string, CompanyAccess[]>();
   companies: Record<string, string[]> = { [BIZ_A]: [CO_A1, CO_A2], [BIZ_B]: [CO_B1] };
+  sites: Record<string, SiteRef[]> = {
+    [BIZ_A]: [{ id: SITE_A2_PALA, company_id: CO_A2 }, { id: SITE_A2_KPLY, company_id: CO_A2 }],
+    [BIZ_B]: [{ id: SITE_B1, company_id: CO_B1 }],
+  };
+  checkIn = new Map<string, boolean>();
   failInsert = false;
   failSetCompanies = false;
   next = 100;
@@ -30,7 +38,7 @@ class FakeBackend implements Backend {
     add(STAFF_A, BIZ_A, "STAFF");
     add(OWNER_A2, BIZ_A, "OWNER");
     add(STAFF_B, BIZ_B, "STAFF");
-    this.access.set(STAFF_A, [{ company_id: CO_A1, areas: [], can_view_transactions: true }]);
+    this.access.set(STAFF_A, [{ company_id: CO_A1, full_company: true, site_ids: [], can_view_transactions: true }]);
   }
 
   authUserId(jwt: string) {
@@ -41,6 +49,9 @@ class FakeBackend implements Backend {
   }
   companyIdsOfBusiness(b: string) {
     return Promise.resolve(this.companies[b] ?? []);
+  }
+  sitesOfBusiness(b: string) {
+    return Promise.resolve(this.sites[b] ?? []);
   }
   createAuthUser(p: { email: string; password: string; metadata: Record<string, unknown> }) {
     for (const u of this.authUsers.values()) {
@@ -78,8 +89,10 @@ class FakeBackend implements Backend {
     this.access.set(userId, companies);
     return Promise.resolve();
   }
-  updateUserRow(id: string, _b: string, patch: { name?: string; is_active?: boolean }) {
-    Object.assign(this.users.get(id)!, patch);
+  updateUserRow(id: string, _b: string, patch: { name?: string; is_active?: boolean; requires_check_in?: boolean }) {
+    const { requires_check_in, ...rest } = patch;
+    if (requires_check_in !== undefined) this.checkIn.set(id, requires_check_in);
+    Object.assign(this.users.get(id)!, rest);
     return Promise.resolve();
   }
 }
@@ -100,7 +113,15 @@ const validCreate = {
   email: "  Ravi@Example.com ",
   password: "s3cret-pass",
   name: "Ravi",
-  companies: [{ company_id: CO_A1 }, { company_id: CO_A2, areas: [" Pala ", "", "Pala"], can_view_transactions: false }],
+  companies: [
+    { company_id: CO_A1 },
+    {
+      company_id: CO_A2,
+      full_company: false,
+      site_ids: [SITE_A2_PALA, SITE_A2_PALA.toUpperCase()],
+      can_view_transactions: false,
+    },
+  ],
 };
 
 Deno.test("missing JWT is rejected", async () => {
@@ -130,9 +151,54 @@ Deno.test("create_staff creates auth user, row and normalised assignments", asyn
   assertEquals(b.users.get(id)!.role, "STAFF");
   assertEquals(b.authUsers.get(id)!.metadata.must_change_password, true);
   assertEquals(b.access.get(id), [
-    { company_id: CO_A1, areas: [], can_view_transactions: true },
-    { company_id: CO_A2, areas: ["Pala"], can_view_transactions: false },
+    { company_id: CO_A1, full_company: true, site_ids: [], can_view_transactions: true },
+    { company_id: CO_A2, full_company: false, site_ids: [SITE_A2_PALA], can_view_transactions: false },
   ]);
+  assertEquals(b.checkIn.get(id), undefined, "check-in stays off unless asked");
+});
+
+Deno.test("create_staff can turn check-in on", async () => {
+  const b = new FakeBackend();
+  const r = await run(b, { ...validCreate, requires_check_in: true });
+  assertEquals(r.status, 200);
+  assertEquals(r.body.data.requires_check_in, true);
+  assertEquals(b.checkIn.get(r.body.data.id), true);
+});
+
+Deno.test("limited company needs at least one site of that company", async () => {
+  const b = new FakeBackend();
+  let r = await run(b, { ...validCreate, companies: [{ company_id: CO_A2, full_company: false, site_ids: [] }] });
+  assertEquals(r.status, 400);
+  r = await run(b, { ...validCreate, companies: [{ company_id: CO_A1, full_company: false, site_ids: [SITE_A2_PALA] }] });
+  assertEquals(r.status, 400, "a site of another company");
+  r = await run(b, { ...validCreate, companies: [{ company_id: CO_A2, full_company: false, site_ids: [SITE_B1] }] });
+  assertEquals(r.status, 400, "a site of another business");
+  assertEquals(b.authUsers.size, 4, "no auth user was created");
+});
+
+Deno.test("full company ignores listed sites", async () => {
+  const b = new FakeBackend();
+  const r = await run(b, { ...validCreate, companies: [{ company_id: CO_A2, full_company: true, site_ids: [SITE_A2_PALA] }] });
+  assertEquals(r.status, 200);
+  assertEquals(b.access.get(r.body.data.id), [{
+    company_id: CO_A2,
+    full_company: true,
+    site_ids: [],
+    can_view_transactions: true,
+  }]);
+});
+
+Deno.test("set_check_in turns check-in on and off", async () => {
+  const b = new FakeBackend();
+  let r = await run(b, { action: "set_check_in", user_id: STAFF_A, required: true });
+  assertEquals(r.status, 200);
+  assertEquals(b.checkIn.get(STAFF_A), true);
+  r = await run(b, { action: "set_check_in", user_id: STAFF_A, required: false });
+  assertEquals(b.checkIn.get(STAFF_A), false);
+  r = await run(b, { action: "set_check_in", user_id: STAFF_A, required: "yes" });
+  assertEquals(r.status, 400);
+  r = await run(b, { action: "set_check_in", user_id: OWNER_A2, required: true });
+  assertEquals(r.status, 403, "owners cannot be changed");
 });
 
 Deno.test("create_staff without companies is rejected", async () => {
@@ -181,9 +247,18 @@ Deno.test("short password is rejected and never echoed", async () => {
 
 Deno.test("set_companies replaces the set; empty list allowed", async () => {
   const b = new FakeBackend();
-  let r = await run(b, { action: "set_companies", user_id: STAFF_A, companies: [{ company_id: CO_A2, areas: ["Kply"] }] });
+  let r = await run(b, {
+    action: "set_companies",
+    user_id: STAFF_A,
+    companies: [{ company_id: CO_A2, full_company: false, site_ids: [SITE_A2_KPLY] }],
+  });
   assertEquals(r.status, 200);
-  assertEquals(b.access.get(STAFF_A), [{ company_id: CO_A2, areas: ["Kply"], can_view_transactions: true }]);
+  assertEquals(b.access.get(STAFF_A), [{
+    company_id: CO_A2,
+    full_company: false,
+    site_ids: [SITE_A2_KPLY],
+    can_view_transactions: true,
+  }]);
   r = await run(b, { action: "set_companies", user_id: STAFF_A, companies: [] });
   assertEquals(r.status, 200);
   assertEquals(b.access.get(STAFF_A), []);
@@ -194,7 +269,7 @@ Deno.test("failed set_companies leaves previous set", async () => {
   b.failSetCompanies = true;
   const r = await run(b, { action: "set_companies", user_id: STAFF_A, companies: [{ company_id: CO_A2 }] });
   assertEquals(r.status, 500);
-  assertEquals(b.access.get(STAFF_A), [{ company_id: CO_A1, areas: [], can_view_transactions: true }]);
+  assertEquals(b.access.get(STAFF_A), [{ company_id: CO_A1, full_company: true, site_ids: [], can_view_transactions: true }]);
 });
 
 Deno.test("cross-business user_id looks like not found", async () => {

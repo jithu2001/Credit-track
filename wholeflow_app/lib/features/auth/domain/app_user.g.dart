@@ -13,6 +13,7 @@ _AppUser _$AppUserFromJson(Map<String, dynamic> json) => _AppUser(
   name: json['name'] as String? ?? '',
   email: json['email'] as String?,
   isActive: json['is_active'] as bool? ?? true,
+  requiresCheckIn: json['requires_check_in'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$AppUserToJson(_AppUser instance) => <String, dynamic>{
@@ -22,6 +23,7 @@ Map<String, dynamic> _$AppUserToJson(_AppUser instance) => <String, dynamic>{
   'name': instance.name,
   'email': instance.email,
   'is_active': instance.isActive,
+  'requires_check_in': instance.requiresCheckIn,
 };
 
 const _$UserRoleEnumMap = {UserRole.owner: 'OWNER', UserRole.staff: 'STAFF'};

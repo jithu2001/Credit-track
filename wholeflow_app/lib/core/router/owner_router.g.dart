@@ -12,9 +12,7 @@ part of 'owner_router.dart';
 @ProviderFor(ownerRouter)
 final ownerRouterProvider = OwnerRouterProvider._();
 
-final class OwnerRouterProvider
-    extends $FunctionalProvider<GoRouter, GoRouter, GoRouter>
-    with $Provider<GoRouter> {
+final class OwnerRouterProvider extends $FunctionalProvider<GoRouter, GoRouter, GoRouter> with $Provider<GoRouter> {
   OwnerRouterProvider._()
     : super(
         from: null,
@@ -31,8 +29,7 @@ final class OwnerRouterProvider
 
   @$internal
   @override
-  $ProviderElement<GoRouter> $createElement($ProviderPointer pointer) =>
-      $ProviderElement(pointer);
+  $ProviderElement<GoRouter> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
 
   @override
   GoRouter create(Ref ref) {
@@ -41,11 +38,8 @@ final class OwnerRouterProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(GoRouter value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<GoRouter>(value),
-    );
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<GoRouter>(value));
   }
 }
 
-String _$ownerRouterHash() => r'32e051c79221def423bfa56e69a6b938470307fc';
+String _$ownerRouterHash() => r'e45dd897865f3e9f930d9743b2d78900ada139e7';

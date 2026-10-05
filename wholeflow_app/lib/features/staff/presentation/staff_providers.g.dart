@@ -13,15 +13,8 @@ part of 'staff_providers.dart';
 final staffMembersProvider = StaffMembersProvider._();
 
 final class StaffMembersProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<List<StaffMember>>,
-          List<StaffMember>,
-          FutureOr<List<StaffMember>>
-        >
-    with
-        $FutureModifier<List<StaffMember>>,
-        $FutureProvider<List<StaffMember>> {
+    extends $FunctionalProvider<AsyncValue<List<StaffMember>>, List<StaffMember>, FutureOr<List<StaffMember>>>
+    with $FutureModifier<List<StaffMember>>, $FutureProvider<List<StaffMember>> {
   StaffMembersProvider._()
     : super(
         from: null,
@@ -38,9 +31,7 @@ final class StaffMembersProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<StaffMember>> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<StaffMember>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<StaffMember>> create(Ref ref) {
@@ -53,24 +44,10 @@ String _$staffMembersHash() => r'75b9c68937dc8df60989930cef192d38a24585ce';
 @ProviderFor(staffMember)
 final staffMemberProvider = StaffMemberFamily._();
 
-final class StaffMemberProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<StaffMember?>,
-          StaffMember?,
-          FutureOr<StaffMember?>
-        >
+final class StaffMemberProvider extends $FunctionalProvider<AsyncValue<StaffMember?>, StaffMember?, FutureOr<StaffMember?>>
     with $FutureModifier<StaffMember?>, $FutureProvider<StaffMember?> {
-  StaffMemberProvider._({
-    required StaffMemberFamily super.from,
-    required String super.argument,
-  }) : super(
-         retry: null,
-         name: r'staffMemberProvider',
-         isAutoDispose: true,
-         dependencies: null,
-         $allTransitiveDependencies: null,
-       );
+  StaffMemberProvider._({required StaffMemberFamily super.from, required String super.argument})
+    : super(retry: null, name: r'staffMemberProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
 
   @override
   String debugGetCreateSourceHash() => _$staffMemberHash();
@@ -84,9 +61,7 @@ final class StaffMemberProvider
 
   @$internal
   @override
-  $FutureProviderElement<StaffMember?> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
+  $FutureProviderElement<StaffMember?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<StaffMember?> create(Ref ref) {
@@ -107,19 +82,11 @@ final class StaffMemberProvider
 
 String _$staffMemberHash() => r'7a102b6cc993ebf472d8565f367cda0c372e892b';
 
-final class StaffMemberFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<StaffMember?>, String> {
+final class StaffMemberFamily extends $Family with $FunctionalFamilyOverride<FutureOr<StaffMember?>, String> {
   StaffMemberFamily._()
-    : super(
-        retry: null,
-        name: r'staffMemberProvider',
-        dependencies: null,
-        $allTransitiveDependencies: null,
-        isAutoDispose: true,
-      );
+    : super(retry: null, name: r'staffMemberProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
 
-  StaffMemberProvider call(String id) =>
-      StaffMemberProvider._(argument: id, from: this);
+  StaffMemberProvider call(String id) => StaffMemberProvider._(argument: id, from: this);
 
   @override
   String toString() => r'staffMemberProvider';

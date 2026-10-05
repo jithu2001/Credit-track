@@ -5,17 +5,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/multi_picker_sheet.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../company/presentation/company_switcher.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
 import '../../outstanding/presentation/outstanding_views.dart';
+import '../../sites/presentation/site_providers.dart';
 import '../domain/shop.dart';
 import 'shop_list_controller.dart';
 import 'shop_tile.dart';
 
-/// The Shops tab: every shop (All shops), shops that owe money grouped by area
+/// The Shops tab: every shop (All shops), shops that owe money grouped by site
 /// (Dues), and shops past the credit period (Overdue), with one search.
 class ShopsScreen extends ConsumerStatefulWidget {
   const ShopsScreen({super.key});
@@ -238,125 +240,38 @@ class _FilterRow extends ConsumerWidget {
             const SizedBox(width: Insets.s),
           ],
           FilterChip(
-            avatar: const Icon(Icons.place_outlined, size: 18),
-            label: Text(filter.areas.isEmpty ? 'Area' : '${filter.areas.length} area${filter.areas.length == 1 ? '' : 's'}'),
-            selected: filter.areas.isNotEmpty,
+            avatar: const Icon(Icons.location_city_outlined, size: 18),
+            label: Text(filter.siteIds.isEmpty ? 'Site' : plural(filter.siteIds.length, 'site')),
+            selected: filter.siteIds.isNotEmpty,
             showCheckmark: false,
-            onSelected: (_) => _pickAreas(context, ref),
+            onSelected: (_) => _pickSites(context, ref),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _pickAreas(BuildContext context, WidgetRef ref) async {
-    dismissKeyboard();
-    final picked = await showModalBottomSheet<Set<String>>(
-      context: context,
-      useRootNavigator: true,
-      isScrollControlled: true,
-      showDragHandle: true,
-      useSafeArea: true,
-      builder: (context) => AreaPickerSheet(companyId: companyId, initial: filter.areas),
-    );
-    if (picked != null) ref.read(shopFilterControllerProvider.notifier).setAreas(picked);
-  }
-}
-
-/// Multi-select of a company's areas; returns the chosen set (empty = all).
-class AreaPickerSheet extends ConsumerStatefulWidget {
-  const AreaPickerSheet({super.key, required this.companyId, required this.initial, this.title = 'Filter by area'});
-
-  final String companyId;
-  final Set<String> initial;
-  final String title;
-
-  @override
-  ConsumerState<AreaPickerSheet> createState() => _AreaPickerSheetState();
-}
-
-class _AreaPickerSheetState extends ConsumerState<AreaPickerSheet> {
-  late final Set<String> _selected = {...widget.initial};
-  String _query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final areas = ref.watch(companyAreasProvider(widget.companyId));
-    final q = _query.trim().toLowerCase();
-    // Keep the list above the keyboard while searching.
-    final keyboard = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboard),
-      child: DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (context, scroll) => Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.s, 0),
-              child: Row(
-                children: [
-                  Expanded(child: Text(widget.title, style: context.text.titleMedium)),
-                  TextButton(onPressed: () => setState(_selected.clear), child: const Text('Clear')),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Insets.l, Insets.xs, Insets.l, Insets.s),
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: 'Search areas',
-                  prefixIcon: Icon(Icons.search_rounded),
-                  isDense: true,
-                ),
-                onChanged: (v) => setState(() => _query = v),
-              ),
-            ),
-            Expanded(
-              child: switch (areas) {
-                AsyncValue(:final value?) when value.isEmpty => const EmptyState(
-                  icon: Icons.place_outlined,
-                  title: 'No areas found',
-                ),
-                AsyncValue(:final value?) => ListView(
-                  controller: scroll,
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  children: [
-                    for (final a in value)
-                      if (q.isEmpty || a.toLowerCase().contains(q) || _selected.contains(a))
-                        CheckboxListTile(
-                          value: _selected.contains(a),
-                          title: Text(areaLabel(a)),
-                          onChanged: (on) => setState(() => on == true ? _selected.add(a) : _selected.remove(a)),
-                        ),
-                  ],
-                ),
-                AsyncValue(:final error?) => ErrorState(
-                  error: error,
-                  onRetry: () => ref.invalidate(companyAreasProvider(widget.companyId)),
-                ),
-                _ => const SkeletonList(),
-              },
-            ),
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.all(Insets.l),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(_selected),
-                    child: Text(_selected.isEmpty ? 'Show all areas' : 'Apply (${_selected.length})'),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+  Future<void> _pickSites(BuildContext context, WidgetRef ref) async {
+    final picked = await showMultiPicker(
+      context,
+      (context) => Consumer(
+        builder: (context, ref, _) {
+          final sites = ref.watch(companySitesProvider(companyId));
+          return MultiPickerSheet(
+            title: 'Filter by site',
+            searchHint: 'Search sites',
+            initial: filter.siteIds,
+            options: sites.value == null
+                ? null
+                : [for (final s in sites.value!) (id: s.id, label: s.name), (id: ShopFilter.noSite, label: 'No site')],
+            error: sites.error,
+            onRetry: () => ref.invalidate(companySitesProvider(companyId)),
+            applyLabel: (n) => n == 0 ? 'Show all sites' : 'Apply ($n)',
+          );
+        },
       ),
     );
+    if (picked != null) ref.read(shopFilterControllerProvider.notifier).setSites(picked);
   }
 }
 

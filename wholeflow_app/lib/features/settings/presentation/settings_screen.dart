@@ -71,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
               ListTile(
                 leading: const Icon(Icons.group_outlined),
                 title: const Text('Staff'),
-                subtitle: const Text('Accounts, companies and areas'),
+                subtitle: const Text('Accounts, companies and sites'),
                 trailing: const Icon(Icons.chevron_right_rounded),
                 onTap: () => context.push('/staff'),
               ),

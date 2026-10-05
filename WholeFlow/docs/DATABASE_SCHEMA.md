@@ -1,6 +1,6 @@
 # Database Schema (Supabase / PostgreSQL)
 
-Migrations: `supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, applied in that order in the Supabase SQL editor (or with `supabase db push`).
+Migrations: `supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, `0004_overdue.sql`, `0005_sites_visits.sql`, `0006_small_radius.sql`, applied in that order in the Supabase SQL editor (or with `supabase db push`).
 
 ```
 businesses ─┬─ users (auth.users)            OWNER | STAFF
@@ -157,7 +157,7 @@ Which companies each STAFF user works for. **No row, no data:** a staff member s
 |---|---|
 | user_id, company_id | primary key; both cascade on delete |
 | business_id | must equal the user's and the company's business (trigger) |
-| areas | `text[]`; empty = every area of this company; matched case-insensitively against `shops.area`; trimmed and de-duplicated by the trigger |
+| full_company | since 0005: true = every shop of the company; false = only shops in the sites listed in `staff_site_access` (the `areas` column was dropped) |
 | can_view_transactions | false hides that company's `transactions` |
 | created_by | the owner who granted it |
 
@@ -168,13 +168,34 @@ A trigger rejects rows for non-STAFF users and for companies of another business
 | Table | Read policy after 0002 |
 |---|---|
 | tally_companies | business match **and** `can_see_company(id)` |
-| shops | business match **and** `can_see_area(company_id, area)` |
+| shops | business match **and** `can_see_site_shop(company_id, site_id)` (since 0005; was `can_see_area`) |
 | transactions | business match **and** `can_see_transactions(company_id)` **and** `can_see_shop(shop_id)` |
 | sync_state, sync_logs | business match **and** `can_see_company(company_id)` (run-level `sync_logs` rows with no company: owners only) |
 | users | own row (even when disabled), or all users of the business for an owner |
 | staff_company_access | owners: all rows of the business; staff: their own |
 
 The helpers are `security definer`. They return true for an active owner, and for an active staff member only through a matching assignment. The views are `security_invoker`, so `v_company_summary` for a staff member lists only their companies, with totals covering only their shops.
+
+## Sites and staff visits (migration 0005)
+
+Migration: `supabase/migrations/0005_sites_visits.sql`. **Not additive**: staff access by Tally area is replaced by access by site, so the mobile app and the `manage-staff` Edge Function must be deployed with it. The sync service is unaffected (it never writes `shops.site_id`). Checks: `supabase/tests/sites_visits.sql`, plus the updated `rls_mobile.sql` and `overdue.sql` (all rolled back).
+
+| Table / column | Content |
+|---|---|
+| `sites` | Owner-made named group of shops in one company; name unique per company (case-insensitive). Owners write directly (RLS); staff read the sites they have. |
+| `shops.site_id` | The shop's site (at most one). Changed only through `set_site_shops(site, shop_ids[])` (owners). |
+| `staff_company_access.full_company` | Whole company, or only the sites in `staff_site_access`. Shops in no site: owners and full-company staff only. |
+| `staff_site_access` | `(user_id, site_id)`; written by `admin_set_staff_companies` (`p_companies[].full_company`, `site_ids`). |
+| `users.requires_check_in` | Staff member must check in at shops on planned days (set by `manage-staff` `set_check_in`). |
+| `businesses.timezone` | Business clock for visit days (`business_today()`), default `Asia/Kolkata`. |
+| `shop_locations` | Shop pin: lat/lng, radius 5–2000 m (default 100; 5 m allowed since `0006_small_radius.sql`). Written by `set_shop_location` / `clear_shop_location` (owners) or an approved suggestion. |
+| `shop_location_suggestions` | A staff member's position at an unpinned shop; `review_location_suggestion(id, approve, radius)` (owners). |
+| `visit_plans` | Site + staff member + one date, or a weekday from `starts_on` to `ends_on`. Owners write directly; a trigger requires active staff with check-in on who have the site. |
+| `visit_tasks` | One shop per staff member per day, made by `ensure_visit_tasks(from, to)`; days before today are only added to, later unvisited tasks follow the current plans. Shop and site names are copied. |
+| `shop_visits` | One per task, insert-only through `check_in(task, lat, lng, accuracy, is_mocked, developer_mode, note)`: server time and distance, status `verified`, `location_pending` (no pin yet) or `unverified` (suggestion rejected / outside the approved pin). One note can be added the same day with `add_visit_note`. |
+| `visit_failed_attempts` | Rejected check-ins (`mock_location`, `developer_options`, `poor_accuracy` > 50 m, `out_of_range`); owners read only. |
+
+Functions for the app: `site_report(company, from, to)` (per site: shops, shops with dues, outstanding, advance, sales, returns, collections; money is null without transaction access; a null-site row for shops in no site), `overdue_shops` (now returns `site_id`, `site_name`), and the view `v_visit_tasks` (each task with its visit and a `state`: `verified`, `location_pending`, `unverified`, `pending` or `missed`). `v_shop_outstanding` gains `site_id`, `site_name`.
 
 ## Suppliers, stock and purchases (migration 0003)
 

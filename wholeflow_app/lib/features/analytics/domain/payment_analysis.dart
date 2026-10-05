@@ -37,7 +37,7 @@ class ShopOpening {
   const ShopOpening({
     required this.id,
     required this.name,
-    this.area,
+    this.siteName,
     this.phone,
     required this.opening,
     required this.receivable,
@@ -45,7 +45,9 @@ class ShopOpening {
 
   final String id;
   final String name;
-  final String? area;
+
+  /// Null when the shop is in no site.
+  final String? siteName;
   final String? phone;
 
   /// Signed: Dr (owes) positive.

@@ -16,6 +16,7 @@ import '../../analytics/presentation/analytics_widgets.dart';
 import '../../company/domain/company.dart';
 import '../../shops/data/shop_repository.dart';
 import '../../shops/presentation/shop_tile.dart';
+import '../../sites/domain/site.dart';
 import '../data/overdue_repository.dart';
 import '../data/report_pdf.dart';
 import '../domain/outstanding_report.dart';
@@ -39,7 +40,7 @@ Future<OverdueReport> overdueReport(Ref ref, Company company) async {
 }
 
 enum OverdueSort {
-  area('By area'),
+  site('By site'),
   amount('Most overdue first'),
   days('Most days late first'),
   name('Name A–Z');
@@ -52,17 +53,17 @@ enum OverdueSort {
 @Riverpod(keepAlive: true)
 class OverdueSortController extends _$OverdueSortController {
   @override
-  OverdueSort build() => OverdueSort.area;
+  OverdueSort build() => OverdueSort.site;
 
   void set(OverdueSort s) => state = s;
 }
 
-/// Every shop in [report] as one list, for the sorts other than by area.
+/// Every shop in [report] as one list, for the sorts other than by site.
 List<OverdueShop> sortedOverdueShops(OverdueReport report, OverdueSort sort) {
   int byName(OverdueShop a, OverdueShop b) => a.name.toLowerCase().compareTo(b.name.toLowerCase());
   final list = [for (final g in report.groups) ...g.shops];
   switch (sort) {
-    case OverdueSort.area:
+    case OverdueSort.site:
       break;
     case OverdueSort.amount:
       list.sort((a, b) {
@@ -80,11 +81,14 @@ List<OverdueShop> sortedOverdueShops(OverdueReport report, OverdueSort sort) {
   return list;
 }
 
-/// Shops (and their areas) whose name, phone or area contains [query].
-bool _matches(String query, String name, String? phone, String? area) {
+/// Shops whose name, phone, site or Tally area contains [query].
+bool _matches(String query, String name, String? phone, String? area, String? site) {
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
-  return name.toLowerCase().contains(q) || (phone ?? '').toLowerCase().contains(q) || areaLabel(area).toLowerCase().contains(q);
+  return name.toLowerCase().contains(q) ||
+      (phone ?? '').toLowerCase().contains(q) ||
+      (area ?? '').toLowerCase().contains(q) ||
+      siteLabel(site).toLowerCase().contains(q);
 }
 
 /// [report] narrowed to the shops matching the search, with totals recomputed.
@@ -96,7 +100,7 @@ OutstandingReport filterDuesReport(OutstandingReport report, String query) => qu
         shops: [
           for (final g in report.groups)
             for (final s in g.shops)
-              if (_matches(query, s.name, s.phone, s.area)) s,
+              if (_matches(query, s.name, s.phone, s.area, s.siteName)) s,
         ],
       );
 
@@ -110,7 +114,7 @@ OverdueReport filterOverdueReport(OverdueReport report, String query) => query.t
         shops: [
           for (final g in report.groups)
             for (final s in g.shops)
-              if (_matches(query, s.name, s.phone, s.area)) s,
+              if (_matches(query, s.name, s.phone, s.area, s.siteName)) s,
         ],
       );
 
@@ -250,8 +254,8 @@ class _TotalCard extends StatelessWidget {
   }
 }
 
-class _AreaHeader extends StatelessWidget {
-  const _AreaHeader({required this.title, required this.amount});
+class _GroupHeader extends StatelessWidget {
+  const _GroupHeader({required this.title, required this.amount});
 
   final String title;
   final Money amount;
@@ -287,18 +291,18 @@ class _ReportList extends StatelessWidget {
             child: _TotalCard(
               label: 'Grand total',
               amount: report.total,
-              detail: '${plural(report.shopCount, 'shop')} in ${plural(report.groups.length, 'area')}',
+              detail: '${plural(report.shopCount, 'shop')} in ${plural(report.groups.length, 'site')}',
             ),
           ),
         ),
         for (final g in report.groups) ...[
           SliverToBoxAdapter(
-            child: _AreaHeader(title: '${g.area} (${g.shops.length})', amount: g.subtotal),
+            child: _GroupHeader(title: '${g.site} (${g.shops.length})', amount: g.subtotal),
           ),
           SliverList.separated(
             itemCount: g.shops.length,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
-            itemBuilder: (context, i) => ShopTile(shop: g.shops[i], showArea: false),
+            itemBuilder: (context, i) => ShopTile(shop: g.shops[i], showSite: false),
           ),
         ],
         const SliverToBoxAdapter(child: SizedBox(height: Insets.xxl)),
@@ -323,7 +327,7 @@ class OverdueView extends StatelessWidget {
     required this.report,
     required this.onRetry,
     this.searching = false,
-    this.sort = OverdueSort.area,
+    this.sort = OverdueSort.site,
   });
 
   final AsyncValue<OverdueReport> report;
@@ -371,7 +375,7 @@ class OverdueView extends StatelessWidget {
   Widget _flatList(List<OverdueShop> shops) => SliverList.separated(
     itemCount: shops.length,
     separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
-    itemBuilder: (context, i) => OverdueShopTile(key: ValueKey(shops[i].id), shop: shops[i], showArea: true),
+    itemBuilder: (context, i) => OverdueShopTile(key: ValueKey(shops[i].id), shop: shops[i], showSite: true),
   );
 
   List<Widget> _reportSlivers(BuildContext context, OverdueReport r) => [
@@ -391,14 +395,14 @@ class OverdueView extends StatelessWidget {
         child: _TotalCard(
           label: 'Past ${plural(r.creditDays, 'day')}',
           amount: r.total,
-          detail: '${plural(r.shopCount, 'shop')} in ${plural(r.groups.length, 'area')}',
+          detail: '${plural(r.shopCount, 'shop')} in ${plural(r.groups.length, 'site')}',
         ),
       ),
     ),
-    if (sort == OverdueSort.area)
+    if (sort == OverdueSort.site)
       for (final g in r.groups) ...[
         SliverToBoxAdapter(
-          child: _AreaHeader(title: '${g.area} (${g.shops.length})', amount: g.subtotal),
+          child: _GroupHeader(title: '${g.site} (${g.shops.length})', amount: g.subtotal),
         ),
         SliverList.separated(
           itemCount: g.shops.length,
@@ -414,12 +418,12 @@ class OverdueView extends StatelessWidget {
 /// A shop past the limit. With bills it expands to list them; without (staff
 /// who may not see transactions) it opens the shop like any other tile.
 class OverdueShopTile extends StatefulWidget {
-  const OverdueShopTile({super.key, required this.shop, this.showArea = false});
+  const OverdueShopTile({super.key, required this.shop, this.showSite = false});
 
   final OverdueShop shop;
 
-  /// In the flat sorts there are no area headers, so the row names its area.
-  final bool showArea;
+  /// In the flat sorts there are no site headers, so the row names its site.
+  final bool showSite;
 
   @override
   State<OverdueShopTile> createState() => _OverdueShopTileState();
@@ -443,7 +447,7 @@ class _OverdueShopTileState extends State<OverdueShopTile> {
       fontFeatures: const [FontFeature.tabularFigures()],
     );
     final details = [
-      if (widget.showArea) areaLabel(s.area),
+      if (widget.showSite) siteLabel(s.siteName),
       daysPastLimit(s.maxDaysOverdue),
       plural(s.billCount, 'bill'),
       if (s.phone != null && s.phone!.trim().isNotEmpty) s.phone!.trim(),

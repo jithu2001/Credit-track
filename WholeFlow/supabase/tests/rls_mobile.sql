@@ -1,4 +1,4 @@
--- RLS checks for migration 0002 (staff company assignment).
+-- RLS checks for staff company assignment (0002), with access by site (0005).
 --
 -- Seeds two businesses, impersonates each kind of user and asserts what they
 -- can see. Everything runs in one transaction that is ROLLED BACK at the end,
@@ -10,7 +10,7 @@
 -- Business B: company B1 (one shop)
 --   owner_a        OWNER of A
 --   staff_a1       A1 only
---   staff_a2       A1 (everything) + A2 limited to Pala, no transactions in A2
+--   staff_a2       A1 (everything) + A2 limited to the site "Pala", no transactions in A2
 --   staff_none     no assignment
 --   staff_off      A1, but disabled
 --   staff_b        B1 (business B)
@@ -80,18 +80,26 @@ insert into public.sync_logs (business_id, company_id, started_at, status) value
   ('b0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-0000000000a1', now(), 'success'),
   ('b0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-0000000000a2', now(), 'success');
 
-insert into public.staff_company_access (user_id, company_id, business_id, areas, can_view_transactions) values
-  ('a0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', '{}',        true),
-  ('a0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', '{}',        true),
-  ('a0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000a2', 'b0000000-0000-0000-0000-00000000000a', '{" pala ", ""}', false),
-  ('a0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', '{}',        true),
-  ('a0000000-0000-0000-0000-000000000006', 'c0000000-0000-0000-0000-0000000000b1', 'b0000000-0000-0000-0000-00000000000b', '{}',        true);
+-- Sites of A2: "Pala" holds shop 4, "Kply" holds shop 5.
+insert into public.sites (id, business_id, company_id, name) values
+  ('e0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-0000000000a2', ' Pala '),
+  ('e0000000-0000-0000-0000-0000000000a2', 'b0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-0000000000a2', 'Kply');
+update public.shops set site_id = 'e0000000-0000-0000-0000-0000000000a1' where id = 'd0000000-0000-0000-0000-000000000004';
+update public.shops set site_id = 'e0000000-0000-0000-0000-0000000000a2' where id = 'd0000000-0000-0000-0000-000000000005';
+
+insert into public.staff_company_access (user_id, company_id, business_id, full_company, can_view_transactions) values
+  ('a0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', true,  true),
+  ('a0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', true,  true),
+  ('a0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000a2', 'b0000000-0000-0000-0000-00000000000a', false, false),
+  ('a0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a', true,  true),
+  ('a0000000-0000-0000-0000-000000000006', 'c0000000-0000-0000-0000-0000000000b1', 'b0000000-0000-0000-0000-00000000000b', true,  true);
+insert into public.staff_site_access (user_id, site_id, business_id) values
+  ('a0000000-0000-0000-0000-000000000003', 'e0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a');
 
 -- ------------------------------------------------------------------ integrity (as postgres)
 
-select pg_temp.check((select areas from public.staff_company_access
-                      where user_id = 'a0000000-0000-0000-0000-000000000003' and company_id = 'c0000000-0000-0000-0000-0000000000a2') = '{pala}',
-                     'areas are trimmed and blanks dropped');
+select pg_temp.check((select name from public.sites where id = 'e0000000-0000-0000-0000-0000000000a1') = 'Pala',
+                     'site names are trimmed');
 
 do $$
 begin
@@ -107,6 +115,23 @@ begin
     raise exception 'assertion failed: a company of another business could be assigned';
   exception when check_violation then null;
   end;
+  begin
+    insert into public.staff_site_access (user_id, site_id, business_id)
+    values ('a0000000-0000-0000-0000-000000000002', 'e0000000-0000-0000-0000-0000000000a1', 'b0000000-0000-0000-0000-00000000000a');
+    raise exception 'assertion failed: a site of a company the staff member does not have could be given';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.shops set site_id = 'e0000000-0000-0000-0000-0000000000a1' where id = 'd0000000-0000-0000-0000-000000000001';
+    raise exception 'assertion failed: a shop joined a site of another company';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.sites (business_id, company_id, name)
+    values ('b0000000-0000-0000-0000-00000000000a', 'c0000000-0000-0000-0000-0000000000a2', 'pala');
+    raise exception 'assertion failed: two sites with the same name in one company';
+  exception when unique_violation then null;
+  end;
 end $$;
 
 -- ------------------------------------------------------------------ owner A
@@ -118,6 +143,8 @@ select pg_temp.check((select count(*) from public.transactions) = 5,    'owner: 
 select pg_temp.check((select count(*) from public.sync_logs) = 3,       'owner: 3 sync logs incl. run-level');
 select pg_temp.check((select count(*) from public.users) = 5,           'owner: all 5 users of A');
 select pg_temp.check((select count(*) from public.staff_company_access) = 4, 'owner: all 4 assignments of A');
+select pg_temp.check((select count(*) from public.sites) = 2,           'owner: both sites');
+select pg_temp.check((select count(*) from public.staff_site_access) = 1, 'owner: the one site grant');
 select pg_temp.check((select count(*) from public.tally_connections) = 0, 'owner: connections readable (none seeded)');
 select pg_temp.check((select total_outstanding from public.v_company_summary where company_id = 'c0000000-0000-0000-0000-0000000000a2') = 900,
                      'owner: A2 outstanding 900');
@@ -127,6 +154,7 @@ reset role;
 
 select pg_temp.act_as('a0000000-0000-0000-0000-000000000002');
 select pg_temp.check((select count(*) from public.tally_companies) = 1, 'staff_a1: 1 company');
+select pg_temp.check((select count(*) from public.sites) = 0,           'staff_a1: A1 has no sites');
 select pg_temp.check((select company_name from public.tally_companies) = 'Company A1', 'staff_a1: sees A1');
 select pg_temp.check((select count(*) from public.shops) = 3,           'staff_a1: 3 shops');
 select pg_temp.check((select count(*) from public.transactions) = 3,    'staff_a1: 3 transactions');
@@ -143,12 +171,15 @@ reset role;
 
 select pg_temp.act_as('a0000000-0000-0000-0000-000000000003');
 select pg_temp.check((select count(*) from public.tally_companies) = 2, 'staff_a2: 2 companies');
-select pg_temp.check((select count(*) from public.shops) = 4,           'staff_a2: 3 A1 shops + 1 Pala shop in A2 (case-insensitive)');
+select pg_temp.check((select count(*) from public.shops) = 4,           'staff_a2: 3 A1 shops + the Pala site shop in A2');
+select pg_temp.check((select count(*) from public.sites) = 1,           'staff_a2: sees only the Pala site');
 select pg_temp.check((select count(*) from public.shops where company_id = 'c0000000-0000-0000-0000-0000000000a2' and area = 'KPLY') = 0,
                      'staff_a2: KPLY hidden');
 select pg_temp.check((select count(*) from public.transactions) = 3,    'staff_a2: A1 transactions only');
 select pg_temp.check((select total_outstanding from public.v_company_summary where company_id = 'c0000000-0000-0000-0000-0000000000a2') = 400,
-                     'staff_a2: A2 total covers only Pala');
+                     'staff_a2: A2 total covers only the Pala site');
+select pg_temp.check((select site_name from public.v_shop_outstanding where shop_id = 'd0000000-0000-0000-0000-000000000004') = 'Pala',
+                     'staff_a2: shop rows carry their site');
 select pg_temp.check((select count(*) from public.tally_connections) = 0, 'staff_a2: no connections');
 reset role;
 
@@ -205,7 +236,8 @@ insert into auth.users (id, email) values ('a0000000-0000-0000-0000-000000000008
 set local role service_role;
 select public.admin_set_staff_companies(
   'a0000000-0000-0000-0000-000000000002', 'b0000000-0000-0000-0000-00000000000a', 'a0000000-0000-0000-0000-000000000001',
-  '[{"company_id": "c0000000-0000-0000-0000-0000000000a2", "areas": ["Kply"], "can_view_transactions": true}]'::jsonb);
+  '[{"company_id": "c0000000-0000-0000-0000-0000000000a2", "full_company": false,
+     "site_ids": ["e0000000-0000-0000-0000-0000000000a2"], "can_view_transactions": true}]'::jsonb);
 select pg_temp.check((select count(*) from public.staff_company_access where user_id = 'a0000000-0000-0000-0000-000000000002') = 1,
                      'set_companies replaces the whole set');
 
@@ -226,10 +258,12 @@ exception when check_violation then null;
 end $$;
 select pg_temp.check((select company_id from public.staff_company_access where user_id = 'a0000000-0000-0000-0000-000000000002')
                      = 'c0000000-0000-0000-0000-0000000000a2', 'failed set_companies left the previous set intact');
+select pg_temp.check((select site_id from public.staff_site_access where user_id = 'a0000000-0000-0000-0000-000000000002')
+                     = 'e0000000-0000-0000-0000-0000000000a2', 'failed set_companies left the previous site set intact');
 reset role;
 
 select pg_temp.act_as('a0000000-0000-0000-0000-000000000002');
-select pg_temp.check((select count(*) from public.shops) = 1, 'staff_a1 after reassignment: only the Kply shop of A2');
+select pg_temp.check((select count(*) from public.shops) = 1, 'staff_a1 after reassignment: only the Kply site shop of A2');
 reset role;
 
 select 'rls_mobile: all checks passed' as result;
