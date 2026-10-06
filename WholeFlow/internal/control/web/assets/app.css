@@ -199,3 +199,18 @@ details { margin-bottom: 16px; }
 
 /* Form submit buttons without a stronger style are tonal (M3 secondary action). */
 form button[type=submit]:not(.primary):not(:disabled) { background: var(--md-secondary-container); border-color: transparent; color: var(--md-on-secondary-container); }
+
+/* ---------------------------------------------------------------- danger zone and dialogs */
+button.danger.filled { background: var(--md-error); border-color: var(--md-error); color: #fff; }
+.card.danger-zone { box-shadow: none; border: 1px solid var(--md-error); background: #fffbfa; }
+.card.danger-zone h2 { color: var(--md-error); }
+.card.danger-zone p { margin: 0 0 12px; }
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.32); display: grid; place-items: center; padding: 16px; z-index: 20; }
+.dialog { background: var(--md-surface-high); border-radius: var(--shape-xl); padding: 24px; width: 100%; max-width: 520px; max-height: calc(100vh - 32px); overflow: auto; box-shadow: var(--elev-3); }
+.dialog .dialog-icon { color: var(--md-error); display: flex; justify-content: center; margin-bottom: 16px; }
+.dialog h2 { font: 400 24px/32px var(--font); text-align: center; margin-bottom: 16px; }
+.dialog p { color: var(--md-on-surface-variant); margin: 0 0 12px; }
+.dialog input:not([type=checkbox]) { background: var(--md-surface-lowest); }
+.dialog .check { display: flex; gap: 12px; align-items: flex-start; font: 400 14px/20px var(--font); color: var(--md-on-surface); margin-bottom: 16px; cursor: pointer; }
+.dialog .check input { margin-top: 2px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

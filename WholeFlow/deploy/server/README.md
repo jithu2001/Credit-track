@@ -58,7 +58,7 @@ Add or reset an admin on the server:
 `/opt/wholeflow/bin/wholeflow-control create-admin EMAIL "Name"` (with
 `control.env` loaded; the password is read from stdin).
 
-Remove a test business: `scripts/delete-business.sh <slug> --yes` (containers,
+Remove a business: admin app → business → *Danger zone* (asks for the short name and your password), or `scripts/delete-business.sh <slug> --yes` (containers,
 database, route and its control_db records; take a backup first).
 
 ## What was set up (phase 0)

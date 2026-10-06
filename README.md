@@ -416,7 +416,8 @@ Then open http://127.0.0.1:18080.
 | Another admin | **Settings → Admins**. That account also works on Tally PCs. |
 | Customer wants their data | Business → **Download backup** (a `pg_dump` file). |
 | Logs | `journalctl -u wholeflow-control` · `docker compose -p biz-<slug> -f businesses/<slug>/compose.yml --env-file businesses/<slug>/env logs` · on a Tally PC `C:\ProgramData\WholeFlow\logs\app.log` |
-| Remove a test business | `scripts/delete-business.sh <slug> --yes` on the server (take a backup first) |
+| Delete one Tally company's data | Business → **Tally companies** → **Delete**. You type the company name and your own admin password, then confirm once more. It removes the company's shops, transactions, suppliers, purchases, stock, sites, visits and staff access. Untick it on the Tally PC first, or the next sync uploads it again. The card warns when more companies are stored than the plan allows. |
+| Delete a whole business | Business → **Danger zone** → **Delete business**. You type its short name and your admin password, then confirm once more. It removes the database, containers, route, logins, keys, PCs and payment records. A tick box (on by default) also deletes its nightly backup files. Use **Download backup** first if the customer wants their data. On the server, `scripts/delete-business.sh <slug> --yes` does the same apart from the backups. |
 
 ## 6. Releasing updates
 

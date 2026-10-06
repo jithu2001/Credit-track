@@ -34,6 +34,8 @@ const ICONS = {
   download: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
   pay: 'M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z',
   pc: 'M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z',
+  delete: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
+  warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
   key: 'M12.65 10A5.99 5.99 0 0 0 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 0 0 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
 };
 
@@ -336,7 +338,8 @@ the reference key above and activation code ${r.activation_code} (valid 48 hours
 // ------------------------------------------------------------ one business
 
 async function pageBusiness(id) {
-  const [d, ps] = await Promise.all([api('GET', '/businesses/' + id), plans()]);
+  const [d, ps, companies] = await Promise.all([api('GET', '/businesses/' + id), plans(),
+    api('GET', `/businesses/${id}/companies`).catch(() => null)]);
   const b = d.business;
   const plan = ps.find(p => p.code === b.plan_code) || { price_month: 0 };
   const reload = () => render();
@@ -476,8 +479,115 @@ async function pageBusiness(id) {
       h('div', { class: 'card' }, h('h2', {}, 'Keys'), keys),
       h('div', { class: 'card' }, h('h2', {}, 'Details'), infoForm)),
     h('div', { class: 'card' }, h('h2', {}, 'Tally PCs'), pcs),
+    companiesCard(b, plan, companies),
     h('div', { class: 'card' }, h('h2', {}, 'History'), history),
+    dangerZone(b),
   ].map(wrapGap);
+}
+
+// ------------------------------------------------------------ deleting data
+
+// Tally companies stored in the business database, each deletable.
+function companiesCard(b, plan, companies) {
+  const card = h('div', { class: 'card' }, h('h2', {}, 'Tally companies'));
+  if (!companies) return (card.append(h('p', { class: 'muted' }, 'Could not read the companies of this business.')), card);
+  if (!companies.length) return (card.append(h('p', { class: 'muted' }, 'No company synced yet.')), card);
+  if (plan.max_companies && companies.length > plan.max_companies) {
+    card.append(h('div', { class: 'notice warn' },
+      `${companies.length} companies are stored but the ${b.plan_name} plan allows ${plan.max_companies}. ` +
+      'Delete the ones the business no longer pays for (untick them on the Tally PC first).'));
+  }
+  card.append(h('div', { class: 'scroll' }, h('table', {},
+    h('thead', {}, h('tr', {}, ...['Company', 'Last sync', 'Shops', 'Transactions', ''].map(t => h('th', {}, t)))),
+    h('tbody', {}, ...companies.map(c => h('tr', {},
+      h('td', {}, c.name, h('div', { class: 'muted small' }, c.sync_status)),
+      h('td', {}, when(c.last_sync_at)),
+      h('td', {}, c.shops.toLocaleString('en-IN')),
+      h('td', {}, c.transactions.toLocaleString('en-IN')),
+      h('td', {}, h('button', { class: 'danger', onclick: () => dangerDialog({
+        title: `Delete ${c.name}?`,
+        lines: [
+          `Everything stored for this company in ${b.name} is deleted permanently: ` +
+          `${c.shops.toLocaleString('en-IN')} shops, ${c.transactions.toLocaleString('en-IN')} transactions, suppliers, purchases, stock, sites, visits and staff access to it.`,
+          'If the Tally PC still has this company ticked, the next sync uploads it again. Untick it on the PC first.',
+        ],
+        expected: c.name, expectedLabel: 'company name',
+        action: 'Delete company',
+        run: body => api('POST', `/businesses/${b.id}/companies/${c.id}/delete`, body),
+        done: () => { toast(`${c.name} deleted`); render(); },
+      }) }, icon('delete', true), 'Delete'))))))));
+  return card;
+}
+
+function dangerZone(b) {
+  return h('div', { class: 'card danger-zone' },
+    h('h2', {}, 'Danger zone'),
+    h('p', {}, 'Delete this business and all its data: database, logins, keys, Tally PCs, payments. This cannot be undone.'),
+    h('p', { class: 'hint' }, 'Tip: use “Download backup” first if the customer may want their data.'),
+    h('button', { class: 'danger filled', onclick: () => dangerDialog({
+      title: `Delete ${b.name} completely?`,
+      lines: [
+        `The business database (biz_${b.slug}) with every company, shop, transaction, staff account, site and visit is dropped.`,
+        'Its login and data API are removed, the reference key and every Tally PC stop working, and its subscription and payment records are deleted.',
+        'The admin history keeps one line saying it was deleted.',
+      ],
+      expected: b.slug, expectedLabel: 'short name',
+      extra: { name: 'delete_backups', label: 'Also delete its nightly backup files on the server (otherwise they are removed after 14 days)', checked: true },
+      action: 'Delete business',
+      run: body => api('POST', `/businesses/${b.id}/delete`, body),
+      done: () => { toast(`${b.name} deleted`); plansCache = null; location.hash = '#/'; },
+    }) }, icon('delete', true), 'Delete business'));
+}
+
+// dangerDialog asks to type the exact name and the admin's own password, then
+// asks once more; the server checks both again.
+function dangerDialog({ title, lines, expected, expectedLabel, extra, action, run, done }) {
+  const typed = h('input', { autocomplete: 'off', spellcheck: 'false', placeholder: expected });
+  const pw = h('input', { type: 'password', autocomplete: 'current-password' });
+  const box = extra ? h('input', { type: 'checkbox', checked: extra.checked }) : null;
+  if (box) box.checked = !!extra.checked;
+  const err = h('div', { class: 'notice bad', hidden: true });
+  const go = h('button', { class: 'danger filled', disabled: true }, icon('delete', true), action);
+  const norm = v => v.trim().replace(/\s+/g, ' ').toLowerCase();
+  const update = () => (go.disabled = norm(typed.value) !== norm(expected) || !pw.value);
+  typed.addEventListener('input', update);
+  pw.addEventListener('input', update);
+  const close = () => { scrim.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  go.addEventListener('click', async () => {
+    if (!confirm(`Last check: ${action.toLowerCase()} “${expected}”? This cannot be undone.`)) return;
+    err.hidden = true;
+    go.disabled = true;
+    go.lastChild.textContent = 'Deleting…';
+    try {
+      const body = { confirm: typed.value, password: pw.value };
+      if (box) body[extra.name] = box.checked;
+      await run(body);
+      close();
+      done();
+    } catch (e) {
+      if (e.status === 401) return close(); // signed out: the page shows the login
+      err.textContent = e.message;
+      err.hidden = false;
+      go.lastChild.textContent = action;
+      pw.value = '';
+      update();
+      pw.focus();
+    }
+  });
+  const scrim = h('div', { class: 'scrim', onclick: ev => { if (ev.target === scrim) close(); } },
+    h('div', { class: 'dialog', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'dialog-icon' }, icon('warning')),
+      h('h2', {}, title),
+      ...lines.map(t => h('p', {}, t)),
+      err,
+      field(`Type the ${expectedLabel} “${expected}” to confirm`, typed),
+      field('Your admin password', pw),
+      box ? h('label', { class: 'check' }, box, h('span', {}, extra.label)) : null,
+      h('div', { class: 'dialog-actions' }, h('button', { class: 'link', onclick: close }, 'Cancel'), go)));
+  document.body.append(scrim);
+  document.addEventListener('keydown', onKey);
+  typed.focus();
 }
 
 function eventText(e) {
@@ -487,6 +597,7 @@ function eventText(e) {
     case 'business.update': return 'Details changed';
     case 'business.status': return 'Status → ' + x.status;
     case 'business.backup': return 'Backup downloaded';
+    case 'company.delete': return `Company deleted: ${x.company} (${x.shops} shops, ${x.transactions} transactions)`;
     case 'payment.record': return `Payment ${x.amount != null ? rupees(x.amount) : ''} recorded${x.paid_until ? ' — paid until ' + date(x.paid_until) : ''}`;
     case 'subscription.update': return `Subscription: plan ${x.plan}, grace ${x.grace_days} d, reminder ${x.remind_days} d`;
     case 'activation_code.create': return 'PC activation code made';
