@@ -84,8 +84,18 @@ func installService(name, display, desc, exe string, args []string) (updated boo
 	s, err := m.OpenService(name)
 	if err == nil {
 		updated = true
-		cfg.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
-		if err := s.UpdateConfig(cfg); err != nil {
+		// UpdateConfig passes every field to ChangeServiceConfig verbatim (unlike
+		// CreateService it does not default ServiceType), so start from the
+		// current config; a zero ServiceType fails with "The parameter is incorrect".
+		cur, err := s.Config()
+		if err != nil {
+			s.Close()
+			return true, fmt.Errorf("read service config: %w", err)
+		}
+		cur.DisplayName, cur.Description = cfg.DisplayName, cfg.Description
+		cur.StartType, cur.DelayedAutoStart, cur.ErrorControl = cfg.StartType, cfg.DelayedAutoStart, cfg.ErrorControl
+		cur.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
+		if err := s.UpdateConfig(cur); err != nil {
 			s.Close()
 			return true, fmt.Errorf("update service: %w", err)
 		}
