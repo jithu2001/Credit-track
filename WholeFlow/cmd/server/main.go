@@ -10,15 +10,14 @@
 //	wholeflow.exe uninstall | start | stop | restart | status
 //	wholeflow.exe sync            run one cloud synchronisation now and print the result
 //	wholeflow.exe config          print the effective configuration (secrets redacted)
-//	wholeflow.exe set-password    set the admin username and password that unlocks the app
 //	wholeflow.exe version
 //
 // The app (dashboard, shops, outstanding report, Cloud Sync setup) is at
-// http://127.0.0.1:8080 and is entirely behind the single admin login.
+// http://127.0.0.1:8080 and is entirely behind a login with a WholeFlow
+// account (checked by the WholeFlow server). There is no local account.
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -33,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -67,7 +67,6 @@ func main() {
 	dataFlag := fs.String("data", "", "data directory (default %ProgramData%\\WholeFlow, or WHOLEFLOW_DATA_DIR)")
 	checkFlag := fs.Bool("check", false, "test the Tally and cloud connections, print the result and exit")
 	background := fs.Bool("background", false, "run: start as a hidden background process (no console window) and return")
-	user := fs.String("username", "", "set-password: developer username")
 	anyLocation := fs.Bool("allow-any-location", false, "install: allow a service exe outside Program Files (development only)")
 	fs.Parse(args)
 	if *dataFlag != "" {
@@ -113,7 +112,8 @@ func main() {
 	case "config":
 		code = cmdConfig()
 	case "set-password":
-		code = cmdSetPassword(*user)
+		fmt.Fprintln(os.Stderr, "set-password was removed: sign in with your WholeFlow account.")
+		code = 2
 	case "version":
 		fmt.Println("wholeflow", syncer.Version, runtime.GOOS+"/"+runtime.GOARCH)
 	case "help", "-h", "--help":
@@ -144,7 +144,6 @@ usage: wholeflow.exe [command] [-data DIR]
   status         Windows service / autostart / process state and cloud sync state per company
   sync           run one cloud synchronisation now (through the running app if there is one)
   config         print the effective configuration (secrets redacted)
-  set-password   set the admin username and password that unlocks the whole app  [-username NAME]
   version
 `)
 }
@@ -235,7 +234,7 @@ func newApp(console bool) (*app, error) {
 		}
 		return nil, fmt.Errorf("settings: %w", err)
 	}
-	if err := applyEnvPassword(settings); err != nil {
+	if err := dropStoredLogins(settings); err != nil {
 		return nil, err
 	}
 	state, err := syncer.LoadState(dir)
@@ -256,28 +255,19 @@ func newApp(console bool) (*app, error) {
 	engine := &syncer.Engine{Tally: svc, Provider: syncer.NewProviderFactory(log, 90*time.Second), Settings: settings, State: state,
 		Log: log, TallyHost: cfg.TallyHost, TallyPort: cfg.TallyPort, Hostname: host}
 	sched := syncer.NewScheduler(engine, settings, log)
+	sched.Heartbeat = syncer.NewHeartbeat(settings, log)
 	return &app{dataDir: dir, cfg: cfg, log: log, logFile: lf, logPath: logPath, settings: settings, state: state,
 		tally: svc, engine: engine, scheduler: sched, secrets: sec}, nil
 }
 
-// applyEnvPassword lets DEVELOPER_PASSWORD (development only) set the
-// developer account; it is hashed and stored, never kept in clear text.
-func applyEnvPassword(st *syncer.SettingsStore) error {
-	pw := os.Getenv("DEVELOPER_PASSWORD")
-	if pw == "" {
+// dropStoredLogins removes the logins that versions before 0.4.1 kept in
+// config.json (the local account and remembered offline logins). Every login
+// is now checked by the WholeFlow server, so a PC cannot be opened without it.
+func dropStoredLogins(st *syncer.SettingsStore) error {
+	if !st.HadStoredLogins() {
 		return nil
 	}
-	hash, err := auth.HashPassword(pw)
-	if err != nil {
-		return fmt.Errorf("DEVELOPER_PASSWORD: %w", err)
-	}
-	return st.Update(func(s *syncer.Settings) error {
-		if s.Developer.Username == "" {
-			s.Developer.Username = "admin"
-		}
-		s.Developer.PasswordHash = hash
-		return nil
-	})
+	return st.Update(func(*syncer.Settings) error { return nil })
 }
 
 // localURL is where the CLI reaches the running app.
@@ -307,7 +297,8 @@ func (a *app) serve(ctx context.Context) error {
 	defer quit()
 	syncAPI := &admin.Server{Settings: a.settings, Scheduler: a.scheduler, Engine: a.engine, Tally: a.tally, Cfg: a.cfg,
 		Provider: a.engine.Provider, Sessions: auth.NewSessions(12 * time.Hour), Limiter: auth.NewLimiter(8, 10*time.Minute, 5*time.Minute),
-		Log: a.log, LogPath: a.logPath, DataDir: a.dataDir, ControlToken: token, SecretScheme: a.secrets.Scheme(), Quit: quit, Mode: a.mode}
+		Log: a.log, LogPath: a.logPath, DataDir: a.dataDir, ControlToken: token, SecretScheme: a.secrets.Scheme(), Quit: quit, Mode: a.mode,
+		Hostname: a.engine.Hostname, WindowsUser: windowsUser()}
 	mux := http.NewServeMux()
 	syncAPI.Routes(mux) // /api/sync/login and /api/sync/session are the only endpoints open without a session
 	webAPI := http.NewServeMux()
@@ -353,6 +344,15 @@ func (a *app) serve(ctx context.Context) error {
 	<-done
 	a.log.Info("wholeflow stopped")
 	return nil
+}
+
+// windowsUser names the account this process runs as (sent with an
+// activation; for the service this is the service account, not the person).
+func windowsUser() string {
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	return os.Getenv("USERNAME")
 }
 
 func accessLog(log *slog.Logger, next http.Handler) http.Handler {
@@ -540,9 +540,6 @@ func cmdAutostart(args []string) int {
 	}
 	fmt.Printf("Logon autostart registered (Task Scheduler task %q).\n  Executable: %s\n  Data dir:   %s\n", serviceName, exe, a.dataDir)
 	fmt.Println("WholeFlow will start hidden each time this Windows user logs on. Note: unlike the Windows service it does not run before logon.")
-	if a.settings.Get().Developer.PasswordHash == "" {
-		fmt.Println("No admin account yet: open " + a.localURL() + " right after starting to create it.")
-	}
 	if err := startBackground(); err != nil {
 		fmt.Println("Registered but not started:", err)
 		return 1
@@ -638,8 +635,21 @@ func cmdStatus() int {
 		st = a.scheduler.Status()
 	}
 	fmt.Println("Cloud sync:     ", st.State)
+	if st.Message != "" {
+		fmt.Println("                ", st.Message)
+	}
 	fmt.Println("Background sync:", onOff(st.Enabled), "every", st.IntervalSeconds, "s")
 	fmt.Println("Provider:       ", st.Provider)
+	if st.BusinessName != "" {
+		plan := "no company limit"
+		switch {
+		case st.MaxCompanies == 1:
+			plan = "plan allows 1 company"
+		case st.MaxCompanies > 1:
+			plan = fmt.Sprintf("plan allows %d companies", st.MaxCompanies)
+		}
+		fmt.Printf("Connected to:    %s (subscription %s, %s)\n", st.BusinessName, orDash(st.SubscriptionState), plan)
+	}
 	if !st.Configured {
 		fmt.Println("Configuration:  ", st.ConfigMessage, "(open "+a.localURL()+"/#/sync)")
 	}
@@ -660,6 +670,13 @@ func cmdStatus() int {
 		fmt.Printf("  Records: %d shops, %d transactions (voucher cursor %d)\n", c.ShopCount, c.TransactionCount, c.VoucherCursor)
 	}
 	return 0
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }
 
 func onOff(b bool) string {
@@ -739,7 +756,7 @@ func cmdCheck() int {
 	fmt.Println("\nCloud Sync")
 	fmt.Println("-------------------------")
 	fmt.Println("Provider:", set.Cloud.Provider)
-	fmt.Println("Business:", set.Business.ID)
+	fmt.Println("Business:", set.Business.ID, set.Business.Name)
 	if ok, why := set.Configured(); !ok {
 		fmt.Println("Not configured:", why)
 		fmt.Println("Open", a.localURL()+"/#/sync", "to set it up.")
@@ -772,65 +789,16 @@ func cmdConfig() int {
 		"dataDir": a.dataDir, "configFile": a.settings.Path(), "logFile": a.logPath, "url": a.localURL(),
 		"tally":    map[string]any{"host": a.cfg.TallyHost, "port": a.cfg.TallyPort, "portSource": a.cfg.PortSource, "timeout": a.cfg.TallyTimeout.String(), "shopGroups": a.cfg.ShopGroups},
 		"business": set.Business,
-		"cloud":    map[string]any{"provider": set.Cloud.Provider, "supabaseUrl": set.Cloud.SupabaseURL, "keyStored": set.Cloud.SupabaseKey != "", "keyFromEnv": set.Cloud.KeyFromEnv, "keyError": set.Cloud.KeyError, "secretScheme": a.secrets.Scheme()},
-		"sync":     set.Sync, "companies": set.Companies,
-		"developer":    map[string]any{"username": set.Developer.Username, "passwordSet": set.Developer.PasswordHash != ""},
+		"cloud": map[string]any{"provider": set.Cloud.Provider, "supabaseUrl": set.Cloud.SupabaseURL, "keyStored": set.Cloud.SupabaseKey != "", "keyFromEnv": set.Cloud.KeyFromEnv, "keyError": set.Cloud.KeyError, "secretScheme": a.secrets.Scheme(),
+			"controlUrl": set.ControlURL(),
+			"link": map[string]any{"referenceKey": set.Cloud.Link.ReferenceKey, "baseUrl": set.Cloud.Link.BaseURL, "deviceId": set.Cloud.Link.DeviceID,
+				"businessName": set.Cloud.Link.BusinessName, "pcKeyStored": set.Cloud.Link.DeviceKey != "", "keyError": set.Cloud.Link.KeyError,
+				"maxCompanies": set.Cloud.Link.MaxCompanies, "subscriptionState": set.Cloud.Link.SubscriptionState, "revoked": set.Cloud.Link.Revoked}},
+		"sync": set.Sync, "companies": set.Companies,
 		"envOverrides": a.settings.EnvOverrides(),
 	}
 	b, _ := json.MarshalIndent(out, "", "  ")
 	fmt.Println(string(b))
-	return 0
-}
-
-func cmdSetPassword(username string) int {
-	a, err := newApp(false)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
-	}
-	defer a.logFile.Close()
-	in := bufio.NewReader(os.Stdin)
-	cur := a.settings.Get().Developer
-	if username == "" {
-		def := cur.Username
-		if def == "" {
-			def = "admin"
-		}
-		fmt.Printf("Admin username [%s]: ", def)
-		line, _ := in.ReadString('\n')
-		username = strings.TrimSpace(line)
-		if username == "" {
-			username = def
-		}
-	}
-	pw, err := readPassword(in, "Admin password (min 10 characters): ")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
-	}
-	pw2, err := readPassword(in, "Repeat password: ")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
-	}
-	if pw != pw2 {
-		fmt.Fprintln(os.Stderr, "error: passwords do not match")
-		return 1
-	}
-	hash, err := auth.HashPassword(pw)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
-	}
-	if err := a.settings.Update(func(s *syncer.Settings) error {
-		s.Developer.Username, s.Developer.PasswordHash = username, hash
-		return nil
-	}); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
-	}
-	a.log.Info("developer password set", "username", username)
-	fmt.Printf("Admin account %q saved to %s. The whole app now requires this login.\n", username, a.settings.Path())
 	return 0
 }
 
@@ -882,9 +850,7 @@ func cmdInstall(allowAnyLocation bool) int {
 		return 1
 	}
 	fmt.Printf("Service started. Web app: %s  ·  Cloud Sync setup: %s/#/sync\n", a.localURL(), a.localURL())
-	if a.settings.Get().Developer.PasswordHash == "" {
-		fmt.Println("No admin account yet: open the web app NOW and create it (the first person to open the page claims the account).")
-	}
+	fmt.Println("Log in with your WholeFlow account.")
 	return 0
 }
 

@@ -42,4 +42,4 @@ final class OwnerRouterProvider extends $FunctionalProvider<GoRouter, GoRouter, 
   }
 }
 
-String _$ownerRouterHash() => r'e45dd897865f3e9f930d9743b2d78900ada139e7';
+String _$ownerRouterHash() => r'8be4b962e241ff595cbef027d6a564bd406f2dd4';

@@ -333,3 +333,78 @@ func TestUpsertPurchasesReplacesLines(t *testing.T) {
 		t.Fatalf("line insert: %s", ins.Body)
 	}
 }
+
+// The WholeFlow server's access check: 402 (subscription ended) and 403
+// device_revoked get their own kinds; any other 403 stays an auth error.
+func TestSubscriptionAndRevokedResponses(t *testing.T) {
+	var status int
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	s := newStorage(t, srv.URL, 5*time.Second)
+	for _, c := range []struct {
+		status int
+		body   string
+		want   cloud.ErrorKind
+	}{
+		{402, `{"code":"PT402","message":"subscription_ended","details":"Renew to continue","hint":"Call 98470"}`, cloud.KindSubscriptionEnded},
+		{403, `{"code":"PT403","message":"device_revoked","details":"x"}`, cloud.KindDeviceRevoked},
+		{403, `{"code":"42501","message":"permission denied for table businesses"}`, cloud.KindAuth},
+	} {
+		status, body = c.status, c.body
+		if err := s.Authenticate(context.Background()); cloud.KindOf(err) != c.want {
+			t.Errorf("HTTP %d %s → %v; want %s", c.status, c.body, err, c.want)
+		}
+	}
+}
+
+// A business on the WholeFlow server lives under a path prefix
+// (https://api.jitsuji.xyz/b/<slug>); PostgREST and the Auth admin API must
+// both be reached below it, with the PC key as apikey and bearer.
+func TestBaseURLWithPathPrefix(t *testing.T) {
+	f := newFake(t)
+	// The WholeFlow server routes /b/demo/... to the business; the fake
+	// answers below the prefix, and every raw path is recorded here.
+	var mu sync.Mutex
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		if !strings.HasPrefix(r.URL.Path, "/b/demo/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/b/demo")
+		f.handle(w, r)
+	}))
+	defer srv.Close()
+	s, err := New(Config{URL: srv.URL + "/b/demo/", ServiceRoleKey: "pc-key", BusinessID: "biz"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Authenticate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateUser(context.Background(), cloud.NewUser{Email: "owner@example.com", Password: "owner-pass-1", Role: cloud.RoleOwner}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetUserPassword(context.Background(), "auth-uid-1", "new-pass-123"); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	for _, r := range f.reqs {
+		if r.APIKey != "pc-key" || r.Auth != "Bearer pc-key" {
+			t.Errorf("%s %s: apikey %q auth %q", r.Method, r.Path, r.APIKey, r.Auth)
+		}
+	}
+	f.mu.Unlock()
+	want := []string{"GET /b/demo/rest/v1/businesses", "POST /b/demo/auth/v1/admin/users", "POST /b/demo/rest/v1/users",
+		"GET /b/demo/rest/v1/users", "PUT /b/demo/auth/v1/admin/users/auth-uid-1"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %v; want %v", paths, want)
+	}
+}

@@ -232,6 +232,13 @@ const (
 	KindNotFound    ErrorKind = "CLOUD_NOT_FOUND"
 	KindError       ErrorKind = "CLOUD_ERROR"
 	KindConfig      ErrorKind = "CLOUD_NOT_CONFIGURED"
+	// KindSubscriptionEnded: the business's subscription has ended and the
+	// server refuses its data requests (HTTP 402) until a payment is recorded.
+	// Not an outage: the sync pauses and resumes by itself.
+	KindSubscriptionEnded ErrorKind = "CLOUD_SUBSCRIPTION_ENDED"
+	// KindDeviceRevoked: this PC's key was revoked in the admin app (HTTP 403
+	// device_revoked). Only a new activation code helps.
+	KindDeviceRevoked ErrorKind = "CLOUD_DEVICE_REVOKED"
 )
 
 type Error struct {

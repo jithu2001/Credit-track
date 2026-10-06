@@ -1,7 +1,9 @@
 // Package admin is the login and cloud-sync configuration API of the
-// WholeFlow app, mounted under /api/sync/: the single admin account that
-// unlocks the whole app, business/cloud/company configuration, connection
-// tests, manual sync and log viewing. The business owner never uses this app;
+// WholeFlow app, mounted under /api/sync/: the login that unlocks the whole
+// app (a WholeFlow account checked by the control service; there is no local
+// account), connecting this PC with a reference key,
+// business/cloud/company configuration, connection tests, manual sync and
+// log viewing. The business owner never uses this app;
 // they use the mobile app against the cloud.
 package admin
 
@@ -22,6 +24,7 @@ import (
 	"wholeflow/internal/auth"
 	"wholeflow/internal/cloud"
 	"wholeflow/internal/config"
+	"wholeflow/internal/controlclient"
 	"wholeflow/internal/syncer"
 	"wholeflow/internal/tally"
 )
@@ -53,6 +56,12 @@ type Server struct {
 	// Mode tells the CLI how this instance runs: "service", "background" or
 	// "foreground" (reported by GET /api/sync/status).
 	Mode string
+	// Hostname and WindowsUser are sent with an activation so the admin app
+	// can tell this PC apart from others of the same business.
+	Hostname    string
+	WindowsUser string
+	// ControlTimeout bounds calls to the control service (default 20 s).
+	ControlTimeout time.Duration
 }
 
 // Routes mounts the login and sync API under /api/sync/ on the application's
@@ -62,7 +71,6 @@ type Server struct {
 func (s *Server) Routes(mux *http.ServeMux) {
 	g := s.headers
 	mux.HandleFunc("POST /api/sync/login", g(s.login))
-	mux.HandleFunc("POST /api/sync/setup", g(s.setup))
 	mux.HandleFunc("GET /api/sync/session", g(s.session))
 	mux.HandleFunc("GET /api/sync/summary", g(s.auth(s.summary)))
 	mux.HandleFunc("POST /api/sync/logout", g(s.auth(s.logout)))
@@ -72,9 +80,10 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/sync/settings", g(s.auth(s.putSettings)))
 	mux.HandleFunc("POST /api/sync/tally/test", g(s.auth(s.tallyTest)))
 	mux.HandleFunc("POST /api/sync/cloud/test", g(s.auth(s.cloudTest)))
+	mux.HandleFunc("POST /api/sync/connect", g(s.auth(s.connect)))
+	mux.HandleFunc("POST /api/sync/disconnect", g(s.auth(s.disconnect)))
 	mux.HandleFunc("POST /api/sync/run", g(s.auth(s.sync)))
 	mux.HandleFunc("GET /api/sync/logs", g(s.auth(s.logs)))
-	mux.HandleFunc("POST /api/sync/password", g(s.auth(s.password)))
 	mux.HandleFunc("GET /api/sync/users", g(s.auth(s.listUsers)))
 	mux.HandleFunc("POST /api/sync/users", g(s.auth(s.createUser)))
 	mux.HandleFunc("POST /api/sync/users/{id}/password", g(s.auth(s.userPassword)))
@@ -116,7 +125,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		companies = append(companies, cs{Name: c.Name, Status: c.Status, LastSuccessAt: c.LastSuccessAt})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"state": st.State, "enabled": st.Enabled, "running": st.Running,
-		"configured": st.Configured, "nextRunAt": st.NextRunAt, "companies": companies, "version": syncer.Version})
+		"configured": st.Configured, "nextRunAt": st.NextRunAt, "companies": companies, "version": syncer.Version, "message": st.Message})
 }
 
 // auth accepts a session cookie (browser) or the control token (CLI).
@@ -150,8 +159,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 // ---------------------------------------------------------------- session
 
 func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	set := s.Settings.Get()
-	resp := map[string]any{"loggedIn": false, "setupRequired": set.Developer.PasswordHash == "", "version": syncer.Version}
+	resp := map[string]any{"loggedIn": false, "version": syncer.Version}
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		if user, ok := s.Sessions.Validate(c.Value); ok {
 			resp["loggedIn"], resp["username"] = true, user
@@ -160,100 +168,99 @@ func (s *Server) session(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// loginError is a refused login: HTTP status, code and a message for the page.
+type loginError struct {
+	status    int
+	code, msg string
+}
+
+var errBadLogin = &loginError{http.StatusUnauthorized, "BAD_CREDENTIALS", "Wrong email or password."}
+
+// login accepts only WholeFlow accounts, and only when the control service
+// confirms them. There is deliberately no local account and no offline login:
+// either would open the app without the server.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get(csrfHeader) != csrfValue {
 		writeErr(w, http.StatusForbidden, "FORBIDDEN", "Missing request header.")
 		return
 	}
 	var body struct {
-		Username string `json:"username"`
+		Email    string `json:"email"`
+		Username string `json:"username"` // older pages and scripts
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
 		return
 	}
-	set := s.Settings.Get()
-	if set.Developer.PasswordHash == "" {
-		writeErr(w, http.StatusConflict, "SETUP_REQUIRED", "No admin account exists yet. Open the app to create it.")
+	user := strings.TrimSpace(body.Email)
+	if user == "" {
+		user = strings.TrimSpace(body.Username)
+	}
+	if user == "" || body.Password == "" {
+		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Enter your email and password.")
 		return
 	}
-	user := strings.TrimSpace(body.Username)
 	if err := s.Limiter.Allow(user); err != nil {
 		writeErr(w, http.StatusTooManyRequests, "LOCKED", err.Error())
 		return
 	}
-	if !strings.EqualFold(user, set.Developer.Username) || !auth.VerifyPassword(set.Developer.PasswordHash, body.Password) {
-		s.Limiter.Failure(user)
-		s.Log.Warn("developer login failed", "username", user, "remote", r.RemoteAddr)
-		time.Sleep(700 * time.Millisecond)
-		writeErr(w, http.StatusUnauthorized, "BAD_CREDENTIALS", "Incorrect username or password.")
+	set := s.Settings.Get()
+	name, how, lerr := s.cloudLogin(r.Context(), set, user, body.Password)
+	if lerr != nil {
+		if lerr == errBadLogin {
+			s.Limiter.Failure(user)
+			s.Log.Warn("login failed", "user", user, "remote", r.RemoteAddr)
+			time.Sleep(700 * time.Millisecond)
+		}
+		writeErr(w, lerr.status, lerr.code, lerr.msg)
 		return
 	}
 	s.Limiter.Success(user)
-	tok, err := s.Sessions.Create(set.Developer.Username)
+	tok, err := s.Sessions.Create(name)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "INTERNAL", "Could not create session.")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	s.Log.Info("developer logged in", "username", set.Developer.Username)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": set.Developer.Username})
+	s.Log.Info("logged in", "user", name, "with", how)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": name})
 }
 
-// setup creates the admin account on first run, from the browser, and logs
-// the caller in. It only works while no password is set; afterwards the
-// password can be changed on the Cloud Sync page or reset with set-password.
-func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get(csrfHeader) != csrfValue {
-		writeErr(w, http.StatusForbidden, "FORBIDDEN", "Missing request header.")
-		return
-	}
-	var body struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Confirm  string `json:"confirm"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
-		return
-	}
-	if s.Settings.Get().Developer.PasswordHash != "" {
-		writeErr(w, http.StatusConflict, "ALREADY_SET", "An admin account already exists. Log in.")
-		return
-	}
-	user := strings.TrimSpace(body.Username)
-	if user == "" {
-		user = "admin"
-	}
-	if body.Password != body.Confirm {
-		writeErr(w, http.StatusBadRequest, "MISMATCH", "The two passwords do not match.")
-		return
-	}
-	hash, err := auth.HashPassword(body.Password)
+// cloudLogin checks a WholeFlow account with POST /control/pc/login and
+// remembers it for offline use; it falls back to the remembered login only
+// when the server cannot be reached (never after a "wrong password").
+func (s *Server) cloudLogin(ctx context.Context, set syncer.Settings, email, password string) (string, string, *loginError) {
+	email = strings.ToLower(email)
+	c, err := controlclient.New(set.ControlURL(), s.controlTimeout())
 	if err != nil {
-		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", err.Error())
-		return
+		return "", "", &loginError{http.StatusInternalServerError, "BAD_CONFIG", err.(*controlclient.Error).Message}
 	}
-	err = s.Settings.Update(func(st *syncer.Settings) error {
-		if st.Developer.PasswordHash != "" { // lost a race with another tab or the CLI
-			return errors.New("an admin account already exists")
+	if _, err := c.PCLogin(ctx, email, password); err == nil {
+		return email, "WholeFlow account", nil
+	} else if !controlclient.IsUnreachable(err) {
+		var ce *controlclient.Error
+		errors.As(err, &ce)
+		switch ce.Status {
+		case http.StatusUnauthorized:
+			return "", "", errBadLogin
+		case http.StatusTooManyRequests:
+			return "", "", &loginError{http.StatusTooManyRequests, "LOCKED", ce.Message}
 		}
-		st.Developer.Username, st.Developer.PasswordHash = user, hash
-		return nil
-	})
-	if err != nil {
-		writeErr(w, http.StatusConflict, "ALREADY_SET", err.Error())
-		return
+		return "", "", &loginError{http.StatusBadGateway, ce.Code, ce.Message}
+	} else {
+		s.Log.Warn("WholeFlow server unreachable for login", "error", err.Error())
 	}
-	tok, err := s.Sessions.Create(user)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "INTERNAL", "Could not create session.")
-		return
+	// No offline login: nothing stored on this PC can open the app.
+	return "", "", &loginError{http.StatusServiceUnavailable, "SERVER_UNREACHABLE",
+		"Cannot reach the WholeFlow server to check your login. Check the internet connection and try again."}
+}
+
+func (s *Server) controlTimeout() time.Duration {
+	if s.ControlTimeout > 0 {
+		return s.ControlTimeout
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: tok, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-	s.Log.Info("admin account created from the browser", "username", user, "remote", r.RemoteAddr)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "username": user})
+	return 20 * time.Second
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -261,53 +268,6 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		s.Sessions.Revoke(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) password(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Current  string `json:"current"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
-		return
-	}
-	set := s.Settings.Get()
-	if err := s.Limiter.Allow(set.Developer.Username); err != nil {
-		writeErr(w, http.StatusTooManyRequests, "LOCKED", err.Error())
-		return
-	}
-	if !auth.VerifyPassword(set.Developer.PasswordHash, body.Current) {
-		s.Limiter.Failure(set.Developer.Username)
-		writeErr(w, http.StatusUnauthorized, "BAD_CREDENTIALS", "Current password is incorrect.")
-		return
-	}
-	s.Limiter.Success(set.Developer.Username)
-	hash, err := auth.HashPassword(body.Password)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", err.Error())
-		return
-	}
-	user := strings.TrimSpace(body.Username)
-	if user == "" {
-		user = set.Developer.Username
-	}
-	if err := s.Settings.Update(func(st *syncer.Settings) error {
-		st.Developer.Username, st.Developer.PasswordHash = user, hash
-		return nil
-	}); err != nil {
-		writeErr(w, http.StatusBadRequest, "INVALID", err.Error())
-		return
-	}
-	// Sign out every other browser; this one keeps its session.
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		s.Sessions.RevokeAllExcept(c.Value)
-	} else {
-		s.Sessions.RevokeAllExcept("")
-	}
-	s.Log.Info("developer password changed", "username", user)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -328,13 +288,28 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsDTO struct {
-	Business  syncer.BusinessSettings   `json:"business"`
-	Cloud     cloudDTO                  `json:"cloud"`
-	Sync      syncer.SyncSettings       `json:"sync"`
-	Companies []syncer.CompanySetting   `json:"companies"`
-	Developer struct{ Username string } `json:"developer"`
-	Env       []string                  `json:"envOverrides"`
-	Path      string                    `json:"path"`
+	Business  syncer.BusinessSettings `json:"business"`
+	Cloud     cloudDTO                `json:"cloud"`
+	Link      linkDTO                 `json:"link"`
+	Sync      syncer.SyncSettings     `json:"sync"`
+	Companies []syncer.CompanySetting `json:"companies"`
+	Env       []string                `json:"envOverrides"`
+	Path      string                  `json:"path"`
+}
+
+// linkDTO describes the reference-key connection; the PC key is never sent.
+type linkDTO struct {
+	Connected         bool       `json:"connected"`
+	ReferenceKey      string     `json:"referenceKey,omitempty"`
+	BusinessName      string     `json:"businessName,omitempty"`
+	DeviceID          string     `json:"deviceId,omitempty"`
+	BaseURL           string     `json:"baseUrl,omitempty"`
+	MaxCompanies      int        `json:"maxCompanies,omitempty"`
+	SubscriptionState string     `json:"subscriptionState,omitempty"`
+	ConnectedAt       *time.Time `json:"connectedAt,omitempty"`
+	Revoked           bool       `json:"revoked,omitempty"`
+	KeyError          string     `json:"keyError,omitempty"`
+	ControlURL        string     `json:"controlUrl"`
 }
 
 type cloudDTO struct {
@@ -352,7 +327,10 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		Env: s.Settings.EnvOverrides(), Path: s.Settings.Path()}
 	dto.Cloud = cloudDTO{Provider: set.Cloud.Provider, SupabaseURL: set.Cloud.SupabaseURL, HasKey: set.Cloud.SupabaseKey != "",
 		KeyFromEnv: set.Cloud.KeyFromEnv, KeyError: set.Cloud.KeyError}
-	dto.Developer.Username = set.Developer.Username
+	l := set.Cloud.Link
+	dto.Link = linkDTO{Connected: set.Linked() && l.Connected(), ReferenceKey: l.ReferenceKey, BusinessName: l.BusinessName,
+		DeviceID: l.DeviceID, BaseURL: l.BaseURL, MaxCompanies: l.MaxCompanies, SubscriptionState: l.SubscriptionState,
+		ConnectedAt: l.ConnectedAt, Revoked: l.Revoked, KeyError: l.KeyError, ControlURL: set.ControlURL()}
 	if dto.Companies == nil {
 		dto.Companies = []syncer.CompanySetting{}
 	}
@@ -370,16 +348,40 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.Settings.Get()
 	wasEnabled := cur.Sync.Enabled
-	if keyNeededFor(cur.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, cur.Cloud.KeyFromEnv) {
+	linked := cur.Linked()
+	if !linked && keyNeededFor(cur.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, cur.Cloud.KeyFromEnv) {
 		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL changed: enter the service-role key for the new project too.")
 		return
 	}
+	if !linked && strings.EqualFold(strings.TrimSpace(in.Cloud.Provider), syncer.ProviderWholeFlow) {
+		writeErr(w, http.StatusBadRequest, "NOT_CONNECTED", "Connect with the reference key and activation code first.")
+		return
+	}
+	// The plan's company limit: refuse ticking more companies than allowed
+	// (a selection that was already larger, e.g. after a downgrade, may
+	// shrink step by step; the sync itself only takes the first ones).
+	if limit := cur.CompanyLimit(); limit > 0 {
+		n := 0
+		for _, c := range in.Companies {
+			if c.Enabled && strings.TrimSpace(c.TallyID) != "" {
+				n++
+			}
+		}
+		if n > limit && n > len(cur.EnabledCompanies()) {
+			writeErr(w, http.StatusBadRequest, "COMPANY_LIMIT", syncer.CompanyLimitError(limit).Error())
+			return
+		}
+	}
 	err := s.Settings.Update(func(st *syncer.Settings) error {
-		st.Business = syncer.BusinessSettings{ID: strings.TrimSpace(in.Business.ID), Name: strings.TrimSpace(in.Business.Name)}
-		st.Cloud.Provider = strings.ToLower(strings.TrimSpace(in.Cloud.Provider))
-		st.Cloud.SupabaseURL = strings.TrimSpace(in.Cloud.SupabaseURL)
-		if k := strings.TrimSpace(in.Cloud.SupabaseKey); k != "" && !st.Cloud.KeyFromEnv {
-			st.Cloud.SupabaseKey, st.Cloud.KeyError = k, ""
+		// With a reference-key connection the business and cloud settings come
+		// from the activation (see connect) and are not edited here.
+		if !st.Linked() {
+			st.Business = syncer.BusinessSettings{ID: strings.TrimSpace(in.Business.ID), Name: strings.TrimSpace(in.Business.Name)}
+			st.Cloud.Provider = strings.ToLower(strings.TrimSpace(in.Cloud.Provider))
+			st.Cloud.SupabaseURL = strings.TrimSpace(in.Cloud.SupabaseURL)
+			if k := strings.TrimSpace(in.Cloud.SupabaseKey); k != "" && !st.Cloud.KeyFromEnv {
+				st.Cloud.SupabaseKey, st.Cloud.KeyError = k, ""
+			}
 		}
 		st.Sync = in.Sync
 		st.Companies = nil
@@ -439,6 +441,10 @@ func (s *Server) cloudTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	set := s.Settings.Get()
+	if set.Linked() {
+		// Test the stored reference-key connection as it is.
+		in.Business, in.Cloud = syncer.BusinessSettings{}, cloudDTO{}
+	}
 	if keyNeededFor(set.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, set.Cloud.KeyFromEnv) {
 		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL differs from the saved one: enter the service-role key for that project too.")
 		return
@@ -462,7 +468,8 @@ func (s *Server) cloudTest(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 		err = prov.Authenticate(ctx)
 	}
-	resp := map[string]any{"ok": err == nil, "provider": set.Cloud.Provider, "businessId": set.Business.ID, "responseMs": time.Since(start).Milliseconds()}
+	resp := map[string]any{"ok": err == nil, "provider": set.Cloud.Provider, "businessId": set.Business.ID, "businessName": set.Business.Name,
+		"responseMs": time.Since(start).Milliseconds()}
 	if err != nil {
 		code, msg := classifyForUI(err)
 		resp["error"] = map[string]string{"code": code, "message": msg}
@@ -471,6 +478,12 @@ func (s *Server) cloudTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func classifyForUI(err error) (string, string) {
+	switch k := cloud.KindOf(err); k {
+	case cloud.KindSubscriptionEnded:
+		return string(k), syncer.MsgSubscriptionEnded + "."
+	case cloud.KindDeviceRevoked:
+		return string(k), syncer.MsgDeviceRevoked
+	}
 	msg := err.Error()
 	code := "CLOUD_ERROR"
 	if i := strings.Index(msg, "CLOUD_"); i >= 0 {
@@ -481,6 +494,97 @@ func classifyForUI(err error) (string, string) {
 		}
 	}
 	return code, msg
+}
+
+// ---------------------------------------------------------------- reference-key connection
+
+// connect activates this PC with a reference key and a single-use activation
+// code (POST /control/activate) and stores the answer: the business, its
+// address and this PC's key (encrypted). The rest of the setup (test, tick
+// companies, sync) then works as with a Supabase key.
+func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ReferenceKey   string `json:"referenceKey"`
+		ActivationCode string `json:"activationCode"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
+		return
+	}
+	ref := strings.ToUpper(strings.Join(strings.Fields(body.ReferenceKey), ""))
+	code := strings.ToUpper(strings.Join(strings.Fields(body.ActivationCode), ""))
+	if ref == "" || code == "" {
+		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Enter the reference key and the activation code.")
+		return
+	}
+	for _, env := range s.Settings.EnvOverrides() {
+		if env == "CLOUD_PROVIDER" || env == "BUSINESS_ID" {
+			writeErr(w, http.StatusConflict, "ENV_OVERRIDE", env+" is set in the environment (.env) and would override this connection. Remove it and restart WholeFlow first.")
+			return
+		}
+	}
+	set := s.Settings.Get()
+	c, err := controlclient.New(set.ControlURL(), s.controlTimeout())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "BAD_CONFIG", err.(*controlclient.Error).Message)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), s.controlTimeout())
+	defer cancel()
+	act, err := c.Activate(ctx, controlclient.ActivateRequest{ReferenceKey: ref, ActivationCode: code,
+		Machine: s.Hostname, WindowsUser: s.WindowsUser, AppVersion: syncer.Version})
+	if err != nil {
+		var ce *controlclient.Error
+		errors.As(err, &ce)
+		status := ce.Status
+		if ce.Unreachable() || status < 400 {
+			status = http.StatusBadGateway
+		}
+		s.Log.Warn("activation refused", "reference_key", ref, "code", ce.Code, "error", ce.Message)
+		writeErr(w, status, ce.Code, ce.Message)
+		return
+	}
+	now := time.Now()
+	err = s.Settings.Update(func(st *syncer.Settings) error {
+		st.Cloud.Provider = syncer.ProviderWholeFlow
+		st.Business = syncer.BusinessSettings{ID: act.BusinessID, Name: act.BusinessName}
+		st.Cloud.Link = syncer.LinkSettings{ReferenceKey: ref, BaseURL: strings.TrimRight(act.BaseURL, "/"), DeviceID: act.DeviceID,
+			BusinessName: act.BusinessName, DeviceKey: act.DeviceKey, MaxCompanies: act.MaxCompanies,
+			SubscriptionState: act.SubscriptionState, ConnectedAt: &now}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "BAD_RESPONSE", "The WholeFlow server's answer could not be used: "+err.Error())
+		return
+	}
+	s.Log.Info("connected by reference key", "business", act.BusinessName, "business_id", act.BusinessID, "device_id", act.DeviceID,
+		"max_companies", act.MaxCompanies, "subscription", act.SubscriptionState)
+	if s.Settings.Get().Sync.Enabled {
+		s.Scheduler.TriggerNow()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "businessName": act.BusinessName, "businessId": act.BusinessID,
+		"maxCompanies": act.MaxCompanies, "subscriptionState": act.SubscriptionState})
+}
+
+// disconnect forgets the reference-key connection (business, address and PC
+// key). The companies and sync options stay, so connecting again continues.
+func (s *Server) disconnect(w http.ResponseWriter, r *http.Request) {
+	var was string
+	err := s.Settings.Update(func(st *syncer.Settings) error {
+		if st.Linked() {
+			was = st.Business.Name
+			st.Cloud.Provider = syncer.ProviderSupabase
+			st.Business = syncer.BusinessSettings{}
+		}
+		st.Cloud.Link = syncer.LinkSettings{}
+		return nil
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	s.Log.Info("disconnected from the WholeFlow server", "business", was)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // ---------------------------------------------------------------- owner / staff accounts

@@ -3,6 +3,7 @@ package syncer
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wholeflow/internal/secrets"
@@ -85,7 +86,7 @@ func TestConfigured(t *testing.T) {
 	if ok, why := s.Configured(); ok || why == "" {
 		t.Fatal("empty settings must not be configured")
 	}
-	s.Developer.PasswordHash, s.Business.ID = "h", "b"
+	s.Business.ID = "b"
 	s.Cloud.SupabaseURL, s.Cloud.SupabaseKey = "https://x", "k"
 	if ok, why := s.Configured(); ok || why != "no company selected" {
 		t.Fatal(why)
@@ -123,4 +124,32 @@ func index(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// Versions before 0.4.1 kept a local login and remembered offline logins in
+// config.json. They are no longer read, and the first save drops them.
+func TestOldLocalAccountIsDropped(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"business":{"id":"b"},"developer":{"username":"admin","passwordHash":"pbkdf2-sha256$1$x$y"},` +
+		`"pcLogins":[{"email":"a@b.c","passwordHash":"pbkdf2-sha256$1$p$q","offlineUntil":"2099-01-01T00:00:00Z"}]}`
+	if err := os.WriteFile(filepath.Join(dir, settingsFileName), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := LoadSettings(dir, secrets.Plain{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.HadStoredLogins() {
+		t.Fatal("old stored logins not noticed")
+	}
+	if err := st.Update(func(*Settings) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, settingsFileName))
+	if strings.Contains(string(b), "developer") || strings.Contains(string(b), "pcLogins") || strings.Contains(string(b), "pbkdf2") || st.HadStoredLogins() {
+		t.Fatalf("logins still in config.json: %s", b)
+	}
+	if st.Get().Business.ID != "b" {
+		t.Fatal("other settings lost")
+	}
 }

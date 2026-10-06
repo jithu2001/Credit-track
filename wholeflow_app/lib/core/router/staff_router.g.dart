@@ -42,4 +42,4 @@ final class StaffRouterProvider extends $FunctionalProvider<GoRouter, GoRouter, 
   }
 }
 
-String _$staffRouterHash() => r'ea65d22709bf8c5f0a0836f574937ee34a71448f';
+String _$staffRouterHash() => r'70ddf992ef01989c93ccc33883c42c712beb8388';

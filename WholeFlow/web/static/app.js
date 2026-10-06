@@ -387,7 +387,7 @@ async function viewStatus() {
 // a 401 anywhere brings up the login screen (see the login section below).
 
 const sync = { session: null, settings: null, status: null, timer: null };
-const SYNC_STATE_CLASS = { SYNCED: "ok", CONNECTED: "ok", SYNCING: "warn", NOT_CONFIGURED: "warn", DISABLED: "neutral", PENDING: "neutral" };
+const SYNC_STATE_CLASS = { SYNCED: "ok", CONNECTED: "ok", SYNCING: "warn", NOT_CONFIGURED: "warn", DISABLED: "neutral", PENDING: "neutral", OVER_PLAN_LIMIT: "warn" };
 const syncCls = (s) => SYNC_STATE_CLASS[s] ?? "bad";
 const syncTag = (s) => `<span class="tag ${syncCls(s)}">${esc(s)}</span>`;
 
@@ -398,7 +398,7 @@ async function syncApi(method, path, body) {
   try { res = await fetch(path, opts); }
   catch { throw new ApiError(0, { error: { code: "APP_UNREACHABLE", message: "The application server is not responding. Is it still running?" } }); }
   const data = await res.json().catch(() => null);
-  if (res.status === 401 && path !== "/api/sync/login" && path !== "/api/sync/setup") { showLogin(data?.error?.message); throw new ApiError(401, data); }
+  if (res.status === 401 && path !== "/api/sync/login") { showLogin(data?.error?.message); throw new ApiError(401, data); }
   if (!res.ok) throw new ApiError(res.status, data);
   return data;
 }
@@ -409,7 +409,9 @@ async function loadSyncSummary() {
   try {
     const s = await syncApi("GET", "/api/sync/summary");
     const last = (s.companies || []).map((c) => c.lastSuccessAt).filter(Boolean).sort().pop();
-    pill.textContent = `Cloud sync: ${s.state}${last ? " · " + fmtTime(last) : ""}`;
+    const what = s.state === "SUBSCRIPTION_ENDED" ? "Subscription ended — sync paused" : s.state === "DEVICE_REVOKED" ? "access revoked" : s.state;
+    pill.textContent = `Cloud sync: ${what}${last ? " · " + fmtTime(last) : ""}`;
+    pill.title = s.message || "";
     pill.className = "pill " + (syncCls(s.state) === "neutral" ? "" : syncCls(s.state));
     pill.hidden = false;
   } catch { pill.hidden = true; }
@@ -433,19 +435,16 @@ async function renderSyncMain() {
     <h1>Cloud Sync <span class="muted small">Tally → cloud → mobile app</span></h1>
     <section class="panel" id="syncStatusPanel"></section>
     <div class="grid two">
-      <section class="panel form"><h2><span class="step">1</span>Business</h2>
-        <label><span class="l">Business ID (UUID from the businesses table)</span><input id="bizId" value="${esc(s.business.id)}" placeholder="00000000-0000-0000-0000-000000000000"></label>
-        <label><span class="l">Business name (for logs)</span><input id="bizName" value="${esc(s.business.name)}"></label>
-        <p class="small muted">Every synchronised record is tagged with this business_id. Create the business row in Supabase first (docs/DATABASE_SCHEMA.md).</p>
-      </section>
-      <section class="panel form"><h2><span class="step">2</span>Cloud backend</h2>
-        <label><span class="l">Provider</span><select id="provider"><option value="supabase" ${s.cloud.provider === "supabase" ? "selected" : ""}>Supabase (PostgreSQL)</option><option value="memory" ${s.cloud.provider === "memory" ? "selected" : ""}>Memory (dry run, nothing leaves this PC)</option></select></label>
-        <label><span class="l">Supabase project URL</span><input id="sbUrl" value="${esc(s.cloud.supabaseUrl)}" placeholder="https://xxxx.supabase.co" ${env.includes("SUPABASE_URL") ? "disabled" : ""}></label>
-        <label><span class="l">Service-role key ${s.cloud.hasKey ? '<span class="tag ok">stored</span>' : '<span class="tag warn">not set</span>'} ${s.cloud.keyFromEnv ? '<span class="tag neutral">from environment</span>' : ""}</span>
-          <input id="sbKey" type="password" autocomplete="off" placeholder="${s.cloud.hasKey ? "leave blank to keep the stored key" : "paste the service_role key"}" ${s.cloud.keyFromEnv ? "disabled" : ""}></label>
-        ${s.cloud.keyError ? errorBox({ message: "Stored key cannot be read: " + s.cloud.keyError + " Enter it again." }) : ""}
+      <section class="panel form"><h2><span class="step">1</span>Connect to WholeFlow</h2>${renderConnect(s, env)}</section>
+      <section class="panel form"><h2><span class="step">2</span>Test the connection</h2>
+        <p class="small muted">${s.link.connected ? `Checks that this PC can reach <strong>${esc(s.link.businessName || s.business.name)}</strong> on the WholeFlow server.` : "Connect first (step 1), then test."}</p>
         <div class="row"><button id="cloudTest">Test cloud connection</button><span id="cloudResult" class="small"></span></div>
-        <p class="small muted">The key is encrypted at rest (${esc(sync.status.secretScheme)}) and never shown again. Never put it in the mobile app.</p>
+        ${s.link.connected ? `<dl class="kv small">
+          <dt>Reference key</dt><dd>${esc(s.link.referenceKey)}</dd>
+          <dt>Plan</dt><dd>${s.link.maxCompanies ? `up to ${s.link.maxCompanies} compan${s.link.maxCompanies === 1 ? "y" : "ies"}` : "—"}</dd>
+          <dt>Subscription</dt><dd>${esc(s.link.subscriptionState || "—")}</dd>
+          <dt>This PC</dt><dd class="muted">${esc(s.link.deviceId)}</dd></dl>` : ""}
+        <p class="small muted">The PC key is encrypted at rest (${esc(sync.status.secretScheme)}) and never shown.</p>
       </section>
     </div>
     <section class="panel"><h2><span class="step">3</span>TallyPrime companies to synchronise</h2>
@@ -453,7 +452,7 @@ async function renderSyncMain() {
         <div><div id="tallyBlock" class="status-block">Checking…</div>
           <div class="row"><button id="tallyTest">Test Tally &amp; discover companies</button></div>
           <p class="small muted">Endpoint ${esc(sync.status.tallyEndpoint)} · port from ${esc(sync.status.portSource)} · shop groups: ${esc((sync.status.shopGroups || []).join(", "))}</p></div>
-        <div><p class="small muted">Tick the companies to synchronise. Only ticked companies are ever read.</p><div id="companies"></div></div>
+        <div><p class="small muted">Tick the companies to synchronise. Only ticked companies are ever read.${s.link.connected && s.link.maxCompanies ? ` Your plan allows ${s.link.maxCompanies} compan${s.link.maxCompanies === 1 ? "y" : "ies"}.` : ""}</p><div id="companies"></div></div>
       </div>
     </section>
     <div class="grid two">
@@ -478,7 +477,7 @@ async function renderSyncMain() {
       </section>
     </div>
     <section class="panel form"><h2><span class="step">6</span>Business owner &amp; staff accounts <span class="muted small">logins for the mobile app</span></h2>
-      <p class="small muted">These accounts belong to the business (business ID above) and are used in the mobile app, never in this app. Create the owner here; the owner can later add staff from the mobile app, or you can add them here.</p>
+      <p class="small muted">These accounts belong to the connected business and are used in the mobile app, never in this app. Create the owner here; the owner can later add staff from the mobile app, or you can add them here.</p>
       <div id="users"><div class="loading">Loading…</div></div>
       <form id="userForm" class="grid two" style="margin-top:12px">
         <label><span class="l">Email</span><input name="email" type="email" autocomplete="off" required placeholder="owner@example.com"></label>
@@ -490,14 +489,7 @@ async function renderSyncMain() {
     </section>
     <section class="panel"><h2>Log <span class="muted small" id="logPath"></span></h2>
       <div class="row"><button id="logRefresh">Refresh</button><label class="small"><input type="checkbox" id="logAuto"> auto-refresh</label></div>
-      <pre class="log" id="log">…</pre></section>
-    <section class="panel form"><h2>Admin password <span class="muted small">(unlocks the whole app)</span></h2>
-      <form id="pwForm" class="grid two">
-        <label><span class="l">Current password</span><input name="current" type="password" autocomplete="current-password" required></label>
-        <label><span class="l">Username</span><input name="username" value="${esc(s.developer.Username)}"></label>
-        <label><span class="l">New password (min 10 characters)</span><input name="password" type="password" autocomplete="new-password" required minlength="10"></label>
-        <div class="row"><button type="submit">Change password</button><span id="pwResult" class="small"></span></div>
-      </form></section>`;
+      <pre class="log" id="log">…</pre></section>`;
 
   renderSyncStatus();
   renderSyncCompanies(null);
@@ -506,6 +498,37 @@ async function renderSyncMain() {
   syncTallyTest(false);
   loadUsers();
   sync.timer = setInterval(refreshSyncStatus, 5000);
+}
+
+// Step 1: connected (business name, Disconnect) or the reference-key form.
+// The older Supabase URL + key connection stays available under "Advanced".
+function renderConnect(s, env) {
+  const legacy = !s.link.connected && s.cloud.provider !== "wholeflow" && (s.cloud.supabaseUrl || s.business.id || s.cloud.provider === "memory");
+  const revoked = s.link.revoked ? errorBox({ message: "This PC's access was revoked. Connect again with a new activation code." }) : "";
+  if (s.link.connected && !s.link.revoked) {
+    return `<p><span class="tag ok">connected</span> Connected to <strong>${esc(s.link.businessName || s.business.name)}</strong></p>
+      ${s.link.keyError ? errorBox({ message: "The stored PC key cannot be read on this machine (" + s.link.keyError + "). Disconnect and connect again with a new activation code." }) : ""}
+      <p class="small muted">Connected ${s.link.connectedAt ? fmtTime(s.link.connectedAt) : ""} with reference key ${esc(s.link.referenceKey)}. To move this business to another PC, ask WholeFlow support for a new activation code.</p>
+      <div class="row"><button id="disconnect">Disconnect</button><span id="connectResult" class="small"></span></div>`;
+  }
+  return `${revoked}
+    <p class="small muted">Enter the reference key and the activation code you received from WholeFlow support. The activation code works once.</p>
+    <form id="connectForm" class="form">
+      <label><span class="l">Reference key</span><input name="referenceKey" value="${esc(s.link.referenceKey || "")}" placeholder="ABCD-1234-ABCD-1234" autocomplete="off" required></label>
+      <label><span class="l">Activation code</span><input name="activationCode" placeholder="XXXX-XXXX" autocomplete="off" required></label>
+      <div class="row"><button type="submit" class="primary">Connect</button><span id="connectResult" class="small"></span></div>
+    </form>
+    <details ${legacy ? "open" : ""} style="margin-top:12px"><summary class="small">Advanced: connect with Supabase URL and key</summary>
+      ${legacy ? `<p class="small muted">This PC uses the older direct Supabase connection. It keeps working; connecting with a reference key above replaces it.</p>` : ""}
+      <label><span class="l">Business ID (UUID from the businesses table)</span><input id="bizId" value="${esc(s.business.id)}" placeholder="00000000-0000-0000-0000-000000000000"></label>
+      <label><span class="l">Business name (for logs)</span><input id="bizName" value="${esc(s.business.name)}"></label>
+      <label><span class="l">Provider</span><select id="provider"><option value="supabase" ${s.cloud.provider !== "memory" ? "selected" : ""}>Supabase (PostgreSQL)</option><option value="memory" ${s.cloud.provider === "memory" ? "selected" : ""}>Memory (dry run, nothing leaves this PC)</option></select></label>
+      <label><span class="l">Supabase project URL</span><input id="sbUrl" value="${esc(s.cloud.supabaseUrl)}" placeholder="https://xxxx.supabase.co" ${env.includes("SUPABASE_URL") ? "disabled" : ""}></label>
+      <label><span class="l">Service-role key ${s.cloud.hasKey ? '<span class="tag ok">stored</span>' : '<span class="tag warn">not set</span>'} ${s.cloud.keyFromEnv ? '<span class="tag neutral">from environment</span>' : ""}</span>
+        <input id="sbKey" type="password" autocomplete="off" placeholder="${s.cloud.hasKey ? "leave blank to keep the stored key" : "paste the service_role key"}" ${s.cloud.keyFromEnv ? "disabled" : ""}></label>
+      ${s.cloud.keyError ? errorBox({ message: "Stored key cannot be read: " + s.cloud.keyError + " Enter it again." }) : ""}
+      <p class="small muted">Saved with "Save settings" (step 4). Never put the key in the mobile app.</p>
+    </details>`;
 }
 
 async function refreshSyncStatus() {
@@ -526,8 +549,9 @@ function renderSyncStatus() {
         <dt>Background sync</dt><dd>${st.enabled ? `on, every ${st.intervalSeconds / 60} min` : "off"}</dd>
         <dt>Next sync</dt><dd>${st.nextRunAt ? fmtTime(st.nextRunAt) : "—"}${st.consecutiveFailures ? ` <span class="tag warn">retry ${st.consecutiveFailures}</span>` : ""}</dd>
         <dt>Last run</dt><dd>${last ? `${fmtTime(last.startedAt)} · ${esc(last.status)}${last.errorCode ? ` · ${esc(last.errorCode)}: ${esc(last.errorMessage)}` : ""}` : "never"}</dd>
-        ${st.configured ? "" : `<dt>Configuration</dt><dd><span class="tag warn">${esc(st.configMessage)}</span></dd>`}
+        ${st.configured || st.state === "DEVICE_REVOKED" ? "" : `<dt>Configuration</dt><dd><span class="tag warn">${esc(st.configMessage)}</span></dd>`}
       </dl>
+      ${st.message ? `<div class="alert ${st.state === "SUBSCRIPTION_ENDED" || st.state === "DEVICE_REVOKED" ? "bad" : "warn"}" style="grid-column:1/-1">${esc(st.message)}</div>` : ""}
       <div class="table-wrap"><table>
         <thead><tr><th>Company</th><th>Status</th><th>Last successful sync</th><th class="num">Shops</th><th class="num">Transactions</th><th class="num">Suppliers</th><th class="num">Stock items</th><th class="num">Purchase bills</th></tr></thead>
         <tbody>${(st.companies || []).map((c) => `<tr><td>${esc(c.name || c.tallyId)}</td><td>${syncTag(c.status)}${c.lastError ? `<div class="small muted">${esc(c.lastErrorCode)}: ${esc(c.lastError)}</div>` : ""}</td><td>${fmtTime(c.lastSuccessAt)}</td><td class="num">${c.shopCount ?? 0}</td><td class="num">${c.transactionCount ?? 0}</td><td class="num">${c.supplierCount ?? 0}</td><td class="num">${c.stockItemCount ?? 0}</td><td class="num">${c.purchaseCount ?? 0}</td></tr>${(c.warnings || []).map((w) => `<tr><td></td><td colspan="7"><div class="alert warn small" style="margin:0">Warning — ${esc(w)}</div></td></tr>`).join("")}`).join("") || `<tr><td colspan="8" class="empty">No company selected yet.</td></tr>`}</tbody>
@@ -567,10 +591,17 @@ async function syncTallyTest(interactive) {
   renderSyncCompanies(t.connected ? t.companies : null);
 }
 
+// legacyCloud reads the "Advanced" Supabase fields, or keeps the saved values
+// when they are not on the page (connected with a reference key).
+function legacyCloud() {
+  const s = sync.settings;
+  if (!$("#provider")) return { business: s.business, cloud: { provider: s.cloud.provider, supabaseUrl: s.cloud.supabaseUrl, supabaseKey: "" } };
+  return { business: { id: $("#bizId").value, name: $("#bizName").value }, cloud: { provider: $("#provider").value, supabaseUrl: $("#sbUrl").value, supabaseKey: $("#sbKey").value } };
+}
+
 function collectSyncSettings() {
   return {
-    business: { id: $("#bizId").value, name: $("#bizName").value },
-    cloud: { provider: $("#provider").value, supabaseUrl: $("#sbUrl").value, supabaseKey: $("#sbKey").value },
+    ...legacyCloud(),
     sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, fullReconcileHours: +$("#reconcile").value,
             suppliers: $("#syncSuppliers").checked, purchases: $("#syncPurchases").checked, inventory: $("#syncInventory").checked },
     companies: [...document.querySelectorAll("input.cmp")].map((el) => ({ tallyId: el.dataset.id, name: el.dataset.name, enabled: el.checked })),
@@ -582,9 +613,24 @@ function bindSyncActions() {
   $("#cloudTest").onclick = async () => {
     const out = $("#cloudResult"); out.textContent = "Testing…";
     try {
-      const r = await syncApi("POST", "/api/sync/cloud/test", { business: { id: $("#bizId").value }, cloud: { provider: $("#provider").value, supabaseUrl: $("#sbUrl").value, supabaseKey: $("#sbKey").value } });
-      out.innerHTML = r.ok ? `<span class="tag ok">connected</span> ${esc(r.provider)} · business ${esc(r.businessId)} · ${r.responseMs} ms` : `<span class="tag bad">${esc(r.error.code)}</span> ${esc(r.error.message)}`;
+      const r = await syncApi("POST", "/api/sync/cloud/test", legacyCloud());
+      out.innerHTML = r.ok ? `<span class="tag ok">connected</span> ${esc(r.businessName || r.provider)} · business ${esc(r.businessId)} · ${r.responseMs} ms` : `<span class="tag bad">${esc(r.error.code)}</span> ${esc(r.error.message)}`;
     } catch (e) { out.innerHTML = `<span class="tag bad">error</span> ${esc(e.message)}`; }
+  };
+  if ($("#connectForm")) $("#connectForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target); const out = $("#connectResult"); out.textContent = "Connecting…";
+    try {
+      const r = await syncApi("POST", "/api/sync/connect", { referenceKey: f.get("referenceKey"), activationCode: f.get("activationCode") });
+      out.innerHTML = `<span class="tag ok">connected</span> Connected to ${esc(r.businessName)}`;
+      await renderSyncMain(); loadSyncSummary();
+    } catch (err) { out.innerHTML = `<span class="tag bad">not connected</span> ${esc(err.message)}`; }
+  };
+  if ($("#disconnect")) $("#disconnect").onclick = async () => {
+    if (!confirm("Disconnect this PC from the WholeFlow server? Syncing stops until it is connected again with a new activation code.")) return;
+    const out = $("#connectResult");
+    try { await syncApi("POST", "/api/sync/disconnect"); await renderSyncMain(); loadSyncSummary(); }
+    catch (err) { out.innerHTML = `<span class="tag bad">error</span> ${esc(err.message)}`; }
   };
   $("#save").onclick = async () => {
     const out = $("#saveResult"); out.textContent = "Saving…";
@@ -606,12 +652,6 @@ function bindSyncActions() {
       e.target.reset();
       loadUsers();
     } catch (err) { out.innerHTML = `<span class="tag bad">${esc(err.code || "error")}</span> ${esc(err.message)}`; }
-  };
-  $("#pwForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target); const out = $("#pwResult");
-    try { await syncApi("POST", "/api/sync/password", { current: f.get("current"), username: f.get("username"), password: f.get("password") }); out.innerHTML = `<span class="tag ok">changed</span>`; e.target.reset(); }
-    catch (err) { out.innerHTML = `<span class="tag bad">${esc(err.message)}</span>`; }
   };
 }
 
@@ -1103,42 +1143,19 @@ function showLogin(err) {
   setChrome(false);
   view.innerHTML = `<div class="panel login"><h1>WholeFlow</h1>${err ? errorBox({ message: err }) : ""}
     <form id="loginForm" class="form">
-      <label><span class="l">Username</span><input name="username" autocomplete="username" required autofocus></label>
+      <label><span class="l">Email</span><input name="email" autocomplete="username" required autofocus></label>
       <label><span class="l">Password</span><input name="password" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Log in</button>
     </form>
-    <p class="small muted">Admin access only.</p></div>`;
+    <p class="small muted">Log in with your WholeFlow account. Without internet, an account that logged in here recently still works for a few days.</p></div>`;
   $("#loginForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     try {
-      await syncApi("POST", "/api/sync/login", { username: f.get("username"), password: f.get("password") });
+      await syncApi("POST", "/api/sync/login", { email: f.get("email"), password: f.get("password") });
       loginShown = false;
       start();
     } catch (err) { loginShown = false; showLogin(err.message); }
-  };
-}
-
-function showSetupRequired(err) {
-  setChrome(false);
-  view.innerHTML = `<div class="panel login"><h1>WholeFlow</h1><h2>Welcome — create the admin account</h2>
-    <p class="small muted">This is the first run. Choose the username and password that will unlock this app. Only you should know them; the shop owner never uses this app.</p>
-    ${err ? errorBox({ message: err }) : ""}
-    <form id="setupForm" class="form">
-      <label><span class="l">Username</span><input name="username" value="admin" autocomplete="username" required></label>
-      <label><span class="l">Password (min 10 characters)</span><input name="password" type="password" autocomplete="new-password" required minlength="10" autofocus></label>
-      <label><span class="l">Repeat password</span><input name="confirm" type="password" autocomplete="new-password" required minlength="10"></label>
-      <button class="primary" type="submit">Create account and continue</button>
-    </form>
-    </div>`;
-  $("#setupForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    if (f.get("password") !== f.get("confirm")) return showSetupRequired("The two passwords do not match.");
-    try {
-      await syncApi("POST", "/api/sync/setup", { username: f.get("username"), password: f.get("password"), confirm: f.get("confirm") });
-      start();
-    } catch (err) { showSetupRequired(err.message); }
   };
 }
 
@@ -1148,7 +1165,6 @@ async function start() {
   let session;
   try { session = await syncApi("GET", "/api/sync/session"); }
   catch (e) { view.innerHTML = errorBox(e); return; }
-  if (session.setupRequired) return showSetupRequired();
   if (!session.loggedIn) return showLogin();
   setChrome(true);
   await loadStatus();

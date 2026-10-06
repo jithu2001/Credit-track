@@ -36,7 +36,6 @@ func newHarness(t *testing.T, companies ...*fakeCompany) *harness {
 		s.Business = BusinessSettings{ID: bizA, Name: "JMJ Marketing"}
 		s.Cloud.Provider = ProviderMemory
 		s.Sync = SyncSettings{Enabled: true, IntervalSeconds: 300, Transactions: true, FullReconcileHours: 24}
-		s.Developer = DeveloperSettings{Username: "dev", PasswordHash: "x"}
 		for _, c := range companies {
 			s.Companies = append(s.Companies, CompanySetting{TallyID: c.GUID, Name: c.Name, Enabled: true})
 		}

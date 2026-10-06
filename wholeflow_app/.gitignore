@@ -50,5 +50,6 @@ app.*.map.json
 # WholeFlow: per-environment Supabase config (publishable key only; never a service-role key)
 /env/*.json
 !/env/example.json
+!/env/hosted.json
 .env
 .env.*

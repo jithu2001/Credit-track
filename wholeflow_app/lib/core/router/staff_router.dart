@@ -11,6 +11,7 @@ import '../../features/dashboard/presentation/staff_dashboard_screen.dart';
 import '../../features/home/staff_home_shell.dart';
 import '../../features/inventory/presentation/staff_inventory_screen.dart';
 import '../../features/inventory/presentation/stock_item_screen.dart';
+import '../../features/subscription/presentation/paused_screen.dart';
 import '../../features/settings/presentation/staff_settings_screen.dart';
 import '../../features/shop_detail/presentation/shop_detail_screen.dart';
 import '../../features/shops/presentation/shops_screen.dart';
@@ -21,7 +22,7 @@ import '../../features/visits/presentation/visit_detail_screen.dart';
 
 part 'staff_router.g.dart';
 
-const _authRoutes = {'/splash', '/login', '/change-password', '/not-staff'};
+const _authRoutes = {'/splash', '/login', '/change-password', '/paused', '/not-staff'};
 
 /// Where the staff router should send the user, given the session; null = stay.
 @visibleForTesting
@@ -31,6 +32,8 @@ String? staffRedirectFor(AsyncValue<Session> session, String location) {
   switch (s) {
     case SignedOut():
       return location == '/login' ? null : '/login';
+    case Paused():
+      return location == '/paused' ? null : '/paused';
     case SignedIn(:final user, :final mustChangePassword):
       if (mustChangePassword) return location == '/change-password' ? null : '/change-password';
       if (user.isOwner) return location == '/not-staff' ? null : '/not-staff';
@@ -54,6 +57,7 @@ GoRouter staffRouter(Ref ref) {
       GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/change-password', builder: (context, state) => const ForcePasswordChangeScreen()),
+      GoRoute(path: '/paused', builder: (context, state) => const PausedScreen(forOwner: false)),
       GoRoute(path: '/not-staff', builder: (context, state) => const NotStaffScreen()),
       GoRoute(
         path: '/shop/:id',

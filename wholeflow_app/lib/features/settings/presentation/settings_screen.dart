@@ -10,6 +10,7 @@ import '../../../core/widgets/states.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../auth/presentation/password_form.dart';
 import '../../auth/presentation/session_controller.dart';
+import '../../subscription/presentation/subscription_banner.dart';
 import 'theme_controller.dart';
 
 part 'settings_screen.g.dart';
@@ -88,6 +89,7 @@ class SettingsScreen extends ConsumerWidget {
               title: const Text('Change password'),
               onTap: () => _changePassword(context),
             ),
+            const SubscriptionSettingsTiles(forOwner: true),
             ListTile(
               leading: const Icon(Icons.logout_rounded),
               title: const Text('Sign out'),

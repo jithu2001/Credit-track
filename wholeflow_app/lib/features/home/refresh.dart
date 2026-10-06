@@ -12,6 +12,7 @@ import '../purchases/presentation/purchase_providers.dart';
 import '../shop_detail/presentation/shop_detail_providers.dart';
 import '../shops/presentation/shop_list_controller.dart';
 import '../sites/presentation/site_providers.dart';
+import '../subscription/presentation/subscription_providers.dart';
 import '../suppliers/presentation/supplier_providers.dart';
 import '../visits/presentation/location_providers.dart';
 import '../visits/presentation/visit_providers.dart';
@@ -23,6 +24,7 @@ import '../visits/presentation/visit_providers.dart';
 Future<void> refreshCompanyData(WidgetRef ref) async {
   unawaited(ref.read(sessionControllerProvider.notifier).revalidate());
   ref
+    ..invalidate(serviceStatusProvider)
     ..invalidate(companiesProvider)
     ..invalidate(myAccessProvider)
     ..invalidate(companyAreasProvider)

@@ -1,0 +1,133 @@
+// Command wholeflow-control is the WholeFlow server's control service: it
+// creates businesses, resolves reference keys for the phone apps, activates
+// Tally PCs, records manual payments and serves the admin app's API.
+//
+//	wholeflow-control serve                     run the HTTP API (LISTEN, default 127.0.0.1:8100)
+//	wholeflow-control create-admin EMAIL NAME   create or reset an admin (password read from stdin)
+//
+// Configuration comes from the environment (systemd EnvironmentFile
+// /opt/wholeflow/control.env): CONTROL_DB_URL, PG_ADMIN_URL, MASTER_KEY,
+// PUBLIC_URL, KIT_DIR, INTERNAL_TOKEN, LISTEN.
+package main
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"wholeflow/internal/control"
+)
+
+func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: wholeflow-control serve | create-admin EMAIL NAME")
+		os.Exit(2)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	var err error
+	switch os.Args[1] {
+	case "serve":
+		err = serve(ctx, log)
+	case "create-admin":
+		err = createAdmin(ctx, os.Args[2:])
+	default:
+		err = fmt.Errorf("unknown command %q", os.Args[1])
+	}
+	if err != nil {
+		log.Error("exit", "error", err.Error())
+		os.Exit(1)
+	}
+}
+
+func env(key, def string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return def
+}
+
+func openStore(ctx context.Context) (*control.Store, error) {
+	store, err := control.OpenStore(ctx, os.Getenv("CONTROL_DB_URL"), os.Getenv("PG_ADMIN_URL"))
+	if err != nil {
+		return nil, err
+	}
+	if applied, err := store.Migrate(ctx); err != nil {
+		store.Close()
+		return nil, err
+	} else if len(applied) > 0 {
+		fmt.Fprintln(os.Stderr, "control_db migrations applied:", strings.Join(applied, ", "))
+	}
+	return store, nil
+}
+
+func serve(ctx context.Context, log *slog.Logger) error {
+	sealer, err := control.NewSealer(os.Getenv("MASTER_KEY"))
+	if err != nil {
+		return err
+	}
+	token := os.Getenv("INTERNAL_TOKEN")
+	if len(token) < 32 {
+		return errors.New("INTERNAL_TOKEN must be at least 32 characters")
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	svc := &control.Service{Store: store, Sealer: sealer, KitDir: env("KIT_DIR", "/opt/wholeflow"),
+		PublicURL: env("PUBLIC_URL", ""), HTTP: &http.Client{Timeout: 30 * time.Second}, Now: time.Now}
+	srv := &http.Server{
+		Addr:              env("LISTEN", "127.0.0.1:8100"),
+		Handler:           control.NewServer(svc, log, token).Routes(),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      15 * time.Minute, // creating a business runs the provisioning script
+	}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdown)
+	}()
+	log.Info("listening", "addr", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
+func createAdmin(ctx context.Context, args []string) error {
+	if len(args) < 1 {
+		return errors.New("usage: create-admin EMAIL [NAME]  (password on stdin)")
+	}
+	name := ""
+	if len(args) > 1 {
+		name = strings.Join(args[1:], " ")
+	}
+	fmt.Fprint(os.Stderr, "Password (min 10 characters): ")
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return errors.New("no password given")
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	id, err := control.CreateAdmin(ctx, store, args[0], name, strings.TrimRight(line, "\r\n"))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "\nAdmin saved:", id)
+	return nil
+}

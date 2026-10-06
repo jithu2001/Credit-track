@@ -50,6 +50,8 @@ dependencies:
   flutter_map: ^8.3.2
   latlong2: ^0.10.1
   geolocator: ^14.1.1
+  mobile_scanner: ^7.4.2
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -66,7 +68,6 @@ dev_dependencies:
   freezed: ^4.0.2
   json_serializable: ^6.14.1
   mocktail: ^1.0.5
-  http: ^1.6.0
   flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the

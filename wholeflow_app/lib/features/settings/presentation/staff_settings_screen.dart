@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../auth/presentation/session_controller.dart';
 import 'settings_screen.dart';
+import '../../subscription/presentation/subscription_banner.dart';
 import 'theme_controller.dart';
 
 class StaffSettingsScreen extends ConsumerWidget {
@@ -53,6 +54,7 @@ class StaffSettingsScreen extends ConsumerWidget {
               title: const Text('Change password'),
               onTap: () => _changePassword(context),
             ),
+            const SubscriptionSettingsTiles(forOwner: false),
             ListTile(
               leading: const Icon(Icons.logout_rounded),
               title: const Text('Sign out'),

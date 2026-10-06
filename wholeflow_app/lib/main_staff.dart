@@ -1,4 +1,4 @@
 import 'bootstrap.dart';
 import 'staff_app.dart';
 
-Future<void> main() => bootstrapWholeFlow(appWidget: const WholeFlowStaffApp());
+Future<void> main() => bootstrapWholeFlow(appWidget: const WholeFlowStaffApp(), title: 'WholeFlow Staff');

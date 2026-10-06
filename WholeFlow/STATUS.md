@@ -1,10 +1,10 @@
 # WholeFlow – Application Status
 
-_Status as of 27 September 2026. Companion to `README.md` (build/run), `docs/SYNC_SETUP.md`, `docs/SYNC_ARCHITECTURE.md` and `docs/DATABASE_SCHEMA.md`._
+_Status as of 6 October 2026 (section 9 adds the WholeFlow server connection). Companion to `README.md` (build/run), `docs/SYNC_SETUP.md`, `docs/SYNC_ARCHITECTURE.md` and `docs/DATABASE_SCHEMA.md`._
 
 ## 1. What the app is
 
-WholeFlow is **one executable, `wholeflow.exe`**, that does two things in one process on the customer's Tally PC, entirely behind **one admin login** (default username `admin`; it is a tool for the developer/administrator only):
+WholeFlow is **one executable, `wholeflow.exe`**, that does two things in one process on the customer's Tally PC, entirely behind **a login** (a WholeFlow account checked by the control service; there is no local account; it is a tool for the developer/administrator only):
 
 - **Shop Outstanding web app** (http://127.0.0.1:8080): dashboard, searchable shop list, per-shop detail with a reconciled transaction summary, outstanding report and CSV/Excel export, read live from TallyPrime. Unchanged in scope.
 - **Cloud Sync** (the app's *Cloud Sync* page): choose which Tally companies to synchronise, configure Supabase, run and monitor a **background sync** that upserts shops, balances and transactions into the cloud every few minutes for a future owner/staff mobile app.
@@ -40,7 +40,7 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Single executable and process for web app + sync; one port; single log | Done |
 | Tally: detect process, port from `tally.ini`, connect, discover companies, select/disable companies | Done |
 | Tally: voucher fetch with server-side `ALTERID` filter, voucher GUID list | Done, verified live |
-| Admin login protecting the whole app (first-run account creation in the browser, PBKDF2, no default, `set-password` reset, lockout, CSRF header, HttpOnly/Strict cookie) | Done |
+| Login protecting the whole app (WholeFlow account checked by the control service at every sign-in; no local account and no offline login, both removed in 0.4.1; PBKDF2, lockout, CSRF header, HttpOnly/Strict cookie; first-run account step removed in 0.4.0) | Done |
 | Owner/staff accounts | Created and managed from the Cloud Sync page (Supabase Auth admin API + `users` row): create, list, reset password, disable/enable. Staff permission enforcement remains future work (`permissions` jsonb + RLS). |
 | Background sync: immediate + interval (60–86400 s, default 300), backoff 30 s / 60 s / 5 min, "Sync now" | Done |
 | Tally offline / internet offline handling; last successful sync preserved; no deletions on outage | Done, tested |
@@ -77,7 +77,7 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 ## 4. How it runs
 
 1. `wholeflow.exe` (no arguments, or `run`) loads `.env` from the working directory, the exe directory and the data directory, reads `config.json`/`state.json`, opens the log, builds one `tally.Service`, registers the login/sync API and the web app API (wrapped in the login check) and the static files on one mux, writes `control.token`, starts the HTTP server and the sync scheduler. The browser shows a login screen first; after login the dashboards and the Cloud Sync page share the session. Ctrl+C or a service stop shuts both down.
-2. Other commands (`check`/`-check`, `status`, `sync`, `config`, `set-password`, `install`, `uninstall`, `start`, `stop`, `restart`, `version`) reuse the same wiring; `status`/`sync` talk to a running instance over localhost with the control token so only one process ever syncs.
+2. Other commands (`check`/`-check`, `status`, `sync`, `config`, `install`, `uninstall`, `start`, `stop`, `restart`, `version`) reuse the same wiring; `status`/`sync` talk to a running instance over localhost with the control token so only one process ever syncs.
 3. A sync run: authenticate to the cloud → list open Tally companies → connection row → per selected company: company row, full shop snapshot with diff-based soft deletes, vouchers with `ALTERID > cursor` (full first time; light GUID list every 24 h for deletions) → sync state, sync log, local state. Details in `docs/SYNC_ARCHITECTURE.md`.
 
 ## 5. Verified facts about TallyPrime 6 (worth keeping)
@@ -134,3 +134,20 @@ Known limits, accepted for now:
 1. A full voucher sync is one Tally request (about 33 MB for the sample company; capped at 512 MB). A company roughly 15 times larger would need windowed fetching.
 2. While Tally is offline the cloud `sync_state` records the error, but `tally_companies.sync_status` keeps its last value; the mobile app should read `sync_state`.
 3. `deploy\Install-WholeFlow.cmd` is syntax-checked but has not yet been run end to end on a client PC.
+
+## 9. Multi-business hosting, desktop part (6 Oct 2026, version 0.4.0)
+
+Phase 4 of `docs/MULTI_TENANT_PLAN.md` (sections 5.3, 5.4) on the PC side. Not yet run against the live control service from a real PC (no activation code was issued for testing); covered by unit tests with fakes.
+
+| Area | Change |
+|---|---|
+| Connect by reference key | Cloud Sync step 1 is now *reference key + activation code → Connect* (`POST /control/activate`, control service default `https://api.jitsuji.xyz`, override `CONTROL_URL` / `cloud.controlUrl`). Stores business id/name, base URL, PC id, plan limit and the **PC key** (DPAPI, like the service key); shows "Connected to <business>" and *Disconnect*. Provider `wholeflow` = the existing Supabase client against `<base_url>` with the PC key. The Supabase URL + service-key form remains under *Advanced* for PCs already set up that way (JMJ until cut-over). |
+| Subscription pause | HTTP 402 → run status `paused`, state `SUBSCRIPTION_ENDED`, "Subscription ended — sync paused" in the header pill, Cloud Sync page and `status`; logged once, no backoff, nothing deleted, resumes by itself. |
+| PC revoked | HTTP 403 `device_revoked` (or heartbeat `revoked`) → sync stops, saved in config, "This PC's access was revoked. Connect again with a new activation code." |
+| Heartbeat | `POST /control/heartbeat` with the app version at start and after runs (≤ every 5 min, also while sync is off); updates `max_companies` and subscription state; 402 → `ended`. |
+| Company limit | Ticking more than `max_companies` is refused ("Your plan allows N companies. Ask WholeFlow support to upgrade."); if a downgrade leaves too many ticked, each run syncs the first N and warns (`OVER_PLAN_LIMIT`). Legacy connection: no limit. |
+| Login | Email + password checked with `POST /control/pc/login`; nothing is stored on the PC and there is no offline login (0.4.1); logins stored by older versions are deleted at start. First-run "create an admin account" step removed (`/api/sync/setup` gone). No local account (`set-password` removed in 0.4.1). Lockout, CSRF header and cookies unchanged. The sync no longer requires a local password to be configured. |
+| Owner/staff accounts | Unchanged code; verified by test that PostgREST and the Auth admin API are reached under a path-prefixed base URL (`…/b/demo/rest/v1`, `…/b/demo/auth/v1/admin/users`) with the PC key. |
+
+Open points: `windows_user` sent at activation is the account the app runs as (LocalSystem for the service), not the person at the PC; `deploy\Install-WholeFlow.*` texts may still mention creating the admin account in the browser (not changed here).
+

@@ -132,6 +132,14 @@ func (c *client) doURL(ctx context.Context, op, method, u, prefer, rangeHdr stri
 		return raw, resp.Header, nil
 	}
 	msg := postgrestMessage(raw)
+	// The WholeFlow server's access check: 402 once the subscription has
+	// ended, 403 device_revoked for a PC whose key was revoked.
+	if resp.StatusCode == http.StatusPaymentRequired {
+		return nil, nil, &cloud.Error{Kind: cloud.KindSubscriptionEnded, Op: op, Msg: msg}
+	}
+	if resp.StatusCode == http.StatusForbidden && isDeviceRevoked(raw) {
+		return nil, nil, &cloud.Error{Kind: cloud.KindDeviceRevoked, Op: op, Msg: msg}
+	}
 	if resp.StatusCode == http.StatusUnprocessableEntity || resp.StatusCode == http.StatusConflict {
 		// Auth admin validation errors (email exists, weak password): the caller's fault, not an outage.
 		return nil, nil, &cloud.Error{Kind: cloud.KindError, Op: op, Msg: msg}
@@ -192,6 +200,15 @@ func postgrestMessage(raw []byte) string {
 		s = s[:300] + "…"
 	}
 	return s
+}
+
+// isDeviceRevoked recognises {"code":"PT403","message":"device_revoked",...}.
+func isDeviceRevoked(raw []byte) bool {
+	var e struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	return json.Unmarshal(raw, &e) == nil && e.Message == "device_revoked"
 }
 
 func redact(s, secret string) string {

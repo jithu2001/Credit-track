@@ -18,9 +18,17 @@ TallyPrime ─▶ wholeflow.exe (Tally PC) ─▶ Supabase (Postgres + RLS) ─�
 
 ## Configure and run
 
-The app needs only the project URL and the **publishable (anon) key**. Never put the service-role key here: it bypasses RLS.
+There are two kinds of build:
+
+- **Hosted (for customers):** `env/hosted.json` holds only the WholeFlow server address (`CONTROL_URL`). On first launch the app asks for the business's **reference key** (typed or scanned from the QR code in the admin app), shows "Connect to <business>?", remembers it, and then shows the normal login. Settings → **Switch business** forgets it. Owners see a "renewal due" banner, owners and staff see a red banner in the grace period, and once the subscription has ended (or the business is suspended) both apps show only a "paused" screen with a Refresh button. The server enforces this too (HTTP 402).
+- **Fixed project (development, or a business still on its own Supabase project):** `env/dev.json` with `SUPABASE_URL` and the **publishable (anon) key**; the connect screen is skipped. Never put the service-role key here: it bypasses RLS.
 
 ```bash
+# Hosted build
+flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
+flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
+
+# Fixed-project build
 cp env/example.json env/dev.json      # fill in SUPABASE_URL and SUPABASE_ANON_KEY
 flutter pub get
 
@@ -35,7 +43,7 @@ flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-
 
 Both apps can be installed and run side-by-side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). The Owner app keeps the v0.3.0 application id, so existing installs update in place to WholeFlow Owner; staff on v0.3.0 see an "Owner access required" screen and need to install WholeFlow Staff. Owner is the default flavor, so a plain `flutter run` builds it.
 
-`env/*.json` is gitignored except `example.json`. A build without these values shows a "missing Supabase settings" screen.
+`env/*.json` is gitignored except `example.json` and `hosted.json` (no secrets in either).
 
 ## Backend pieces (in `WholeFlow/supabase/`)
 
