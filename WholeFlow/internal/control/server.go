@@ -79,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 	s.webRoutes(mux)
 	s.deleteRoutes(mux)
 	s.leadRoutes(mux)
+	s.ownerRoutes(mux)
 	return s.recoverer(mux)
 }
 

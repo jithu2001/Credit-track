@@ -210,7 +210,6 @@ class _Inventory implements InventoryRepository {
       group: 'Tyres',
       unit: 'Nos',
       closingQty: 1250,
-      status: StockStatus.inStock,
       closingValue: withCosts ? const Money(287500000) : null,
     ),
     StockItem(
@@ -219,7 +218,6 @@ class _Inventory implements InventoryRepository {
       group: 'Tyres',
       unit: 'Nos',
       closingQty: 642,
-      status: StockStatus.inStock,
       closingValue: withCosts ? const Money(96300000) : null,
     ),
     StockItem(
@@ -228,7 +226,6 @@ class _Inventory implements InventoryRepository {
       group: 'Lubricants',
       unit: 'Ltr',
       closingQty: 388,
-      status: StockStatus.inStock,
       closingValue: withCosts ? const Money(15132000) : null,
     ),
     StockItem(
@@ -238,7 +235,6 @@ class _Inventory implements InventoryRepository {
       unit: 'Nos',
       closingQty: 14,
       reorderLevel: 50,
-      status: StockStatus.low,
       closingValue: withCosts ? const Money(2940000) : null,
     ),
     StockItem(
@@ -248,15 +244,18 @@ class _Inventory implements InventoryRepository {
       unit: 'Set',
       closingQty: 9,
       reorderLevel: 40,
-      status: StockStatus.low,
       closingValue: withCosts ? const Money(1782000) : null,
     ),
-    const StockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', closingQty: 0, status: StockStatus.zero),
+    const StockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', closingQty: 0),
   ];
   @override
   Future<StockItem> item(String itemId, {required bool withCosts}) async => throw UnimplementedError();
   @override
   Future<List<ItemPurchase>> purchasesOf(String itemId, {int limit = 20}) async => const [];
+  @override
+  Future<Map<String, double>> minimums(String companyId) async => const {};
+  @override
+  Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {}
 }
 
 class _Purchases implements PurchaseRepository {

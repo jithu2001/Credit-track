@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/errors/app_failure.dart';
+import '../../../core/format.dart';
 import '../../../core/providers.dart';
 import '../domain/stock_item.dart';
 
@@ -17,16 +20,46 @@ class InventoryRepository {
   String _columns(bool withCosts) => withCosts ? StockItem.ownerColumns : StockItem.staffColumns;
   String _idColumn(bool withCosts) => withCosts ? 'stock_item_id' : 'id';
 
-  /// Every active stock item of a company, sorted by name.
+  /// Every active stock item of a company, sorted by name, with the owner's
+  /// minimum stock merged in.
   Future<List<StockItem>> items(String companyId, {required bool withCosts}) async {
     try {
-      final rows = await fetchAll((from, to) {
-        var q = _client.from(_table(withCosts)).select(_columns(withCosts)).eq('company_id', companyId);
-        // The view already leaves out deleted items.
-        if (!withCosts) q = q.isFilter('deleted_at', null);
-        return q.order('name', ascending: true).order(_idColumn(withCosts), ascending: true).range(from, to);
-      });
-      return rows.map(StockItem.fromJson).toList();
+      final (rows, mins) = await (
+        fetchAll((from, to) {
+          var q = _client.from(_table(withCosts)).select(_columns(withCosts)).eq('company_id', companyId);
+          // The view already leaves out deleted items.
+          if (!withCosts) q = q.isFilter('deleted_at', null);
+          return q.order('name', ascending: true).order(_idColumn(withCosts), ascending: true).range(from, to);
+        }),
+        minimums(companyId),
+      ).wait;
+      return [
+        for (final row in rows)
+          if (StockItem.fromJson(row) case final item) item.withMinimum(mins[item.id]),
+      ];
+    } catch (e) {
+      throw AppFailure.from(e is ParallelWaitError ? (e.errors.$1 ?? e.errors.$2 ?? e) : e);
+    }
+  }
+
+  /// The owner's minimum stock per item id (`stock_minimums`).
+  Future<Map<String, double>> minimums(String companyId) async {
+    final rows = await fetchAll(
+      (from, to) => _client
+          .from('stock_minimums')
+          .select('stock_item_id,min_qty')
+          .eq('company_id', companyId)
+          .order('stock_item_id', ascending: true)
+          .range(from, to),
+    );
+    return {for (final r in rows) r['stock_item_id'] as String: parseQty(r['min_qty'])};
+  }
+
+  /// Sets [min] as the minimum stock of every item in [itemIds]; null or 0
+  /// removes it. Owner only (the server refuses anyone else).
+  Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {
+    try {
+      await _client.rpc('set_stock_minimum', params: {'p_company': companyId, 'p_items': itemIds.toSet().toList(), 'p_min': min});
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -38,7 +71,8 @@ class InventoryRepository {
       if (!withCosts) q = q.isFilter('deleted_at', null);
       final row = await q.maybeSingle();
       if (row == null) throw const AppFailure(FailureKind.notFound, 'This item is not available.');
-      return StockItem.fromJson(row);
+      final min = await _client.from('stock_minimums').select('min_qty').eq('stock_item_id', itemId).maybeSingle();
+      return StockItem.fromJson(row).withMinimum(min == null ? null : parseQty(min['min_qty']));
     } catch (e) {
       throw AppFailure.from(e);
     }

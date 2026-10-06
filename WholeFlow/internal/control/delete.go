@@ -147,7 +147,7 @@ func (s *Server) deleteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /control/admin/businesses/{id}/delete", s.admin(s.deleteBusiness))
 }
 
-// checkOwnPassword: deleting needs the signed-in admin's password again.
+// checkOwnPassword: deleting data and resetting a login need the signed-in admin's password again.
 // Failures count towards the same lockout as signing in.
 func (s *Server) checkOwnPassword(r *http.Request, password string) error {
 	a := adminOf(r)
@@ -158,7 +158,7 @@ func (s *Server) checkOwnPassword(r *http.Request, password string) error {
 	if err := s.Svc.Store.DB.QueryRow(r.Context(), `select password_hash from admins where id = $1`, a.ID).Scan(&hash); err != nil ||
 		!auth.VerifyPassword(hash, password) {
 		s.limiter.Failure(a.Email)
-		return userErr(http.StatusForbidden, "BAD_PASSWORD", "Your password is wrong. Nothing was deleted.")
+		return userErr(http.StatusForbidden, "BAD_PASSWORD", "Your password is wrong. Nothing was changed.")
 	}
 	s.limiter.Success(a.Email)
 	return nil

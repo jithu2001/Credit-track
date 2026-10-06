@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/format.dart';
+import '../../inventory/domain/stock_item.dart';
+import '../../inventory/presentation/inventory_providers.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
@@ -119,6 +121,7 @@ class _DashboardBody extends ConsumerWidget {
         if (ref.watch(currentUserProvider)?.isOwner ?? false) ...[
           const SizedBox(height: Insets.m),
           _OverdueCard(companyId: company.id),
+          StockAlertCard(companyId: company.id),
           VisitsTodayCard(companyId: company.id),
         ],
         const SizedBox(height: Insets.xl),
@@ -214,6 +217,88 @@ class _OverdueCard extends ConsumerWidget {
               ),
               Icon(Icons.chevron_right_rounded, color: fg),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Owner: items at or below their minimum stock, opening the Stock tab on the
+/// low-stock filter. Hidden until some item has a minimum.
+class StockAlertCard extends ConsumerWidget {
+  const StockAlertCard({super.key, required this.companyId});
+
+  final String companyId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = ref.watch(stockItemsProvider(companyId)).value;
+    if (items == null || !items.any((i) => i.hasMinimum)) return const SizedBox.shrink();
+    final alerts = stockAlerts(items);
+    final s = context.semantic;
+    final (bg, fg) = alerts.isEmpty
+        ? (context.colors.surfaceContainerHigh, context.colors.onSurface)
+        : (s.warningContainer, s.onWarningContainer);
+    return Padding(
+      padding: const EdgeInsets.only(top: Insets.s),
+      child: Card.filled(
+        key: const Key('stock-alert'),
+        color: bg,
+        child: InkWell(
+          onTap: () {
+            ref.read(inventoryStatusFilterProvider.notifier).set(null);
+            ref.read(inventoryBelowMinimumProvider.notifier).set(alerts.isNotEmpty);
+            context.go('/stock');
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(Insets.l),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(alerts.isEmpty ? Icons.inventory_2_outlined : Icons.production_quantity_limits_rounded, color: fg),
+                const SizedBox(width: Insets.m),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        alerts.isEmpty ? 'Stock above minimum' : '${plural(alerts.length, 'item')} at or below minimum',
+                        style: context.text.titleMedium?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                      ),
+                      if (alerts.isEmpty)
+                        Text('Every item with a minimum has enough stock', style: context.text.bodySmall?.copyWith(color: fg))
+                      else
+                        for (final i in alerts.take(3))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            // Long Tally names give way; the quantities always show.
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    i.name,
+                                    style: context.text.bodySmall?.copyWith(color: fg),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: Insets.s),
+                                Text(
+                                  '${formatQty(i.closingQty, i.unit)} of ${formatQty(i.effectiveMin, i.unit)}',
+                                  style: context.text.bodySmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                                ),
+                              ],
+                            ),
+                          ),
+                      if (alerts.length > 3)
+                        Text('and ${alerts.length - 3} more', style: context.text.bodySmall?.copyWith(color: fg)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: fg),
+              ],
+            ),
           ),
         ),
       ),

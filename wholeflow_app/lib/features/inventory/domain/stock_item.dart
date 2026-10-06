@@ -1,7 +1,9 @@
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 
-/// `stock_items.stock_status`, computed by the sync service from Tally.
+/// An item's stock status, worked out on the phone from its quantity and
+/// minimum (see [StockItem.status]), so the list, the filters and the
+/// dashboard's stock alert always agree.
 enum StockStatus {
   inStock('in_stock', 'In stock'),
   low('low', 'Low stock'),
@@ -27,7 +29,7 @@ class StockItem {
     this.unit,
     this.closingQty = 0,
     this.reorderLevel = 0,
-    this.status = StockStatus.zero,
+    this.minQty,
     this.syncedAt,
     this.closingRate,
     this.closingValue,
@@ -38,11 +40,11 @@ class StockItem {
 
   /// From `v_stock_items` (owner): includes cost and the latest purchase.
   static const ownerColumns =
-      'stock_item_id,name,aliases,stock_group,unit,closing_qty,closing_rate,closing_value,reorder_level,stock_status,'
+      'stock_item_id,name,aliases,stock_group,unit,closing_qty,closing_rate,closing_value,reorder_level,'
       'synced_at,last_purchase_date,last_purchase_rate,last_supplier';
 
   /// From `stock_items` (staff): quantities only, no purchase prices.
-  static const staffColumns = 'id,name,aliases,stock_group,unit,closing_qty,reorder_level,stock_status,synced_at';
+  static const staffColumns = 'id,name,aliases,stock_group,unit,closing_qty,reorder_level,synced_at';
 
   factory StockItem.fromJson(Map<String, dynamic> json) {
     Money? money(String key) => json[key] == null ? null : Money.parse(json[key]);
@@ -54,7 +56,6 @@ class StockItem {
       unit: json['unit'] as String?,
       closingQty: parseQty(json['closing_qty']),
       reorderLevel: parseQty(json['reorder_level']),
-      status: StockStatus.parse(json['stock_status']),
       syncedAt: json['synced_at'] == null ? null : DateTime.tryParse(json['synced_at'] as String),
       closingRate: money('closing_rate'),
       closingValue: money('closing_value'),
@@ -72,9 +73,51 @@ class StockItem {
   final String? group;
   final String? unit;
   final double closingQty;
+
+  /// Tally's reorder level (0 = none).
   final double reorderLevel;
-  final StockStatus status;
+
+  /// The owner's minimum stock for this item (`stock_minimums`); null = not set.
+  final double? minQty;
   final DateTime? syncedAt;
+
+  /// The level that counts as low: the owner's minimum, else Tally's reorder
+  /// level; 0 = no minimum at all.
+  double get effectiveMin => (minQty ?? 0) > 0 ? minQty! : (reorderLevel > 0 ? reorderLevel : 0);
+
+  bool get hasMinimum => effectiveMin > 0;
+
+  /// The stock alert: at or below the minimum (includes out of stock).
+  bool get atOrBelowMinimum => hasMinimum && closingQty <= effectiveMin;
+
+  /// How much is needed to get back to the minimum.
+  double get shortfall => atOrBelowMinimum ? effectiveMin - closingQty : 0;
+
+  StockStatus get status => closingQty < 0
+      ? StockStatus.negative
+      : closingQty == 0
+      ? StockStatus.zero
+      : atOrBelowMinimum
+      ? StockStatus.low
+      : StockStatus.inStock;
+
+  /// The same item with the owner's minimum [min] (null or 0 = removed).
+  StockItem withMinimum(double? min) => StockItem(
+    id: id,
+    name: name,
+    aliases: aliases,
+    group: group,
+    unit: unit,
+    closingQty: closingQty,
+    reorderLevel: reorderLevel,
+    minQty: (min ?? 0) > 0 ? min : null,
+    syncedAt: syncedAt,
+    closingRate: closingRate,
+    closingValue: closingValue,
+    lastPurchaseDate: lastPurchaseDate,
+    lastPurchaseRate: lastPurchaseRate,
+    lastSupplier: lastSupplier,
+  );
 
   // Owner only.
   final Money? closingRate;
@@ -108,27 +151,37 @@ enum StockSort {
 
 /// Search, status and group filter of the inventory list.
 class StockFilter {
-  const StockFilter({this.query = '', this.status, this.group, this.sort = StockSort.name});
+  const StockFilter({this.query = '', this.status, this.belowMinimum = false, this.group, this.sort = StockSort.name});
 
   final String query;
 
   /// Null = every status.
   final StockStatus? status;
 
+  /// Only items at or below their minimum (the dashboard's stock alert),
+  /// whatever their status, so out-of-stock items are included.
+  final bool belowMinimum;
+
   /// Null = every group; '' = items without a group.
   final String? group;
   final StockSort sort;
 
-  bool get isFiltered => query.trim().isNotEmpty || status != null || group != null;
+  bool get isFiltered => query.trim().isNotEmpty || status != null || belowMinimum || group != null;
 
   /// [status] and [group] are wrapped in functions so they can be set to null.
-  StockFilter copyWith({String? query, StockStatus? Function()? status, String? Function()? group, StockSort? sort}) =>
-      StockFilter(
-        query: query ?? this.query,
-        status: status == null ? this.status : status(),
-        group: group == null ? this.group : group(),
-        sort: sort ?? this.sort,
-      );
+  StockFilter copyWith({
+    String? query,
+    StockStatus? Function()? status,
+    bool? belowMinimum,
+    String? Function()? group,
+    StockSort? sort,
+  }) => StockFilter(
+    query: query ?? this.query,
+    status: status == null ? this.status : status(),
+    belowMinimum: belowMinimum ?? this.belowMinimum,
+    group: group == null ? this.group : group(),
+    sort: sort ?? this.sort,
+  );
 }
 
 /// Applies [filter] to [items].
@@ -137,6 +190,7 @@ List<StockItem> filterStock(List<StockItem> items, StockFilter filter) {
       .where(
         (i) =>
             (filter.status == null || i.status == filter.status) &&
+            (!filter.belowMinimum || i.atOrBelowMinimum) &&
             (filter.group == null || (i.group?.trim() ?? '') == filter.group) &&
             i.matches(filter.query),
       )
@@ -231,4 +285,16 @@ class ItemPurchase {
   final String? unit;
   final Money rate;
   final Money amount;
+}
+
+/// Items at or below their minimum, the furthest below first (by how much of
+/// the minimum is missing), for the dashboard's stock alert.
+List<StockItem> stockAlerts(List<StockItem> items) {
+  final out = items.where((i) => i.atOrBelowMinimum).toList();
+  double missing(StockItem i) => i.shortfall / i.effectiveMin;
+  out.sort((a, b) {
+    final c = missing(b).compareTo(missing(a));
+    return c != 0 ? c : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  return out;
 }

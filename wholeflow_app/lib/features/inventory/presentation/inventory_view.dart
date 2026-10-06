@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/app_failure.dart';
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
@@ -28,6 +29,9 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
   Timer? _debounce;
   StockFilter _filter = const StockFilter();
 
+  /// Item ids picked in selection mode (owner); null = not selecting.
+  Set<String>? _selected;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -47,7 +51,44 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
 
   void _clear() {
     _search.clear();
+    ref.read(inventoryStatusFilterProvider.notifier).set(null);
+    ref.read(inventoryBelowMinimumProvider.notifier).set(false);
     setState(() => _filter = StockFilter(sort: _filter.sort));
+  }
+
+  void _toggle(String id) => setState(() {
+    final s = _selected ??= {};
+    if (!s.remove(id)) s.add(id);
+  });
+
+  Future<void> _setMinimumForSelection(List<StockItem> all) async {
+    final ids = _selected!;
+    final picked = all.where((i) => ids.contains(i.id)).toList();
+    if (picked.isEmpty) return;
+    final units = {for (final i in picked) i.unit?.trim() ?? ''};
+    final sameMin = {for (final i in picked) i.minQty};
+    final choice = await askMinimum(
+      context,
+      title: picked.length == 1 ? picked.first.name : 'Minimum for ${plural(picked.length, 'item')}',
+      subtitle: picked.length == 1 ? null : 'The same minimum is set on every selected item.',
+      unit: units.length == 1 ? units.first : null,
+      current: sameMin.length == 1 ? sameMin.first : null,
+      canRemove: picked.any((i) => i.minQty != null),
+    );
+    if (choice == null || !mounted) return;
+    try {
+      await setStockMinimum(ref, widget.companyId, ids, choice.min);
+      if (!mounted) return;
+      setState(() => _selected = null);
+      showMessage(
+        context,
+        choice.min == null
+            ? 'Minimum removed from ${plural(picked.length, 'item')}'
+            : 'Minimum set on ${plural(picked.length, 'item')}',
+      );
+    } on AppFailure catch (f) {
+      if (mounted) showMessage(context, f.message);
+    }
   }
 
   @override
@@ -57,6 +98,11 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
     final items = ref.watch(stockItemsProvider(widget.companyId));
     final all = items.value ?? const <StockItem>[];
     final summary = StockSummary.of(all);
+    final status = ref.watch(inventoryStatusFilterProvider);
+    if (_filter.status != status) _filter = _filter.copyWith(status: () => status);
+    final belowMinimum = ref.watch(inventoryBelowMinimumProvider);
+    if (_filter.belowMinimum != belowMinimum) _filter = _filter.copyWith(belowMinimum: belowMinimum);
+    final alerts = all.where((i) => i.atOrBelowMinimum).length;
     return ContentWidth(
       child: Column(
         children: [
@@ -91,11 +137,20 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: Insets.l, vertical: Insets.s),
               children: [
+                if (all.any((i) => i.hasMinimum) || _filter.belowMinimum) ...[
+                  FilterChip(
+                    key: const Key('below-minimum'),
+                    label: Text('Below minimum ($alerts)'),
+                    selected: _filter.belowMinimum,
+                    onSelected: (on) => ref.read(inventoryBelowMinimumProvider.notifier).set(on),
+                  ),
+                  const SizedBox(width: Insets.s),
+                ],
                 for (final s in StockStatus.values.skip(1)) ...[
                   FilterChip(
                     label: Text(items.hasValue ? '${s.label} (${summary.byStatus[s]})' : s.label),
                     selected: _filter.status == s,
-                    onSelected: (on) => setState(() => _filter = _filter.copyWith(status: () => on ? s : null)),
+                    onSelected: (on) => ref.read(inventoryStatusFilterProvider.notifier).set(on ? s : null),
                   ),
                   const SizedBox(width: Insets.s),
                 ],
@@ -115,6 +170,13 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
               ],
             ),
           ),
+          if (_selected != null)
+            _SelectionBar(
+              count: _selected!.length,
+              onSelectAll: () => setState(() => _selected = {for (final i in filterStock(all, _filter)) i.id}),
+              onSetMinimum: _selected!.isEmpty ? null : () => _setMinimumForSelection(all),
+              onClose: () => setState(() => _selected = null),
+            ),
           const Divider(height: 1),
           Expanded(
             child: RefreshIndicator(
@@ -174,9 +236,16 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
             total: all.length,
             value: isOwner ? shownValue : null,
             syncedAt: summary.syncedAt,
+            hint: isOwner && _selected == null ? 'Long-press items to set minimum stock' : null,
           );
         }
-        return StockItemTile(item: shown[i - 1]);
+        final item = shown[i - 1];
+        return StockItemTile(
+          item: item,
+          selected: _selected?.contains(item.id),
+          onSelect: () => _toggle(item.id),
+          onLongPress: isOwner && _selected == null ? () => _toggle(item.id) : null,
+        );
       },
     );
   }
@@ -220,7 +289,10 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
 
   Future<void> _pickSort(BuildContext context, bool isOwner) async {
     dismissKeyboard();
-    final options = [for (final s in StockSort.values) if (isOwner || s != StockSort.valueDesc) s];
+    final options = [
+      for (final s in StockSort.values)
+        if (isOwner || s != StockSort.valueDesc) s,
+    ];
     final picked = await showModalBottomSheet<StockSort>(
       context: context,
       useRootNavigator: true,
@@ -249,13 +321,48 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
   }
 }
 
+/// Shown while picking items to set one minimum on all of them.
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({required this.count, required this.onSelectAll, required this.onSetMinimum, required this.onClose});
+
+  final int count;
+  final VoidCallback onSelectAll;
+  final VoidCallback? onSetMinimum;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: context.colors.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Insets.xs, Insets.xs, Insets.m, Insets.xs),
+        child: Row(
+          children: [
+            IconButton(tooltip: 'Stop selecting', icon: const Icon(Icons.close_rounded), onPressed: onClose),
+            Expanded(
+              child: Text(
+                count == 0 ? 'Select items' : '$count selected',
+                style: context.text.titleSmall?.copyWith(color: context.colors.onSecondaryContainer),
+              ),
+            ),
+            IconButton(tooltip: 'Select all shown', icon: const Icon(Icons.select_all_rounded), onPressed: onSelectAll),
+            const SizedBox(width: Insets.xs),
+            FilledButton.tonal(key: const Key('set-minimum'), onPressed: onSetMinimum, child: const Text('Set minimum')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _SummaryLine extends StatelessWidget {
-  const _SummaryLine({required this.count, required this.total, this.value, this.syncedAt});
+  const _SummaryLine({required this.count, required this.total, this.value, this.syncedAt, this.hint});
 
   final int count;
   final int total;
   final Money? value;
   final DateTime? syncedAt;
+  final String? hint;
 
   @override
   Widget build(BuildContext context) {
@@ -263,13 +370,11 @@ class _SummaryLine extends StatelessWidget {
       count == total ? plural(total, 'item') : '$count of ${plural(total, 'item')}',
       if (value != null) 'Value ${formatInrCompact(value!)}',
       if (syncedAt != null) 'Synced ${timeAgo(syncedAt!)}',
+      ?hint,
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.l, Insets.m, Insets.l, Insets.xs),
-      child: Text(
-        parts.join(' · '),
-        style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
-      ),
+      child: Text(parts.join(' · '), style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant)),
     );
   }
 }

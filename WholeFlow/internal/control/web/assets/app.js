@@ -484,10 +484,73 @@ async function pageBusiness(id) {
       h('div', { class: 'card' }, h('h2', {}, 'Keys'), keys),
       h('div', { class: 'card' }, h('h2', {}, 'Details'), infoForm)),
     h('div', { class: 'card' }, h('h2', {}, 'Tally PCs'), pcs),
+    ownerCard(b),
     companiesCard(b, plan, companies),
     h('div', { class: 'card' }, h('h2', {}, 'History'), history),
     dangerZone(b),
   ].map(wrapGap);
+}
+
+// ------------------------------------------------------------ owner login
+
+// For an owner who has forgotten their password: a new temporary password,
+// shown once, which they must change at the next sign-in.
+function ownerCard(b) {
+  return h('div', { class: 'card' },
+    h('h2', {}, 'Owner login'),
+    h('p', {}, 'If the owner has forgotten their password, make a new temporary one and give it to them. ' +
+      'Their old password stops working, and the Owner app asks them to choose a new one when they sign in.'),
+    h('button', { onclick: () => resetOwnerDialog(b) }, icon('key', true), 'Reset owner password'));
+}
+
+function resetOwnerDialog(b) {
+  const pw = h('input', { type: 'password', autocomplete: 'current-password' });
+  const signOut = h('input', { type: 'checkbox' });
+  signOut.checked = true;
+  const err = h('div', { class: 'notice bad', hidden: true });
+  const go = h('button', { class: 'primary', disabled: true }, icon('key', true), 'Reset password');
+  pw.addEventListener('input', () => (go.disabled = !pw.value));
+  const close = () => { scrim.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = ev => { if (ev.key === 'Escape') close(); };
+  const body = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Reset the owner password of ${b.name}` },
+    h('div', { class: 'dialog-icon info' }, icon('key')),
+    h('h2', {}, `Reset the owner password of ${b.name}?`),
+    h('p', {}, 'A new temporary password is made and shown once. The current password stops working at once.'),
+    err,
+    field('Your admin password', pw),
+    h('label', { class: 'check' }, signOut, h('span', {}, 'Also sign the owner out on every phone (do this if someone else may know the password)')),
+    h('div', { class: 'dialog-actions' }, h('button', { class: 'link', onclick: close }, 'Cancel'), go));
+  go.addEventListener('click', async () => {
+    err.hidden = true;
+    go.disabled = true;
+    go.lastChild.textContent = 'Resetting…';
+    try {
+      const r = await api('POST', `/businesses/${b.id}/owner-password`, { password: pw.value, sign_out: signOut.checked });
+      const message = `WholeFlow for ${b.name}\n\nSign in to the Owner app with:\n${r.email}\nTemporary password: ${r.password}\n(you will be asked to choose a new one)`;
+      body.replaceChildren(...[
+        h('div', { class: 'dialog-icon info' }, icon('key')),
+        h('h2', {}, 'New temporary password'),
+        h('div', { class: 'notice warn' }, 'Note it now: it is not shown again.'),
+        h('label', {}, 'Owner login'), copyable(r.email, 'Email'),
+        h('label', {}, 'Temporary password (they must change it at sign-in)'), copyable(r.password, 'Password'),
+        r.signed_out ? h('p', { class: 'muted' }, 'The owner was signed out on every phone.') : null,
+        h('div', { class: 'dialog-actions' },
+          h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(message).then(() => toast('Message copied')) }, 'Copy message for the owner'),
+          h('button', { class: 'primary', onclick: () => { close(); render(); } }, 'Done')),
+      ].filter(Boolean));
+    } catch (e) {
+      if (e.status === 401) return close(); // signed out: the page shows the login
+      err.textContent = e.message;
+      err.hidden = false;
+      go.lastChild.textContent = 'Reset password';
+      pw.value = '';
+      pw.focus();
+    }
+  });
+  const scrim = h('div', { class: 'scrim' }, body);
+  document.body.append(scrim);
+  document.addEventListener('keydown', onKey);
+  pw.focus();
 }
 
 // ------------------------------------------------------------ deleting data
@@ -609,6 +672,7 @@ function eventText(e) {
     case 'reference_key.rotate': return 'New reference key';
     case 'device.activate': return `PC activated${x.machine ? ': ' + x.machine : ''}`;
     case 'device.revoke': return 'PC revoked';
+    case 'owner.password_reset': return `Owner password reset${x.email ? ' (' + x.email + ')' : ''}${x.signed_out ? ', signed out on every phone' : ''}`;
     default: return e.action;
   }
 }

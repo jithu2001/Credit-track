@@ -5,20 +5,73 @@ import 'package:wholeflow_app/features/inventory/domain/stock_item.dart';
 import 'package:wholeflow_app/features/purchases/domain/purchase.dart';
 import 'package:wholeflow_app/features/suppliers/domain/supplier.dart';
 
-StockItem item(String name, {double qty = 0, StockStatus status = StockStatus.inStock, String? group, String? value}) =>
-    StockItem(
-      id: name,
-      name: name,
-      closingQty: qty,
-      status: status,
-      group: group,
-      closingValue: value == null ? null : Money.parse(value),
-    );
+StockItem item(String name, {double qty = 0, double? min, double reorder = 0, String? group, String? value}) => StockItem(
+  id: name,
+  name: name,
+  closingQty: qty,
+  minQty: min,
+  reorderLevel: reorder,
+  group: group,
+  closingValue: value == null ? null : Money.parse(value),
+);
 
 Supplier supplier(String name, String payable, {String? phone}) =>
     Supplier(id: name, companyId: 'c', name: name, payable: Money.parse(payable), phone: phone);
 
 void main() {
+  group('minimum stock and the stock alert', () {
+    test('the below-minimum filter matches the stock alert, out of stock included', () {
+      final items = [item('a', qty: 0, min: 4), item('b', qty: 3, min: 8), item('c', qty: 20, min: 8), item('d', qty: 0)];
+      final shown = filterStock(items, const StockFilter(belowMinimum: true)).map((i) => i.id).toSet();
+      expect(shown, stockAlerts(items).map((i) => i.id).toSet());
+      expect(shown, {'a', 'b'});
+      expect(const StockFilter(belowMinimum: true).isFiltered, isTrue);
+    });
+
+    test('the owner\'s minimum wins over Tally\'s reorder level', () {
+      expect(item('a', qty: 8, min: 10, reorder: 5).effectiveMin, 10);
+      expect(item('a', qty: 8, reorder: 5).effectiveMin, 5, reason: 'no minimum set: Tally reorder level');
+      expect(item('a', qty: 8).hasMinimum, isFalse);
+    });
+
+    test('alert at or below the minimum, including out of stock and negative', () {
+      expect(item('a', qty: 10, min: 10).atOrBelowMinimum, isTrue, reason: 'at the minimum');
+      expect(item('a', qty: 10.5, min: 10).atOrBelowMinimum, isFalse);
+      expect(item('a', qty: 0, min: 10).atOrBelowMinimum, isTrue);
+      expect(item('a', qty: -2, min: 10).atOrBelowMinimum, isTrue);
+      expect(item('a', qty: 0).atOrBelowMinimum, isFalse, reason: 'no minimum: no alert');
+    });
+
+    test('status follows quantity and minimum', () {
+      expect(item('a', qty: 3, min: 5).status, StockStatus.low);
+      expect(item('a', qty: 30, min: 5).status, StockStatus.inStock);
+      expect(item('a', qty: 0, min: 5).status, StockStatus.zero);
+      expect(item('a', qty: -1).status, StockStatus.negative);
+      expect(item('a', qty: 3).status, StockStatus.inStock, reason: 'no minimum: not low');
+    });
+
+    test('withMinimum sets and clears; 0 counts as cleared', () {
+      final i = item('a', qty: 3, reorder: 2);
+      expect(i.withMinimum(5).minQty, 5);
+      expect(i.withMinimum(5).status, StockStatus.low);
+      expect(i.withMinimum(null).minQty, isNull);
+      expect(i.withMinimum(0).minQty, isNull);
+      expect(i.withMinimum(0).effectiveMin, 2);
+    });
+
+    test('alerts list: furthest below the minimum first', () {
+      final alerts = stockAlerts([
+        item('half', qty: 5, min: 10),
+        item('ok', qty: 50, min: 10),
+        item('empty', qty: 0, min: 4),
+        item('slightly', qty: 9, min: 10),
+        item('none', qty: 0),
+      ]);
+      expect(alerts.map((i) => i.name), ['empty', 'half', 'slightly']);
+      expect(alerts.first.shortfall, 4);
+    });
+  });
+
   group('StockItem.fromJson', () {
     test('owner row from v_stock_items', () {
       final i = StockItem.fromJson({
@@ -42,7 +95,7 @@ void main() {
       expect(i.closingQty, 12.5);
       expect(i.closingRate, const Money(100894));
       expect(i.closingValue, const Money(605363));
-      expect(i.status, StockStatus.low);
+      expect(i.status, StockStatus.inStock, reason: '12.5 is above the reorder level of 10');
       expect(i.lastPurchaseDate, DateTime(2026, 9));
       expect(i.lastPurchaseRate, const Money(99000));
     });
@@ -64,8 +117,8 @@ void main() {
   group('filterStock', () {
     final items = [
       item('Bolt', qty: 5, group: 'Hardware', value: '50'),
-      item('axle', qty: 1, status: StockStatus.low, group: 'Parts', value: '900'),
-      item('Cable', status: StockStatus.zero),
+      item('axle', qty: 1, min: 5, group: 'Parts', value: '900'),
+      item('Cable'),
     ];
 
     test('status, group and search', () {
