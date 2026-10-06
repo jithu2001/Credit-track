@@ -137,3 +137,36 @@ func TestRenewMessage(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestCleanLead(t *testing.T) {
+	good := LeadInput{Name: "  Biju   Thomas ", Business: "Periyar Traders", Phone: "+91 98470-12345", Email: "Biju@Example.in", Companies: "2-3", City: "Kumily", Message: "Call after 5"}
+	l, err := CleanLead(good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Name != "Biju Thomas" || l.Phone != "9847012345" || l.Email != "biju@example.in" {
+		t.Fatalf("cleaned: %+v", l)
+	}
+	for _, phone := range []string{"09847012345", "919847012345", "98470 12345"} {
+		if l, err := CleanLead(LeadInput{Name: "A", Phone: phone, Email: "a@b.in"}); err != nil || l.Phone != "9847012345" {
+			t.Fatalf("phone %q: %v %q", phone, err, l.Phone)
+		}
+	}
+	bad := []LeadInput{
+		{Phone: "9847012345", Email: "a@b.in"},                               // no name
+		{Name: "A", Phone: "12345", Email: "a@b.in"},                         // short phone
+		{Name: "A", Phone: "5847012345", Email: "a@b.in"},                    // not a mobile number
+		{Name: "A", Phone: "9847012345", Email: "not-an-email"},              // email
+		{Name: "A", Phone: "9847012345", Email: "a@b"},                       // email without a dot in the domain
+		{Name: "A", Phone: "9847012345", Email: "a@b.in", Companies: "lots"}, // unknown company count
+	}
+	for i, in := range bad {
+		if _, err := CleanLead(in); err == nil {
+			t.Fatalf("bad %d accepted: %+v", i, in)
+		}
+	}
+	long, _ := CleanLead(LeadInput{Name: strings.Repeat("x", 300), Phone: "9847012345", Email: "a@b.in", Message: strings.Repeat("m", 5000)})
+	if len([]rune(long.Name)) != 80 || len([]rune(long.Message)) != 1000 {
+		t.Fatalf("not capped: %d %d", len(long.Name), len(long.Message))
+	}
+}

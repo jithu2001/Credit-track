@@ -36,6 +36,10 @@ const ICONS = {
   pc: 'M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z',
   delete: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
   warning: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+  inbox: 'M19 3H4.99C3.88 3 3.01 3.9 3.01 5L3 19c0 1.1.88 2 1.99 2H19c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 12h-4c0 1.66-1.35 3-3 3s-3-1.34-3-3H4.99V5H19v10z',
+  call: 'M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+  mail: 'M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z',
+  chat: 'M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z',
   key: 'M12.65 10A5.99 5.99 0 0 0 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6a5.99 5.99 0 0 0 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
 };
 
@@ -159,7 +163,7 @@ async function render() {
     catch { return; }
   }
   const [, page, id] = (location.hash || '#/').split('/');
-  const routes = { '': pageBusinesses, new: pageNew, b: () => pageBusiness(id), plans: pagePlans, settings: pageSettings };
+  const routes = { '': pageBusinesses, new: pageNew, b: () => pageBusiness(id), plans: pagePlans, leads: pageLeads, settings: pageSettings };
   const main = h('main', {}, h('p', { class: 'muted' }, 'Loading…'));
   const item = (href, ic, text, on) =>
     h('a', { href, class: 'rail-item' + (on ? ' on' : ''), 'aria-current': on ? 'page' : null }, h('span', { class: 'ind' }, icon(ic)), text);
@@ -170,6 +174,7 @@ async function render() {
         h('nav', {},
           item('#/', 'store', 'Businesses', page === '' || page === 'b' || page === 'new'),
           item('#/plans', 'sell', 'Plans', page === 'plans'),
+          leadsItem(page === 'leads'),
           item('#/settings', 'settings', 'Settings', page === 'settings'),
           h('button', { class: 'rail-item', onclick: logout, title: 'Sign out ' + me.email }, h('span', { class: 'ind' }, icon('logout')), 'Sign out')),
         h('div', { class: 'spacer' }),
@@ -657,6 +662,76 @@ async function pagePlans() {
 }
 
 // ------------------------------------------------------------ settings
+
+// ------------------------------------------------------------ enquiries (website contact form)
+
+const LEAD_STATES = [['new', 'New'], ['contacted', 'Contacted'], ['won', 'Became a customer'], ['lost', 'Not interested']];
+
+// Rail item with the number of new enquiries (filled in after the page draws).
+function leadsItem(on) {
+  const badge = h('span', { class: 'rail-badge', hidden: true });
+  const a = h('a', { href: '#/leads', class: 'rail-item' + (on ? ' on' : ''), 'aria-current': on ? 'page' : null },
+    h('span', { class: 'ind' }, icon('inbox'), badge), 'Enquiries');
+  api('GET', '/leads').then(list => {
+    const n = list.filter(l => l.status === 'new').length;
+    if (n) { badge.textContent = n > 99 ? '99+' : n; badge.hidden = false; a.title = `${n} new enquir${n === 1 ? 'y' : 'ies'}`; }
+  }).catch(() => {});
+  return a;
+}
+
+const LEAD_COMPANIES = { '1': '1 company', '2-3': '2–3 companies', '4-5': '4–5 companies', '6+': '6 or more' };
+
+async function pageLeads() {
+  const list = await api('GET', '/leads');
+  let filter = 'open';
+  const body = h('div');
+  const counts = h('div', { class: 'stats stats-plain' });
+  const fill = () => {
+    const shown = list.filter(l => filter === 'all' || (filter === 'open' ? (l.status === 'new' || l.status === 'contacted') : l.status === filter));
+    const n = s => list.filter(l => l.status === s).length;
+    counts.replaceChildren(
+      ...[['new', 'New'], ['contacted', 'Contacted'], ['won', 'Became customers'], ['lost', 'Not interested']].map(([k, label]) =>
+        h('div', { class: 'card stat' + (k === 'new' && n('new') ? ' stat-hot' : '') }, h('div', { class: 'n' }, n(k)), h('div', { class: 'l' }, label))));
+    body.replaceChildren(...(shown.length ? shown.map(leadCard) : [h('div', { class: 'card' }, h('p', { class: 'muted' }, list.length ? 'Nothing in this view.' : 'No enquiries yet. They arrive here from the contact form on wholeflow.jitsuji.xyz.'))]));
+  };
+  const leadCard = l => {
+    const wa = '91' + l.phone;
+    const status = h('select', { 'aria-label': 'Status', onchange: () => save({ status: status.value }) },
+      ...LEAD_STATES.map(([v, t]) => h('option', { value: v, selected: l.status === v }, t)));
+    status.value = l.status;
+    const note = h('textarea', { rows: 2, placeholder: 'Your notes (only you see these)', value: l.note });
+    const saveNote = h('button', { class: 'text', type: 'button', onclick: ev => run(ev.currentTarget, () => save({ note: note.value })) }, 'Save note');
+    const save = async patch => {
+      await api('PATCH', '/leads/' + l.id, patch);
+      Object.assign(l, patch);
+      toast('Saved');
+      fill();
+    };
+    return h('article', { class: 'card lead' + (l.status === 'new' ? ' lead-new' : '') },
+      h('div', { class: 'lead-head' },
+        h('div', {},
+          h('h2', {}, l.name, l.business ? h('span', { class: 'muted' }, ' · ' + l.business) : null),
+          h('div', { class: 'muted small' }, when(l.created_at), l.city ? ' · ' + l.city : '', l.companies ? ' · ' + (LEAD_COMPANIES[l.companies] || l.companies) : '')),
+        status),
+      l.message ? h('p', { class: 'lead-msg' }, l.message) : null,
+      h('div', { class: 'row lead-actions' },
+        h('a', { class: 'chip', href: 'tel:+' + wa }, icon('call', true), '+91 ' + l.phone.slice(0, 5) + ' ' + l.phone.slice(5)),
+        h('a', { class: 'chip', href: 'https://wa.me/' + wa, target: '_blank', rel: 'noopener' }, icon('chat', true), 'WhatsApp'),
+        h('a', { class: 'chip', href: 'mailto:' + l.email }, icon('mail', true), l.email)),
+      h('div', { class: 'lead-note' }, note, saveNote, h('button', { class: 'text danger-text', type: 'button', onclick: ev => {
+        if (!confirm(`Delete the enquiry from ${l.name}?`)) return;
+        run(ev.currentTarget, async () => { await api('DELETE', '/leads/' + l.id); list.splice(list.indexOf(l), 1); toast('Deleted'); fill(); });
+      } }, 'Delete')));
+  };
+  const tabs = h('div', { class: 'seg' }, ...[['open', 'Open'], ['won', 'Customers'], ['lost', 'Not interested'], ['all', 'All']].map(([k, t]) =>
+    h('button', { type: 'button', class: k === filter ? 'on' : '', onclick: ev => { filter = k; tabs.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === ev.currentTarget)); fill(); } }, t)));
+  fill();
+  return [
+    h('h1', {}, 'Enquiries'),
+    h('p', { class: 'muted' }, 'From the contact form on wholeflow.jitsuji.xyz. Everything here was typed by the visitor.'),
+    counts, tabs, body,
+  ].map(wrapGap);
+}
 
 async function pageSettings() {
   const [s, admins] = await Promise.all([api('GET', '/settings'), api('GET', '/admins')]);

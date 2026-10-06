@@ -196,6 +196,7 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    | 0.4.0 | `0004`–`0007` (applied by the server to every business) | connect by reference key + activation code, WholeFlow account login, subscription pause, plan company limit, heartbeat |
    | 0.4.1 | none | local account and offline login removed: `set-password` is gone, every sign-in is checked by the server, and logins stored by older versions are deleted from `config.json` at start |
    | 0.5.0 | none | Supabase connection removed; only the WholeFlow server. A PC still set up with a cloud URL and service key counts as not connected until it connects with a reference key (see Case 2) |
+   | 0.5.1 | none | new look for the PC's pages, matching the admin and phone apps (Material 3, side navigation) |
 
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 

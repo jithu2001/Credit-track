@@ -78,6 +78,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /control/admin/admins", s.admin(s.createAdmin))
 	s.webRoutes(mux)
 	s.deleteRoutes(mux)
+	s.leadRoutes(mux)
 	return s.recoverer(mux)
 }
 

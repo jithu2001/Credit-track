@@ -214,3 +214,28 @@ button.danger.filled { background: var(--md-error); border-color: var(--md-error
 .dialog .check { display: flex; gap: 12px; align-items: flex-start; font: 400 14px/20px var(--font); color: var(--md-on-surface); margin-bottom: 16px; cursor: pointer; }
 .dialog .check input { margin-top: 2px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+
+/* ---------------------------------------------------------------- enquiries */
+.rail-item .ind { position: relative; }
+.rail-badge { position: absolute; top: 0; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--md-error); color: #fff; font: 600 11px/18px var(--font); text-align: center; }
+.stat-hot { background: var(--md-warning-container) !important; color: var(--md-on-warning-container); }
+.seg { display: inline-flex; border: 1px solid var(--md-outline); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; height: 36px; color: var(--md-on-surface); }
+.seg button + button { border-left: 1px solid var(--md-outline); }
+.seg button.on { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.card.lead { padding: 18px 22px; }
+.card.lead + .card.lead { margin-top: 12px; }
+.lead-new { border-left: 4px solid var(--md-primary); }
+.lead-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.lead-head h2 { margin: 0 0 2px; }
+.lead-head select { width: auto; min-width: 190px; }
+.lead-msg { white-space: pre-wrap; background: var(--md-surface-low); border-radius: var(--shape-m); padding: 10px 14px; margin: 12px 0 0; }
+.lead-actions { margin-top: 12px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--md-outline-variant); border-radius: var(--shape-s); color: var(--md-on-surface); font-weight: 500; text-decoration: none !important; }
+.chip:hover { background: rgba(0,106,96,.06); }
+.lead-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 12px; }
+.lead-note textarea { min-height: 48px; flex: 1; font-size: 14px; }
+button.text { border: none; padding: 0 12px; }
+button.danger-text { color: var(--md-error); }
+main > .stats.stats-plain > .stat:last-child { background: var(--md-surface-container); color: var(--md-on-surface); }
+main > .stats.stats-plain > .stat:last-child .l { color: var(--md-on-surface-variant); }

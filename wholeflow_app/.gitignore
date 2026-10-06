@@ -52,3 +52,4 @@ app.*.map.json
 !/env/hosted.json
 .env
 .env.*
+test/marketing/out/

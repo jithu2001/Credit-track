@@ -102,7 +102,7 @@ $("#company").addEventListener("change", (e) => selectCompany(e.target.value));
 
 $("#refresh").addEventListener("click", async () => {
   const btn = $("#refresh");
-  btn.disabled = true; btn.textContent = "Refreshing…";
+  btn.disabled = true; btn.lastChild.textContent = "Refreshing…";
   try {
     await loadStatus();
     if (state.company) await api("/api/tally/refresh", {}, { method: "POST" });
@@ -110,7 +110,7 @@ $("#refresh").addEventListener("click", async () => {
   } catch (e) {
     view.insertAdjacentHTML("afterbegin", errorBox(e));
   } finally {
-    btn.disabled = false; btn.textContent = "Refresh from Tally";
+    btn.disabled = false; btn.lastChild.textContent = "Refresh from Tally";
   }
 });
 
@@ -1108,7 +1108,7 @@ async function route() {
 let loginShown = false;
 
 function setChrome(loggedIn) {
-  document.querySelector("nav").style.display = loggedIn ? "" : "none";
+  document.body.classList.toggle("signed-out", !loggedIn);
   for (const id of ["conn", "company", "refresh", "asof"]) { const el = $("#" + id); if (el) el.style.visibility = loggedIn ? "" : "hidden"; }
   $("#logout").hidden = !loggedIn;
   if (!loggedIn) $("#syncpill").hidden = true;
@@ -1119,13 +1119,13 @@ function showLogin(err) {
   loginShown = true;
   stopSyncPolling();
   setChrome(false);
-  view.innerHTML = `<div class="panel login"><h1>WholeFlow</h1>${err ? errorBox({ message: err }) : ""}
+  view.innerHTML = `<div class="panel login"><div class="login-logo"><svg viewBox="0 0 24 24"><path d="M3 6l3.4 12h2.2L11 9.6 13.4 18h2.2L19 6h-2.4l-2.2 8.3L12.1 6h-2.2l-2.3 8.3L5.4 6z"/></svg></div><h1>WholeFlow</h1><p class="muted login-sub">Tally PC · sign in to continue</p>${err ? errorBox({ message: err }) : ""}
     <form id="loginForm" class="form">
       <label><span class="l">Email</span><input name="email" autocomplete="username" required autofocus></label>
       <label><span class="l">Password</span><input name="password" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Log in</button>
     </form>
-    <p class="small muted">Log in with your WholeFlow account. Without internet, an account that logged in here recently still works for a few days.</p></div>`;
+    <p class="small muted">Log in with your WholeFlow account. Every log-in is checked by the WholeFlow server, so this PC needs internet.</p></div>`;
   $("#loginForm").onsubmit = async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);

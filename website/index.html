@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en-IN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WholeFlow — Tally outstanding, dues and stock on your phone</title>
+<meta name="description" content="WholeFlow puts TallyPrime outstanding, overdue bills, statements and stock on the phones of distributors and their salesmen. Read-only, synced every 5 minutes. ₹600 a month, +₹200 per extra company.">
+<link rel="canonical" href="https://wholeflow.jitsuji.xyz/">
+<meta name="theme-color" content="#0b5f56">
+<meta name="color-scheme" content="light">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="WholeFlow">
+<meta property="og:title" content="WholeFlow — your Tally dues, on your phone">
+<meta property="og:description" content="Outstanding, overdue bills, statements and stock from TallyPrime, on the phones of the owner and the salesmen. Read-only. ₹600 a month, +₹200 per extra company.">
+<meta property="og:url" content="https://wholeflow.jitsuji.xyz/">
+<meta property="og:image" content="https://wholeflow.jitsuji.xyz/assets/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The WholeFlow owner app showing ₹24.9 lakh outstanding across 96 shops">
+<meta property="og:locale" content="en_IN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="WholeFlow — your Tally dues, on your phone">
+<meta name="twitter:description" content="Outstanding, overdue bills and stock from TallyPrime, on your phone and your salesmen's. Read-only. ₹600 a month, +₹200 per extra company.">
+<meta name="twitter:image" content="https://wholeflow.jitsuji.xyz/assets/img/og.png">
+
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/assets/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="/assets/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+
+<link rel="preload" href="/assets/fonts/Fraunces-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/fonts/IBMPlexSans-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" as="image" href="/assets/img/owner-dashboard.webp" imagesrcset="/assets/img/owner-dashboard-360.webp 360w, /assets/img/owner-dashboard.webp 720w" imagesizes="(max-width: 900px) 260px, 300px" type="image/webp">
+<link rel="stylesheet" href="/assets/css/site.css?v=3">
+<script src="/assets/js/site.js?v=3" defer></script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://wholeflow.jitsuji.xyz/#app",
+      "name": "WholeFlow",
+      "url": "https://wholeflow.jitsuji.xyz/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Android, Windows",
+      "description": "Shows TallyPrime outstanding, overdue bills, shop statements, stock and salesmen's shop visits on Android phones. A Windows program on the Tally PC syncs the data every few minutes and never writes to Tally.",
+      "image": "https://wholeflow.jitsuji.xyz/assets/img/og.png",
+      "screenshot": [
+        "https://wholeflow.jitsuji.xyz/assets/img/owner-dashboard.webp",
+        "https://wholeflow.jitsuji.xyz/assets/img/shops-overdue.webp",
+        "https://wholeflow.jitsuji.xyz/assets/img/staff-visits.webp"
+      ],
+      "offers": {
+        "@type": "Offer",
+        "price": "600",
+        "priceCurrency": "INR",
+        "description": "Per month, including one Tally company. Each additional company is ₹200 a month."
+      },
+      "publisher": { "@id": "https://wholeflow.jitsuji.xyz/#org" }
+    },
+    {
+      "@type": "Organization",
+      "@id": "https://wholeflow.jitsuji.xyz/#org",
+      "name": "WholeFlow",
+      "url": "https://wholeflow.jitsuji.xyz/",
+      "logo": "https://wholeflow.jitsuji.xyz/assets/img/icon-512.png"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Does WholeFlow change anything in my Tally data?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. WholeFlow only reads from TallyPrime. Every request it sends to Tally is checked against a read-only list before it leaves the PC, and anything that could write is refused." } },
+        { "@type": "Question", "name": "Which Tally version do I need?",
+          "acceptedAnswer": { "@type": "Answer", "text": "TallyPrime on a Windows PC, with Client/Server set to Server (or Both). Your company has to be open in Tally while it syncs." } },
+        { "@type": "Question", "name": "What happens when the Tally PC is switched off?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The phones keep showing the last synced figures with the time they were updated. When the PC and Tally are back, WholeFlow catches up on everything changed in the meantime. Nothing is deleted while Tally is offline." } },
+        { "@type": "Question", "name": "Can a salesman see every shop?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Only if you allow it. You give each staff member a whole company or just the sites (groups of shops) they cover, and choose whether they can see bills and receipts. The server enforces this, not just the app." } },
+        { "@type": "Question", "name": "Is there an iPhone app?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Not yet. The Owner and Staff apps are for Android phones." } },
+        { "@type": "Question", "name": "How is WholeFlow priced?",
+          "acceptedAnswer": { "@type": "Answer", "text": "₹600 a month includes your first Tally company, and each additional company is ₹200 a month. That includes the Owner app, the Staff app and the Tally PC program, with no limit on staff logins. Larger businesses can ask us for custom pricing." } }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top" id="top">
+  <div class="wrap top-row">
+    <a class="brand" href="/" aria-label="WholeFlow home">
+      <img src="/assets/img/icon-192.png" alt="" width="32" height="32">
+      <span>WholeFlow</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#features">The app</a>
+      <a href="#field">Field staff</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-small contact-link" href="#contact">Talk to us</a>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ======================================================= hero -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">For distributors who run on TallyPrime</p>
+      <h1>Your Tally dues,<br>in your pocket.</h1>
+      <p class="lede">WholeFlow reads Tally on your office PC and puts every shop's balance, overdue bills and stock on your phone, and on your salesmen's. Nobody types anything twice. Nothing is ever written back to Tally.</p>
+      <div class="hero-actions">
+        <a class="btn" href="#contact">Book a demo</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+      <dl class="facts">
+        <div><dt>Synced</dt><dd>every 5 minutes</dd></div>
+        <div><dt>Tally access</dt><dd>read-only</dd></div>
+        <div><dt>Price</dt><dd>₹600 / month</dd></div>
+      </dl>
+    </div>
+
+    <div class="hero-visual" aria-hidden="true">
+      <div class="ledger-card">
+        <span class="ledger-label">Total outstanding</span>
+        <span class="ledger-amount mono" data-count="2486412.50">₹24,86,412.50</span>
+        <span class="ledger-sub">96 of 214 shops · updated 3 min ago</span>
+        <span class="ledger-note">every shop matches its Tally ledger</span>
+      </div>
+      <div class="phone phone-hero">
+        <div class="phone-status"><span>9:41</span><span class="dots"></span></div>
+        <img src="/assets/img/owner-dashboard.webp" srcset="/assets/img/owner-dashboard-360.webp 360w, /assets/img/owner-dashboard.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= how it works -->
+<section class="how" id="how">
+  <div class="wrap">
+    <h2 class="section-title">From the Tally PC to the field, without anyone exporting a report</h2>
+    <p class="section-lede">A small Windows program sits next to TallyPrime. Every few minutes it reads what changed and sends it to your own database. The apps read from there.</p>
+
+    <figure class="flow" aria-label="Data flows from TallyPrime through the WholeFlow program to the owner's and salesmen's phones">
+      <svg viewBox="0 0 1000 300" class="flow-svg" role="img" aria-labelledby="flowTitle">
+        <title id="flowTitle">TallyPrime to WholeFlow PC program to your database to the Owner and Staff apps</title>
+        <defs>
+          <marker id="tip" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+          </marker>
+        </defs>
+        <path id="p1" class="flow-path" d="M170 150 C 220 150, 240 150, 290 150"/>
+        <path id="p2" class="flow-path" d="M450 150 C 500 150, 520 150, 570 150"/>
+        <path id="p3" class="flow-path" d="M730 150 C 780 150, 790 80, 840 80"/>
+        <path id="p4" class="flow-path" d="M730 150 C 780 150, 790 220, 840 220"/>
+
+        <g class="node"><rect x="20" y="105" width="150" height="90" rx="12"/><text x="95" y="143" class="node-title">TallyPrime</text><text x="95" y="166" class="node-sub">your books, as they are</text></g>
+        <g class="node node-key"><rect x="290" y="105" width="160" height="90" rx="12"/><text x="370" y="143" class="node-title">wholeflow.exe</text><text x="370" y="166" class="node-sub">reads, never writes</text></g>
+        <g class="node"><rect x="570" y="105" width="160" height="90" rx="12"/><text x="650" y="143" class="node-title">Your database</text><text x="650" y="166" class="node-sub">one per business</text></g>
+        <g class="node node-phone"><rect x="840" y="45" width="140" height="70" rx="12"/><text x="910" y="78" class="node-title">Owner app</text><text x="910" y="98" class="node-sub">everything</text></g>
+        <g class="node node-phone"><rect x="840" y="185" width="140" height="70" rx="12"/><text x="910" y="218" class="node-title">Staff app</text><text x="910" y="238" class="node-sub">only their sites</text></g>
+
+        <circle r="5" class="packet"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+        <circle r="5" class="packet"><animateMotion dur="2.4s" begin="0.8s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+        <circle r="5" class="packet"><animateMotion dur="2.4s" begin="1.6s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+        <circle r="5" class="packet"><animateMotion dur="2.4s" begin="1.6s" repeatCount="indefinite"><mpath href="#p4"/></animateMotion></circle>
+      </svg>
+    </figure>
+
+    <ol class="steps">
+      <li><span class="step-n mono">01</span><h3>Install on the Tally PC</h3><p>Run one installer. It starts with Windows, runs in the background and needs nobody to open it again.</p></li>
+      <li><span class="step-n mono">02</span><h3>Pick your companies</h3><p>Tick the Tally companies to sync. Shops come from Sundry Debtors, suppliers from Sundry Creditors, stock from your stock items.</p></li>
+      <li><span class="step-n mono">03</span><h3>Hand out the app</h3><p>Install the Owner app, add your salesmen and decide what each one sees. Everyone signs in with their own login.</p></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ======================================================= features (scrollytelling) -->
+<section class="features" id="features">
+  <div class="wrap">
+    <h2 class="section-title">What you see on the phone</h2>
+    <p class="section-lede">These are the real Owner and Staff apps. The shop names and amounts are made up.</p>
+  </div>
+
+  <div class="wrap story">
+    <div class="story-phone" aria-hidden="true">
+      <div class="phone">
+        <div class="phone-status"><span>9:41</span><span class="dots"></span></div>
+        <div class="screens">
+          <img class="screen is-on" data-screen="dues" src="/assets/img/shops-dues.webp" srcset="/assets/img/shops-dues-360.webp 360w, /assets/img/shops-dues.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="" loading="lazy">
+          <img class="screen" data-screen="overdue" src="/assets/img/shops-overdue.webp" srcset="/assets/img/shops-overdue-360.webp 360w, /assets/img/shops-overdue.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="" loading="lazy">
+          <img class="screen" data-screen="statement" src="/assets/img/shop-statement.webp" srcset="/assets/img/shop-statement-360.webp 360w, /assets/img/shop-statement.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="" loading="lazy">
+          <img class="screen" data-screen="stock" src="/assets/img/stock.webp" srcset="/assets/img/stock-360.webp 360w, /assets/img/stock.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="" loading="lazy">
+          <img class="screen" data-screen="sites" src="/assets/img/sites.webp" srcset="/assets/img/sites-360.webp 360w, /assets/img/sites.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="" loading="lazy">
+        </div>
+      </div>
+    </div>
+
+    <div class="story-steps">
+      <article class="story-step" data-screen="dues">
+        <span class="tag">Dues</span>
+        <h3>Who owes what, grouped the way you collect</h3>
+        <p>Every shop with a balance, highest first, grouped by site, with a total for each site. Each shop's balance is the same as its ledger in Tally, to the paisa. Tap a phone number to call or WhatsApp the shop.</p>
+        <img class="story-inline" src="/assets/img/shops-dues.webp" srcset="/assets/img/shops-dues-360.webp 360w, /assets/img/shops-dues.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Shops screen: ₹6,51,825.50 due from 7 shops in 4 sites, listed by site" loading="lazy">
+      </article>
+      <article class="story-step" data-screen="overdue">
+        <span class="tag">Overdue</span>
+        <h3>Overdue past your credit days, not just "unpaid"</h3>
+        <p>Choose 15, 30, 45 or 60 days. Each receipt clears the oldest bill first, so you see exactly which bills are late and by how many days, shop by shop.</p>
+        <img class="story-inline" src="/assets/img/shops-overdue.webp" srcset="/assets/img/shops-overdue-360.webp 360w, /assets/img/shops-overdue.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Overdue view: ₹1,94,260 past 30 days across 4 shops, with days past the limit for each" loading="lazy">
+      </article>
+      <article class="story-step" data-screen="statement">
+        <span class="tag">Statement</span>
+        <h3>The ledger, with a running balance</h3>
+        <p>Sales, receipts and credit notes for any shop, newest first, each with the balance after it. If the bills don't add up to Tally's balance the app says so instead of hiding it.</p>
+        <img class="story-inline" src="/assets/img/shop-statement.webp" srcset="/assets/img/shop-statement-360.webp 360w, /assets/img/shop-statement.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="A shop's statement with sales, receipts and a credit note, and the balance after each" loading="lazy">
+      </article>
+      <article class="story-step" data-screen="stock">
+        <span class="tag">Stock</span>
+        <h3>Stock without phoning the godown</h3>
+        <p>Closing quantity and value for every item, with low and out-of-stock filters. Purchases and suppliers are there for you; the Staff app shows salesmen quantities only, not your purchase rates.</p>
+        <img class="story-inline" src="/assets/img/stock.webp" srcset="/assets/img/stock-360.webp 360w, /assets/img/stock.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Stock screen: six items with quantities, low stock and out of stock marked" loading="lazy">
+      </article>
+      <article class="story-step" data-screen="sites">
+        <span class="tag">Sites</span>
+        <h3>Your routes, not Tally's groups</h3>
+        <p>Group shops into sites the way your salesmen actually travel: Kumily, Kattappana, Adimali. Each site shows outstanding, sales and collections for the month.</p>
+        <img class="story-inline" src="/assets/img/sites.webp" srcset="/assets/img/sites-360.webp 360w, /assets/img/sites.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Sites screen: outstanding, sales and collections for four sites this month" loading="lazy">
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= field staff -->
+<section class="field" id="field">
+  <div class="wrap field-grid">
+    <div class="field-copy">
+      <h2 class="section-title">Know your salesmen actually reached the shop</h2>
+      <p>Turn on check-in for the staff who need it. On their visit days the Staff app lists the shops to cover, and a visit only counts when the phone is inside the shop's pin.</p>
+      <ul class="ticks">
+        <li><strong>5 or 10 metre radius</strong> for small shops in a crowded market, larger for big ones.</li>
+        <li><strong>Fake GPS doesn't work.</strong> Check-in is refused while developer options or a mock location app are on.</li>
+        <li><strong>You approve the pins.</strong> Staff can suggest a shop's location; it counts only after you accept it.</li>
+        <li><strong>Optional, per person.</strong> Leave it off for the staff you trust to plan their own day.</li>
+      </ul>
+    </div>
+
+    <div class="field-visual">
+      <div class="map" aria-hidden="true">
+        <svg viewBox="0 0 400 320" class="map-svg">
+          <path class="road" d="M-10 230 C 80 210, 150 260, 230 200 S 360 120, 420 140"/>
+          <path class="road road-thin" d="M120 -10 C 140 90, 170 160, 230 200"/>
+          <path class="road road-thin" d="M300 330 C 290 260, 260 230, 230 200"/>
+          <circle class="radius" cx="232" cy="168" r="34"/>
+          <g class="pin"><path d="M232 168 c -10 -14 -14 -20 -14 -27 a 14 14 0 1 1 28 0 c 0 7 -4 13 -14 27z"/><circle cx="232" cy="141" r="5" class="pin-dot"/></g>
+          <text x="190" y="112" class="map-label" text-anchor="end">Cardamom Hills Agencies</text>
+          <text x="190" y="129" class="map-label map-label-sub" text-anchor="end">10 m radius</text>
+          <g class="walker"><circle r="11" class="walker-halo"/><circle r="6" class="walker-dot"/></g>
+        </svg>
+        <div class="checkin-chip"><span class="chip-dot"></span>Checked in · 4 m from the pin</div>
+      </div>
+      <div class="phone phone-small">
+        <div class="phone-status"><span>9:41</span><span class="dots"></span></div>
+        <img src="/assets/img/staff-visits.webp" srcset="/assets/img/staff-visits-360.webp 360w, /assets/img/staff-visits.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Staff app: 3 of 6 shops checked in today in Kumily" loading="lazy">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= trust -->
+<section class="trust">
+  <div class="wrap trust-grid">
+    <div>
+      <h2 class="section-title">Your books stay yours</h2>
+      <p class="section-lede">We built WholeFlow for businesses that would rather not hand their accounts to anyone.</p>
+    </div>
+    <dl class="trust-list">
+      <div><dt>Tally is never written to</dt><dd>The PC program sends Tally only read requests, and refuses anything else before it leaves the machine.</dd></div>
+      <div><dt>A database of your own</dt><dd>Each business gets its own separate database, login service and keys. No shared tables with other customers.</dd></div>
+      <div><dt>Staff see what you allow</dt><dd>Access by company and by site is checked on the server for every request, so an old app or a curious salesman can't get around it.</dd></div>
+      <div><dt>Backed up every night</dt><dd>Your database is backed up daily, and you can ask for a full copy of your data whenever you like.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<!-- ======================================================= pricing -->
+<section class="pricing" id="pricing">
+  <div class="wrap">
+    <h2 class="section-title">One simple price</h2>
+    <p class="section-lede">No complicated plans. Add companies as your business grows.</p>
+    <div class="plans">
+      <article class="plan plan-main">
+        <h3>WholeFlow</h3>
+        <p class="price"><span class="mono">₹600</span> / month</p>
+        <p class="plan-for">Includes your first Tally company.</p>
+        <p class="plan-add"><span class="mono">+₹200</span> / month for each additional company.</p>
+        <ul class="plan-list">
+          <li>Owner app and Staff app</li>
+          <li>The Tally PC program</li>
+          <li>No limit on staff logins</li>
+          <li>Pay monthly by UPI or bank transfer</li>
+        </ul>
+        <table class="plan-eg" aria-label="Examples">
+          <tbody>
+            <tr><td>1 company</td><td class="mono">₹600</td></tr>
+            <tr><td>2 companies</td><td class="mono">₹800</td></tr>
+            <tr><td>3 companies</td><td class="mono">₹1,000</td></tr>
+          </tbody>
+        </table>
+      </article>
+      <article class="plan plan-ent">
+        <h3>Enterprise</h3>
+        <p class="price">Custom pricing</p>
+        <p class="plan-for">For big businesses with many companies, branches or Tally PCs.</p>
+        <p class="plan-note">Tell us how you work and we'll quote a price that fits.</p>
+        <a class="btn btn-ghost" href="#contact" data-companies="6+">Ask for a quote</a>
+      </article>
+    </div>
+    <p class="fine">Renewal reminders arrive in the app a week before the paid date, and there is a 7-day grace period after it.</p>
+  </div>
+</section>
+
+<!-- ======================================================= gallery -->
+<section class="gallery" aria-label="More screens">
+  <div class="wrap gallery-row">
+    <figure><img src="/assets/img/owner-dashboard.webp" srcset="/assets/img/owner-dashboard-360.webp 360w, /assets/img/owner-dashboard.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Owner dashboard in light mode: outstanding, sales this month, overdue and visits today" loading="lazy"><figcaption>Owner dashboard</figcaption></figure>
+    <figure><img src="/assets/img/owner-dashboard-dark.webp" srcset="/assets/img/owner-dashboard-dark-360.webp 360w, /assets/img/owner-dashboard-dark.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Owner dashboard in dark mode" loading="lazy"><figcaption>…and after dark</figcaption></figure>
+    <figure><img src="/assets/img/staff-visits.webp" srcset="/assets/img/staff-visits-360.webp 360w, /assets/img/staff-visits.webp 720w" sizes="(max-width: 900px) 260px, 300px" width="360" height="800" alt="Staff app visit list for today" loading="lazy"><figcaption>A salesman's day</figcaption></figure>
+  </div>
+</section>
+
+<!-- ======================================================= FAQ -->
+<section class="faq" id="faq">
+  <div class="wrap faq-wrap">
+    <h2 class="section-title">Common questions</h2>
+    <details><summary>Does WholeFlow change anything in my Tally data?</summary><p>No. WholeFlow only reads from TallyPrime. Every request it sends to Tally is checked against a read-only list before it leaves the PC, and anything that could write is refused.</p></details>
+    <details><summary>Which Tally version do I need?</summary><p>TallyPrime on a Windows PC, with Client/Server set to Server (or Both). Your company has to be open in Tally while it syncs.</p></details>
+    <details><summary>What happens when the Tally PC is switched off?</summary><p>The phones keep showing the last synced figures with the time they were updated. When the PC and Tally are back, WholeFlow catches up on everything changed in the meantime. Nothing is deleted while Tally is offline.</p></details>
+    <details><summary>Can a salesman see every shop?</summary><p>Only if you allow it. You give each staff member a whole company or just the sites (groups of shops) they cover, and choose whether they can see bills and receipts. The server enforces this, not just the app.</p></details>
+    <details><summary>Is there an iPhone app?</summary><p>Not yet. The Owner and Staff apps are for Android phones.</p></details>
+    <details><summary>How is WholeFlow priced?</summary><p>₹600 a month includes your first Tally company, and each additional company is ₹200 a month. That includes the Owner app, the Staff app and the Tally PC program, with no limit on staff logins. Larger businesses can ask us for custom pricing.</p></details>
+  </div>
+</section>
+
+<!-- ======================================================= contact -->
+<section class="contact" id="contact">
+  <div class="wrap contact-box">
+    <div class="contact-copy">
+      <h2>See your own Tally data on a phone</h2>
+      <p>Leave your details and we'll call you to set up a demo on your Tally PC, so you can judge WholeFlow with your real dues.</p>
+      <p class="contact-small">We'll only use these details to contact you about WholeFlow. <a href="/privacy.html">Privacy</a></p>
+    </div>
+    <form class="contact-form" id="contactForm" novalidate>
+      <div class="cf-row">
+        <label>Your name<input name="name" autocomplete="name" required maxlength="80"></label>
+        <label>Business name<input name="business" autocomplete="organization" maxlength="120"></label>
+      </div>
+      <div class="cf-row">
+        <label>Mobile number<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="98xxxxxxxx" required maxlength="16"></label>
+        <label>Email<input name="email" type="email" autocomplete="email" required maxlength="120"></label>
+      </div>
+      <div class="cf-row">
+        <label>Tally companies
+          <select name="companies">
+            <option value="">Choose…</option>
+            <option value="1">1</option>
+            <option value="2-3">2–3</option>
+            <option value="4-5">4–5</option>
+            <option value="6+">6 or more</option>
+          </select>
+        </label>
+        <label>City / town<input name="city" autocomplete="address-level2" maxlength="60"></label>
+      </div>
+      <label>Anything we should know? <span class="opt">(optional)</span><textarea name="message" rows="3" maxlength="1000"></textarea></label>
+      <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <p class="cf-error" role="alert" hidden></p>
+      <button class="btn" type="submit">Send my details</button>
+    </form>
+    <div class="contact-done" id="contactDone" hidden>
+      <h2>Thank you.</h2>
+      <p>We have your details and will call you soon.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-row">
+    <p><strong>WholeFlow</strong> · Tally outstanding and stock on Android, for distributors in India.</p>
+    <p class="small">TallyPrime is a trademark of Tally Solutions Pvt. Ltd. WholeFlow is an independent product that works with TallyPrime and is not made or endorsed by Tally Solutions.</p>
+    <p class="small">© <span id="year">2026</span> WholeFlow · <a href="/privacy.html">Privacy</a></p>
+  </div>
+</footer>
+</body>
+</html>

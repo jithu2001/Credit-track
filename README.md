@@ -85,6 +85,7 @@ Credit-track/
 │   ├── deploy/                   Windows installer + release script (Install-WholeFlow.cmd, Build-Release.ps1)
 │   ├── deploy/server/            server kit → /opt/wholeflow (compose, nginx, systemd, scripts, templates)
 │   └── docs/                     MULTI_TENANT_PLAN, SYNC_SETUP, SYNC_ARCHITECTURE, DATABASE_SCHEMA
+├── website/                      product website (wholeflow.jitsuji.xyz): static HTML/CSS/JS, deploy.sh
 └── wholeflow_app/                Flutter app (Owner + Staff flavors)
     ├── lib/core/                 connection (reference key, connect screen), env, errors, router, theme, widgets
     ├── lib/features/             auth, dashboard, shops, shop_detail, outstanding, analytics, sites, visits,
@@ -412,6 +413,7 @@ Then open http://127.0.0.1:18080.
 | Change prices or limits | **Plans** (applies to every business on the plan). |
 | Renewal text or contact | **Settings → Message to owners**. |
 | Another admin | **Settings → Admins**. That account also works on Tally PCs. |
+| Website enquiries | Admin app → **Enquiries**: contact-form submissions from wholeflow.jitsuji.xyz, with call/WhatsApp/email links, a status and your note. |
 | Customer wants their data | Business → **Download backup** (a `pg_dump` file). |
 | Logs | `journalctl -u wholeflow-control` · `docker compose -p biz-<slug> -f businesses/<slug>/compose.yml --env-file businesses/<slug>/env logs` · on a Tally PC `C:\ProgramData\WholeFlow\logs\app.log` |
 | Delete one Tally company's data | Business → **Tally companies** → **Delete**. You type the company name and your own admin password, then confirm once more. It removes the company's shops, transactions, suppliers, purchases, stock, sites, visits and staff access. Untick it on the Tally PC first, or the next sync uploads it again. The card warns when more companies are stored than the plan allows. |
