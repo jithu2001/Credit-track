@@ -4,12 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../core/errors/app_failure.dart';
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/share.dart';
 import '../../../core/widgets/states.dart';
 import '../../analytics/presentation/analytics_providers.dart';
 import '../../analytics/presentation/analytics_widgets.dart';
@@ -121,7 +121,7 @@ OverdueReport filterOverdueReport(OverdueReport report, String query) => query.t
 Future<void> shareDuesReport(BuildContext context, OutstandingReport report) => _share(
   context,
   subject: 'Outstanding — ${report.companyName}',
-  fileStem: 'outstanding-${_slug(report.companyName)}',
+  fileStem: 'outstanding-${fileSlug(report.companyName)}',
   text: () => outstandingReportText(report),
   pdf: () => outstandingReportPdf(report),
 );
@@ -129,12 +129,10 @@ Future<void> shareDuesReport(BuildContext context, OutstandingReport report) => 
 Future<void> shareOverdueReport(BuildContext context, OverdueReport report) => _share(
   context,
   subject: 'Past ${plural(report.creditDays, 'day')} credit — ${report.companyName}',
-  fileStem: 'overdue-${report.creditDays}d-${_slug(report.companyName)}',
+  fileStem: 'overdue-${report.creditDays}d-${fileSlug(report.companyName)}',
   text: () => overdueReportText(report),
   pdf: () => overdueReportPdf(report),
 );
-
-String _slug(String name) => name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '').toLowerCase();
 
 Future<void> _share(
   BuildContext context, {
@@ -170,17 +168,9 @@ Future<void> _share(
   if (format == null) return;
   try {
     if (format == 'text') {
-      await SharePlus.instance.share(ShareParams(text: text(), subject: subject));
+      await shareText(text(), subject: subject);
     } else {
-      final bytes = await pdf();
-      final name = '$fileStem.pdf';
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile.fromData(bytes, mimeType: 'application/pdf', name: name)],
-          fileNameOverrides: [name],
-          subject: subject,
-        ),
-      );
+      await sharePdf(await pdf(), fileStem: fileStem, subject: subject);
     }
   } catch (e) {
     if (context.mounted) showMessage(context, AppFailure.from(e).message);

@@ -17,6 +17,9 @@ String timeAgo(DateTime then, {DateTime? now}) {
   return 'on ${formatDate(then.toLocal())}';
 }
 
+/// File-name-safe lower-case form of [name], e.g. `jmj-marketing-bat`.
+String fileSlug(String name) => name.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '-').replaceAll(RegExp(r'^-+|-+$'), '').toLowerCase();
+
 /// "1 day", "3 days", "1 shop", "0 bills".
 String plural(int n, String one, [String? many]) => '$n ${n == 1 ? one : (many ?? '${one}s')}';
 

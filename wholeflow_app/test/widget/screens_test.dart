@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
+import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
 import 'package:wholeflow_app/core/providers.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
 import 'package:wholeflow_app/core/widgets/balance_text.dart';
@@ -340,6 +341,59 @@ void main() {
       expect(find.text('Statement'), findsNothing);
       expect(find.text('Payments'), findsNothing);
       expect(find.text('Owes you'), findsOneWidget);
+    });
+
+    testWidgets('share statement: period, summary and ways to send', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: [
+          ...await baseOverrides(
+            user: owner,
+            access: const [],
+            shopRepo: FakeShopRepository(detailShop: detail),
+          ),
+          transactionRepositoryProvider.overrideWithValue(
+            FakeTransactionRepository([
+              ShopTransaction(
+                id: 't1',
+                transactionDate: DateTime(2020, 1, 5),
+                voucherType: 'Sales',
+                voucherNumber: '7',
+                debit: const Money(12345600),
+                amount: const Money(12345600),
+              ),
+            ]),
+          ),
+        ],
+        size: const Size(400, 1000),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('share-statement')));
+      await tester.pumpAndSettle();
+      expect(find.text('Share statement'), findsOneWidget);
+      expect(find.text('This financial year'), findsOneWidget);
+      // The only voucher is years old: this year starts with it brought forward.
+      expect(find.textContaining('0 entries · Opening ₹1,23,456.00 Dr'), findsOneWidget);
+      await tester.tap(find.text('All transactions'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('1 entry · Opening ₹0.00'), findsOneWidget);
+      expect(find.text('Balance due ₹1,23,456.00 Dr'), findsOneWidget);
+      expect(find.byKey(const Key('share-statement-pdf')), findsOneWidget);
+      expect(find.byKey(const Key('share-statement-text')), findsOneWidget);
+      expect(find.text('Send text on WhatsApp to 9847012345'), findsOneWidget);
+    });
+
+    testWidgets('no share button without access to the statement', (tester) async {
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: await overrides(staffUser, const [
+          CompanyAccess(userId: 'staff-1', companyId: 'co-a', canViewTransactions: false),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('share-statement')), findsNothing);
     });
 
     testWidgets('staff with transaction access see the Statement tab', (tester) async {

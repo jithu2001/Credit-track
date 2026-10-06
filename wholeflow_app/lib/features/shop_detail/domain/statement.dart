@@ -107,3 +107,54 @@ int _chronological(ShopTransaction a, ShopTransaction b) {
   if (ac != null && bc != null && ac != bc) return ac.compareTo(bc);
   return (a.voucherNumber ?? '').compareTo(b.voucherNumber ?? '');
 }
+
+/// A shop's statement for a period, as sent to the customer: the balance
+/// brought forward, the period's vouchers oldest first, and the balance at the
+/// end. Unlike [Statement.filtered], the balances are those of the period.
+class PeriodStatement {
+  const PeriodStatement({
+    required this.from,
+    required this.to,
+    required this.opening,
+    required this.lines,
+    required this.closing,
+  });
+
+  /// Null = from the first voucher / up to the last.
+  final DateTime? from;
+  final DateTime? to;
+
+  /// Balance brought forward (signed, Dr positive).
+  final Money opening;
+
+  /// Oldest first.
+  final List<StatementLine> lines;
+  final Money closing;
+
+  Money get totalDebit => lines.fold(Money.zero, (sum, l) => sum + l.transaction.debit);
+  Money get totalCredit => lines.fold(Money.zero, (sum, l) => sum + l.transaction.credit);
+}
+
+/// [s] between [from] and [to] (calendar days, both included).
+PeriodStatement periodStatement(Statement s, {DateTime? from, DateTime? to}) {
+  DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
+  final start = from == null ? null : day(from);
+  final end = to == null ? null : day(to);
+  var opening = s.opening;
+  final lines = <StatementLine>[];
+  for (final l in s.newestFirst.reversed) {
+    final d = day(l.transaction.transactionDate);
+    if (start != null && d.isBefore(start)) {
+      opening = l.balanceAfter;
+    } else if (end == null || !d.isAfter(end)) {
+      lines.add(l);
+    }
+  }
+  return PeriodStatement(
+    from: start,
+    to: end,
+    opening: opening,
+    lines: lines,
+    closing: lines.isEmpty ? opening : lines.last.balanceAfter,
+  );
+}

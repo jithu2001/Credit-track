@@ -14,6 +14,7 @@ import '../../company/presentation/company_providers.dart';
 import '../../shops/domain/shop.dart';
 import '../../sites/domain/site.dart';
 import '../../visits/presentation/shop_location_card.dart';
+import 'share_statement.dart';
 import 'shop_detail_providers.dart';
 import 'statement_view.dart';
 
@@ -68,6 +69,14 @@ class _Loaded extends ConsumerWidget {
       child: Scaffold(
         appBar: AppBar(
           title: title,
+          actions: [
+            IconButton(
+              key: const Key('share-statement'),
+              tooltip: 'Share statement',
+              icon: const Icon(Icons.ios_share_rounded),
+              onPressed: () => showShareStatement(context, shop),
+            ),
+          ],
           bottom: TabBar(
             tabs: [
               const Tab(text: 'Details'),
