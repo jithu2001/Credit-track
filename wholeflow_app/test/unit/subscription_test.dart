@@ -130,6 +130,22 @@ void main() {
       expect(seen, same(f));
     });
 
+    test('a 402 re-wrapped by maybeSingle (code "402", JSON in the message) still pauses with the text', () {
+      AppFailure? seen;
+      AppFailure.onSubscriptionEnded = (f) => seen = f;
+      final f = AppFailure.from(
+        const PostgrestException(
+          code: '402',
+          details: 'Payment Required',
+          message: '{"code":"PT402","details":"Pay ₹800.","hint":"9847000000","message":"subscription_ended"}',
+        ),
+      );
+      expect(f.kind, FailureKind.subscriptionEnded);
+      expect(f.detail, 'Pay ₹800.');
+      expect(f.contact, '9847000000');
+      expect(seen, isNotNull);
+    });
+
     test('a 402 from the staff service also pauses', () {
       AppFailure? seen;
       AppFailure.onSubscriptionEnded = (f) => seen = f;

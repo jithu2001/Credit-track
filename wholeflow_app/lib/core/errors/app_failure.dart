@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -93,8 +94,17 @@ class AppFailure implements Exception {
 
   static AppFailure _fromPostgrest(PostgrestException e) {
     final code = e.code ?? '';
-    if (code == 'PT402' || e.message == 'subscription_ended') {
-      final f = AppFailure(FailureKind.subscriptionEnded, _text(e.details), _text(e.hint));
+    if (code == 'PT402' || code == '402' || e.message.contains('subscription_ended')) {
+      var details = e.details, hint = e.hint;
+      // `.maybeSingle()` re-wraps errors: code becomes the HTTP status and the
+      // server's JSON is left as text in the message.
+      if (code == '402') {
+        try {
+          final body = jsonDecode(e.message);
+          if (body is Map) (details, hint) = (body['details'], body['hint']);
+        } catch (_) {}
+      }
+      final f = AppFailure(FailureKind.subscriptionEnded, _text(details), _text(hint));
       onSubscriptionEnded?.call(f);
       return f;
     }
