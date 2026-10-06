@@ -1,9 +1,9 @@
-// Package supabase implements cloud.Provider on top of Supabase's PostgREST
-// API using only the standard library. The service-role key is used because
-// the sync service is a trusted server-side component; it bypasses Row Level
-// Security, which is why it must never leave the customer's PC or be embedded
-// in the mobile app.
-package supabase
+// Package rest implements cloud.Provider on top of the business's data API on
+// the WholeFlow server (PostgREST + GoTrue), using only the standard library.
+// It authenticates with this PC's key from the activation: the sync service is
+// a trusted component that writes for the whole business, which is why the key
+// must never leave the customer's PC or be embedded in the mobile app.
+package rest
 
 import (
 	"bytes"
@@ -27,28 +27,28 @@ import (
 const pageSize = 1000
 
 type client struct {
-	base     string // https://xyz.supabase.co/rest/v1
-	authBase string // https://xyz.supabase.co/auth/v1
+	base     string // https://api.example/b/<business>/rest/v1
+	authBase string // https://api.example/b/<business>/auth/v1
 	key      string
 	http     *http.Client
 	log      *slog.Logger
 	batch    int
 }
 
-func newClient(projectURL, serviceKey string, timeout time.Duration, log *slog.Logger) (*client, error) {
-	projectURL = strings.TrimRight(strings.TrimSpace(projectURL), "/")
-	if projectURL == "" || serviceKey == "" {
-		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required"}
+func newClient(baseURL, key string, timeout time.Duration, log *slog.Logger) (*client, error) {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" || key == "" {
+		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "the business address and this PC's key are required"}
 	}
-	u, err := url.Parse(projectURL)
+	u, err := url.Parse(baseURL)
 	if err != nil || u.Host == "" {
-		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "SUPABASE_URL is not a valid URL"}
+		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "the business address is not a valid URL"}
 	}
 	if u.Scheme != "https" && !isLoopback(u.Hostname()) {
-		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "SUPABASE_URL must use https"}
+		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "the business address must use https"}
 	}
-	base := strings.TrimSuffix(projectURL, "/rest/v1")
-	return &client{base: base + "/rest/v1", authBase: base + "/auth/v1", key: serviceKey,
+	base := strings.TrimSuffix(baseURL, "/rest/v1")
+	return &client{base: base + "/rest/v1", authBase: base + "/auth/v1", key: key,
 		http: &http.Client{Timeout: timeout}, log: log, batch: 500}, nil
 }
 
@@ -71,7 +71,7 @@ func (c *client) do(ctx context.Context, op, method, path string, query url.Valu
 	return c.doURL(ctx, op, method, u, prefer, rangeHdr, body)
 }
 
-// doAuth performs one Supabase Auth (GoTrue) admin request.
+// doAuth performs one GoTrue (accounts) admin request.
 func (c *client) doAuth(ctx context.Context, op, method, path string, body any) ([]byte, error) {
 	raw, _, err := c.doURL(ctx, op, method, c.authBase+"/"+path, "", "", body)
 	return raw, err

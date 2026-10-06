@@ -1,4 +1,4 @@
-// deno test supabase/functions/manage-staff/handler_test.ts
+// deno test   (in WholeFlow/staff-service)
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { ApiError, type Backend, type CompanyAccess, handle, type SiteRef, type UserRow } from "./handler.ts";
 

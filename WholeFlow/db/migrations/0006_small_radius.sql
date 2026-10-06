@@ -5,7 +5,8 @@
 -- Phone GPS is usually off by 5–20 m, so the app warns that radii under 20 m
 -- may refuse staff who are inside the shop.
 --
--- Apply in the Supabase dashboard: SQL Editor → paste this file → Run.
+-- Applied by the WholeFlow server to every business (scripts/migrate.sh, or the
+-- admin app → Settings → Update all businesses).
 
 begin;
 

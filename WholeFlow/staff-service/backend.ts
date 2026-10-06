@@ -1,6 +1,7 @@
-// Supabase clients behind handler.ts's Backend interface, for one project.
-// Used by index.ts (a Supabase Edge Function) and multi.ts (the WholeFlow
-// server, one project per business).
+// The real Backend behind handler.ts, for one business on the WholeFlow
+// server: its login (GoTrue admin API) and data API (PostgREST), reached with
+// the business's service key through the supabase-js client library.
+// Used by multi.ts.
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { ApiError, type Backend, type CompanyAccess, type UserRow } from "./handler.ts";
@@ -9,8 +10,8 @@ function fail(op: string, err: { message?: string } | null): never {
   throw new Error(`${op}: ${err?.message ?? "unknown error"}`);
 }
 
-/** The Backend for one Supabase-compatible project (URL + service-role key). */
-export function supabaseBackend(url: string, serviceKey: string): Backend {
+/** The Backend for one business (its base URL + service key). */
+export function apiBackend(url: string, serviceKey: string): Backend {
   const admin = createClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

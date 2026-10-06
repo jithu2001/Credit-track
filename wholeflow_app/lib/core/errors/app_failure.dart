@@ -18,7 +18,7 @@ enum FailureKind {
 }
 
 /// Every error shown to the user goes through this type, so screens only deal
-/// with friendly copy and never with Supabase exceptions.
+/// with friendly copy and never with the API client's exceptions.
 class AppFailure implements Exception {
   const AppFailure(this.kind, [this.detail, this.contact]);
 

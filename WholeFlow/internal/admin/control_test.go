@@ -182,7 +182,7 @@ func TestConnectWithReferenceKey(t *testing.T) {
 		t.Fatalf("settings: %s", out)
 	}
 	// Saving the page does not overwrite the business that came with the activation.
-	c.do("PUT", "/api/sync/settings", `{"business":{"id":"other"},"cloud":{"provider":"supabase","supabaseUrl":"https://x.supabase.co"},
+	c.do("PUT", "/api/sync/settings", `{"business":{"id":"other"},"cloud":{"provider":"memory"},
 	  "sync":{"enabled":false,"intervalSeconds":300,"transactions":true,"fullReconcileHours":24},"companies":[{"tallyId":"g1","name":"Co","enabled":true}]}`, true)
 	if set := s.Settings.Get(); set.Business.ID != "biz-demo" || !set.Linked() || len(set.EnabledCompanies()) != 1 {
 		t.Fatalf("connection changed by save: %+v", set.Business)
@@ -192,8 +192,12 @@ func TestConnectWithReferenceKey(t *testing.T) {
 		t.Fatalf("disconnect = %d", resp.StatusCode)
 	}
 	set = s.Settings.Get()
-	if set.Linked() || set.Cloud.Link.DeviceKey != "" || set.Cloud.Link.DeviceKeyEnc != "" || set.Business.ID != "" {
+	if set.Cloud.Link.Connected() || set.Cloud.Link.DeviceKey != "" || set.Cloud.Link.DeviceKeyEnc != "" || set.Business.ID != "" {
 		t.Fatalf("not disconnected: %+v", set.Cloud.Link)
+	}
+	// No other connection takes over: the sync waits until connected again.
+	if ok, why := set.Configured(); ok || set.Cloud.Provider != syncer.ProviderWholeFlow || !strings.Contains(why, "not connected") {
+		t.Fatalf("after disconnect: provider %q, configured %v %q", set.Cloud.Provider, ok, why)
 	}
 }
 

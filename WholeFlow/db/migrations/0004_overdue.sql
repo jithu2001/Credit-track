@@ -24,7 +24,8 @@
 --   * the bill list is filled only when can_see_transactions() allows it,
 --     otherwise it is null and only the amounts and days are returned.
 --
--- Apply in the Supabase dashboard: SQL Editor → paste this file → Run.
+-- Applied by the WholeFlow server to every business (scripts/migrate.sh, or the
+-- admin app → Settings → Update all businesses).
 
 begin;
 

@@ -287,6 +287,8 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"runs": s.Scheduler.History()})
 }
 
+// settingsDTO is the Cloud Sync page's settings. The business and cloud parts
+// come from the reference-key connection (see connect) and are read-only here.
 type settingsDTO struct {
 	Business  syncer.BusinessSettings `json:"business"`
 	Cloud     cloudDTO                `json:"cloud"`
@@ -313,20 +315,14 @@ type linkDTO struct {
 }
 
 type cloudDTO struct {
-	Provider    string `json:"provider"`
-	SupabaseURL string `json:"supabaseUrl"`
-	SupabaseKey string `json:"supabaseKey,omitempty"` // request only; never echoed
-	HasKey      bool   `json:"hasKey"`
-	KeyFromEnv  bool   `json:"keyFromEnv"`
-	KeyError    string `json:"keyError,omitempty"`
+	Provider string `json:"provider"`
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	set := s.Settings.Get()
 	dto := settingsDTO{Business: set.Business, Sync: set.Sync, Companies: set.Companies,
 		Env: s.Settings.EnvOverrides(), Path: s.Settings.Path()}
-	dto.Cloud = cloudDTO{Provider: set.Cloud.Provider, SupabaseURL: set.Cloud.SupabaseURL, HasKey: set.Cloud.SupabaseKey != "",
-		KeyFromEnv: set.Cloud.KeyFromEnv, KeyError: set.Cloud.KeyError}
+	dto.Cloud = cloudDTO{Provider: set.Cloud.Provider}
 	l := set.Cloud.Link
 	dto.Link = linkDTO{Connected: set.Linked() && l.Connected(), ReferenceKey: l.ReferenceKey, BusinessName: l.BusinessName,
 		DeviceID: l.DeviceID, BaseURL: l.BaseURL, MaxCompanies: l.MaxCompanies, SubscriptionState: l.SubscriptionState,
@@ -348,15 +344,6 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := s.Settings.Get()
 	wasEnabled := cur.Sync.Enabled
-	linked := cur.Linked()
-	if !linked && keyNeededFor(cur.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, cur.Cloud.KeyFromEnv) {
-		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL changed: enter the service-role key for the new project too.")
-		return
-	}
-	if !linked && strings.EqualFold(strings.TrimSpace(in.Cloud.Provider), syncer.ProviderWholeFlow) {
-		writeErr(w, http.StatusBadRequest, "NOT_CONNECTED", "Connect with the reference key and activation code first.")
-		return
-	}
 	// The plan's company limit: refuse ticking more companies than allowed
 	// (a selection that was already larger, e.g. after a downgrade, may
 	// shrink step by step; the sync itself only takes the first ones).
@@ -373,16 +360,8 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	err := s.Settings.Update(func(st *syncer.Settings) error {
-		// With a reference-key connection the business and cloud settings come
-		// from the activation (see connect) and are not edited here.
-		if !st.Linked() {
-			st.Business = syncer.BusinessSettings{ID: strings.TrimSpace(in.Business.ID), Name: strings.TrimSpace(in.Business.Name)}
-			st.Cloud.Provider = strings.ToLower(strings.TrimSpace(in.Cloud.Provider))
-			st.Cloud.SupabaseURL = strings.TrimSpace(in.Cloud.SupabaseURL)
-			if k := strings.TrimSpace(in.Cloud.SupabaseKey); k != "" && !st.Cloud.KeyFromEnv {
-				st.Cloud.SupabaseKey, st.Cloud.KeyError = k, ""
-			}
-		}
+		// The business and cloud settings come from the activation (see
+		// connect) and are not edited here.
 		st.Sync = in.Sync
 		st.Companies = nil
 		for _, c := range in.Companies {
@@ -431,36 +410,9 @@ func tallyMessage(e *tally.Error) string {
 	return "TallyPrime returned an unexpected response: " + e.Msg
 }
 
+// cloudTest tests the stored reference-key connection as it is.
 func (s *Server) cloudTest(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Business syncer.BusinessSettings `json:"business"`
-		Cloud    cloudDTO                `json:"cloud"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in); err != nil {
-		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
-		return
-	}
 	set := s.Settings.Get()
-	if set.Linked() {
-		// Test the stored reference-key connection as it is.
-		in.Business, in.Cloud = syncer.BusinessSettings{}, cloudDTO{}
-	}
-	if keyNeededFor(set.Cloud.SupabaseURL, in.Cloud.SupabaseURL, in.Cloud.SupabaseKey, set.Cloud.KeyFromEnv) {
-		writeErr(w, http.StatusBadRequest, "KEY_REQUIRED", "The project URL differs from the saved one: enter the service-role key for that project too.")
-		return
-	}
-	if in.Business.ID != "" {
-		set.Business.ID = strings.TrimSpace(in.Business.ID)
-	}
-	if in.Cloud.Provider != "" {
-		set.Cloud.Provider = strings.ToLower(strings.TrimSpace(in.Cloud.Provider))
-	}
-	if in.Cloud.SupabaseURL != "" {
-		set.Cloud.SupabaseURL = strings.TrimSpace(in.Cloud.SupabaseURL)
-	}
-	if k := strings.TrimSpace(in.Cloud.SupabaseKey); k != "" && !set.Cloud.KeyFromEnv {
-		set.Cloud.SupabaseKey, set.Cloud.KeyError = k, ""
-	}
 	start := time.Now()
 	prov, err := s.Provider(set)
 	if err == nil {
@@ -501,7 +453,7 @@ func classifyForUI(err error) (string, string) {
 // connect activates this PC with a reference key and a single-use activation
 // code (POST /control/activate) and stores the answer: the business, its
 // address and this PC's key (encrypted). The rest of the setup (test, tick
-// companies, sync) then works as with a Supabase key.
+// companies, sync, accounts) then uses this connection.
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ReferenceKey   string `json:"referenceKey"`
@@ -518,7 +470,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, env := range s.Settings.EnvOverrides() {
-		if env == "CLOUD_PROVIDER" || env == "BUSINESS_ID" {
+		if env == "CLOUD_PROVIDER" {
 			writeErr(w, http.StatusConflict, "ENV_OVERRIDE", env+" is set in the environment (.env) and would override this connection. Remove it and restart WholeFlow first.")
 			return
 		}
@@ -567,13 +519,13 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 }
 
 // disconnect forgets the reference-key connection (business, address and PC
-// key). The companies and sync options stay, so connecting again continues.
+// key). The sync then waits until the PC is connected again. The companies
+// and sync options stay, so connecting again continues.
 func (s *Server) disconnect(w http.ResponseWriter, r *http.Request) {
 	var was string
 	err := s.Settings.Update(func(st *syncer.Settings) error {
 		if st.Linked() {
 			was = st.Business.Name
-			st.Cloud.Provider = syncer.ProviderSupabase
 			st.Business = syncer.BusinessSettings{}
 		}
 		st.Cloud.Link = syncer.LinkSettings{}
@@ -596,7 +548,7 @@ const minUserPassword = 8
 func (s *Server) userManager(w http.ResponseWriter) (cloud.UserManager, bool) {
 	set := s.Settings.Get()
 	if set.Business.ID == "" {
-		writeErr(w, http.StatusBadRequest, "NOT_CONFIGURED", "Save the business and cloud settings first.")
+		writeErr(w, http.StatusBadRequest, "NOT_CONFIGURED", "Connect this PC with the reference key and activation code first.")
 		return nil, false
 	}
 	prov, err := s.Provider(set)
@@ -839,12 +791,4 @@ func writeErr(w http.ResponseWriter, status int, code, msg string) {
 // tokenEqual compares secrets in constant time.
 func tokenEqual(a, b string) bool {
 	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
-}
-
-// keyNeededFor reports whether switching to newURL requires the caller to
-// supply the service-role key again: the stored key is only ever sent to the
-// Supabase project it was saved for.
-func keyNeededFor(saved, newURL, suppliedKey string, keyFromEnv bool) bool {
-	norm := func(u string) string { return strings.ToLower(strings.TrimRight(strings.TrimSpace(u), "/")) }
-	return !keyFromEnv && strings.TrimSpace(suppliedKey) == "" && saved != "" && norm(newURL) != "" && norm(newURL) != norm(saved)
 }

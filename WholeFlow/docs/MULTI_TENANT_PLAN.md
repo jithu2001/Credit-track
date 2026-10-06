@@ -1,11 +1,10 @@
 # WholeFlow multi-business hosting plan (Contabo, one database per business)
 
-Status (2026-10-06): phases 0–4 built, deployed and tested (server, control service, admin app, phone apps, Tally PC app 0.4.0). Phase 5: restore drill passed; moving JMJ is waiting on the owner (create the business in the admin app, update the Tally PC). Off-site backups (B2) not set up yet. Supersedes per-business Supabase projects.
+Status (2026-10-06): phases 0–4 built, deployed and tested (server, control service, admin app, phone apps, Tally PC app). Phase 5: restore drill passed; Supabase support removed from all parts (the owner starts fresh, no data is moved); JMJ is set up as a new business in the admin app. Off-site backups (B2) not set up yet.
 
 ## 1. Goal
 
-Sell WholeFlow to many businesses from one server you run, without creating a
-Supabase project per customer:
+Sell WholeFlow to many businesses from one server you run:
 
 - each business's data lives in **its own PostgreSQL database**;
 - the WholeFlow desktop app (Tally PC) and the Owner/Staff phone apps connect
@@ -40,11 +39,11 @@ Phones (Owner/Staff)          Tally PC (WholeFlow desktop)          You (browser
           │ nightly encrypted backups → off-site storage (Backblaze B2 / S3)
 ```
 
-Why the apps barely change: the Supabase client libraries only need a base URL
-and a public ("anon") key. For a business with slug `jmj` the base URL is
-`https://api.<domain>/b/jmj`; its GoTrue and PostgREST answer at the same
-`/auth/v1` and `/rest/v1` paths Supabase uses, so every query, RPC and RLS
-policy works unchanged.
+Why the apps barely change: the GoTrue/PostgREST client libraries
+(supabase_flutter, supabase-js) only need a base URL and a public ("anon")
+key. For a business with slug `jmj` the base URL is
+`https://api.<domain>/b/jmj`; its GoTrue and PostgREST answer at
+`/auth/v1` and `/rest/v1`, so every query, RPC and RLS policy works unchanged.
 
 ## 3. Per-business stack
 
@@ -171,8 +170,8 @@ handler logic unchanged (it already isolates storage behind an interface).
 
 | Part | Change | Size |
 |---|---|---|
-| Phone apps | Connect screen (key/QR), saved connection, switch business; subscription banners (owner: renewal due / grace; staff: grace) and full-screen block for both on HTTP 402; schema-version check. Supabase URL/key no longer built in | M |
-| Desktop app | Login against `control_db.admins` instead of the first-run local account (checked by the server at every sign-in; no offline or local login); Cloud Sync: reference key + activation code instead of Supabase URL/key; stores its PC key encrypted; pauses on 402 and resumes by itself; company-limit check; reports version / last seen | M |
+| Phone apps | Connect screen (key/QR), saved connection, switch business; subscription banners (owner: renewal due / grace; staff: grace) and full-screen block for both on HTTP 402; schema-version check. No server address or key built in | M |
+| Desktop app | Login against `control_db.admins` instead of the first-run local account (checked by the server at every sign-in; no offline or local login); Cloud Sync: reference key + activation code only; stores its PC key encrypted; pauses on 402 and resumes by itself; company-limit check; reports version / last seen | M |
 | Business database | `service_status`, `revoked_devices`, pre-request check function (new migration) | S |
 | SQL migrations | None (0001–0006 as they are) + `schema_migrations` tracking | S |
 | manage-staff | Wrapped in a multi-business service (Deno) | S |
@@ -199,14 +198,18 @@ handler logic unchanged (it already isolates storage behind an interface).
 - Uptime monitor (UptimeRobot, free) on `/control/health` and one business API.
 - Disk / memory alerts; log rotation.
 
-## 9. Moving JMJ off Supabase
+## 9. JMJ on the new server
 
-1. Create business `jmj` on the new server.
-2. Re-sync Tally from the desktop app (shops, transactions, stock, purchases).
-3. Copy app-only data with a script: users (with password hashes from `auth.users`),
-   staff access, sites, shop pins, visit plans/visits. Or recreate by hand
-   (it is test data today).
-4. Point the apps at the reference key; keep Supabase read-only for 2 weeks; then cancel.
+Decided: start fresh, nothing is moved from the old Supabase project, and
+Supabase support is removed from every part (Tally PC app 0.5.0, phone apps,
+staff service).
+
+1. Create business `jmj` in the admin app.
+2. Install the current Tally PC release on JMJ's PC and connect it with the
+   reference key + activation code; the first sync uploads everything from Tally.
+3. Owner and staff install the apps and connect with the reference key; the
+   owner adds staff, sites, shop pins and visit plans again in the Owner app.
+4. Cancel the old Supabase project.
 
 ## 10. Phases
 
@@ -217,7 +220,7 @@ handler logic unchanged (it already isolates storage behind an interface).
 | 2 | Control service | `control_db`, provisioning API, connect / activate / status, migration runner, multi-business manage-staff | A new business is created by one API call | 4–6 d |
 | 3 | Admin web app | Businesses, reference keys, activation codes, PCs (list, revoke), plans, payments, status, suspend, update-all, download backup | You can onboard a business and record a payment in the browser | 3–4 d |
 | 4 | App changes | Phone connect screen, subscription banners and block screen; desktop activation, PC key, pause/resume on 402, company limit | Fresh phone + fresh PC connect with only a reference key; ending a subscription blocks both apps and the sync, recording a payment unblocks them | 3–4 d |
-| 5 | Cut-over | Move JMJ, phone tests with both logins, restore drill, docs | JMJ runs on Contabo | 1–2 d |
+| 5 | Cut-over | JMJ set up fresh, phone tests with both logins, restore drill, docs, Supabase removed | JMJ runs on Contabo | 1–2 d |
 
 Total ≈ 3 weeks of work. Each phase is usable and tested before the next.
 
@@ -238,4 +241,4 @@ Total ≈ 3 weeks of work. Each phase is usable and tested before the next.
 3. Plans: price and company limit per plan (e.g. ₹500 / 1 company, ₹800 / 3, ₹1,000 / 5).
 4. Grace period (default 7 days), reminder lead time (default 7 days), and the payment details shown to owners (UPI id, phone).
 5. Reference-key format and whether the owner can see/regenerate it in the Owner app.
-6. Keep or drop the current Supabase project after the move.
+6. ~~Keep or drop the old Supabase project~~ Decided: drop it; start fresh.

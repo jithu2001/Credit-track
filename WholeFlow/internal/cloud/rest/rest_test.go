@@ -1,4 +1,4 @@
-package supabase
+package rest
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"wholeflow/internal/cloud"
 )
 
-// fakePostgREST records requests and answers like Supabase's REST layer.
+// fakePostgREST records requests and answers like the server's PostgREST layer.
 type fakePostgREST struct {
 	mu   sync.Mutex
 	reqs []recorded
@@ -118,7 +118,7 @@ func (f *fakePostgREST) last() recorded {
 
 func newStorage(t *testing.T, url string, timeout time.Duration) *Storage {
 	t.Helper()
-	s, err := New(Config{URL: url, ServiceRoleKey: "sk-secret", BusinessID: "biz", Timeout: timeout}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s, err := New(Config{URL: url, Key: "sk-secret", BusinessID: "biz", Timeout: timeout}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,13 +127,13 @@ func newStorage(t *testing.T, url string, timeout time.Duration) *Storage {
 
 func TestConfigValidation(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if _, err := New(Config{URL: "", ServiceRoleKey: "k", BusinessID: "b"}, log); cloud.KindOf(err) != cloud.KindConfig {
+	if _, err := New(Config{URL: "", Key: "k", BusinessID: "b"}, log); cloud.KindOf(err) != cloud.KindConfig {
 		t.Error("empty URL accepted")
 	}
-	if _, err := New(Config{URL: "http://insecure.example", ServiceRoleKey: "k", BusinessID: "b"}, log); cloud.KindOf(err) != cloud.KindConfig {
+	if _, err := New(Config{URL: "http://insecure.example", Key: "k", BusinessID: "b"}, log); cloud.KindOf(err) != cloud.KindConfig {
 		t.Error("plain http accepted")
 	}
-	if _, err := New(Config{URL: "https://x.supabase.co", ServiceRoleKey: "k"}, log); cloud.KindOf(err) != cloud.KindConfig {
+	if _, err := New(Config{URL: "https://api.example/b/x", Key: "k"}, log); cloud.KindOf(err) != cloud.KindConfig {
 		t.Error("missing business accepted")
 	}
 }
@@ -382,7 +382,7 @@ func TestBaseURLWithPathPrefix(t *testing.T) {
 		f.handle(w, r)
 	}))
 	defer srv.Close()
-	s, err := New(Config{URL: srv.URL + "/b/demo/", ServiceRoleKey: "pc-key", BusinessID: "biz"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s, err := New(Config{URL: srv.URL + "/b/demo/", Key: "pc-key", BusinessID: "biz"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}

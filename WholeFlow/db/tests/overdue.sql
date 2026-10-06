@@ -2,9 +2,9 @@
 --
 -- Seeds one company with known bills and payments, calls the function as each
 -- kind of user and asserts the amounts, days and bill visibility. Everything
--- runs in one transaction that is ROLLED BACK at the end, so it is safe on the
--- real Supabase project. Run it after 0004 as `postgres`: in the SQL editor, or
--- `psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f overdue.sql`.
+-- runs in one transaction that is ROLLED BACK at the end, so it is safe on a
+-- real business database. Run all tests with tests/run_local.sh (throwaway
+-- Postgres in Docker), or with psql as `postgres` against a business database.
 -- A failed check aborts with "assertion failed: <label>".
 --
 -- "Today" is 2026-09-29 throughout; the company's period starts 2026-04-01.

@@ -11,7 +11,7 @@
     Result (version taken from the exe, i.e. syncer.Version):
 
         dist\WholeFlow-<version>\          wholeflow.exe, Install-WholeFlow.cmd/.ps1,
-                                            README.txt, .env.example, migrations\
+                                            README.txt, .env.example
         dist\WholeFlow-<version>.zip        the same folder, zipped: copy this to the client
 
     The exe is built straight into dist\, so a WholeFlow service running from
@@ -61,7 +61,6 @@ try {
     Copy-Item (Join-Path $root 'deploy\Install-WholeFlow.cmd'), (Join-Path $root 'deploy\Install-WholeFlow.ps1') $out
     Copy-Item (Join-Path $root 'deploy\README.md') (Join-Path $out 'README.txt')
     Copy-Item (Join-Path $root '.env.example') $out
-    Copy-Item -Recurse (Join-Path $root 'supabase\migrations') (Join-Path $out 'migrations')
 
     Compress-Archive -Path (Join-Path $out '*') -DestinationPath $zip
     $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $out 'wholeflow.exe')).Hash
@@ -72,7 +71,7 @@ try {
     Write-Host "  wholeflow.exe SHA-256 $hash"
     Write-Host ''
     Write-Host 'On each client PC: extract the zip, double-click Install-WholeFlow.cmd, accept the UAC prompt.'
-    Write-Host 'Apply any new file in migrations\ to Supabase first (SQL Editor), once per Supabase project.'
+    Write-Host 'New database migrations go to the WholeFlow server first (deploy/server: scripts/migrate.sh).'
 } catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
     exit 1

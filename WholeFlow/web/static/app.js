@@ -435,7 +435,7 @@ async function renderSyncMain() {
     <h1>Cloud Sync <span class="muted small">Tally → cloud → mobile app</span></h1>
     <section class="panel" id="syncStatusPanel"></section>
     <div class="grid two">
-      <section class="panel form"><h2><span class="step">1</span>Connect to WholeFlow</h2>${renderConnect(s, env)}</section>
+      <section class="panel form"><h2><span class="step">1</span>Connect to WholeFlow</h2>${renderConnect(s)}</section>
       <section class="panel form"><h2><span class="step">2</span>Test the connection</h2>
         <p class="small muted">${s.link.connected ? `Checks that this PC can reach <strong>${esc(s.link.businessName || s.business.name)}</strong> on the WholeFlow server.` : "Connect first (step 1), then test."}</p>
         <div class="row"><button id="cloudTest">Test cloud connection</button><span id="cloudResult" class="small"></span></div>
@@ -463,7 +463,7 @@ async function renderSyncMain() {
         <label class="check"><input type="checkbox" id="syncSuppliers" ${s.sync.suppliers ? "checked" : ""}> Suppliers &amp; payables (Sundry Creditors)</label>
         <label class="check"><input type="checkbox" id="syncPurchases" ${s.sync.purchases ? "checked" : ""}> Purchase bills with item lines (incremental)</label>
         <label class="check"><input type="checkbox" id="syncInventory" ${s.sync.inventory ? "checked" : ""}> Inventory (stock items, qty &amp; value)</label>
-        <p class="small muted">Suppliers, purchases and inventory need the <code>0003_purchasing.sql</code> migration in Supabase. If it is missing, shops still sync and these show a warning.</p>
+        <p class="small muted">Suppliers, purchases and inventory need the purchasing tables on the WholeFlow server. If they are missing, shops still sync and these show a warning.</p>
         <label><span class="l">Check for deleted vouchers every (hours)</span><input id="reconcile" type="number" min="1" max="720" value="${s.sync.fullReconcileHours}"></label>
         <label class="check"><input type="checkbox" id="enabled" ${s.sync.enabled ? "checked" : ""}> <strong>Background synchronisation enabled</strong></label>
         <div class="row"><button id="save" class="primary">Save settings</button><span id="saveResult" class="small"></span></div>
@@ -501,9 +501,7 @@ async function renderSyncMain() {
 }
 
 // Step 1: connected (business name, Disconnect) or the reference-key form.
-// The older Supabase URL + key connection stays available under "Advanced".
-function renderConnect(s, env) {
-  const legacy = !s.link.connected && s.cloud.provider !== "wholeflow" && (s.cloud.supabaseUrl || s.business.id || s.cloud.provider === "memory");
+function renderConnect(s) {
   const revoked = s.link.revoked ? errorBox({ message: "This PC's access was revoked. Connect again with a new activation code." }) : "";
   if (s.link.connected && !s.link.revoked) {
     return `<p><span class="tag ok">connected</span> Connected to <strong>${esc(s.link.businessName || s.business.name)}</strong></p>
@@ -517,18 +515,7 @@ function renderConnect(s, env) {
       <label><span class="l">Reference key</span><input name="referenceKey" value="${esc(s.link.referenceKey || "")}" placeholder="ABCD-1234-ABCD-1234" autocomplete="off" required></label>
       <label><span class="l">Activation code</span><input name="activationCode" placeholder="XXXX-XXXX" autocomplete="off" required></label>
       <div class="row"><button type="submit" class="primary">Connect</button><span id="connectResult" class="small"></span></div>
-    </form>
-    <details ${legacy ? "open" : ""} style="margin-top:12px"><summary class="small">Advanced: connect with Supabase URL and key</summary>
-      ${legacy ? `<p class="small muted">This PC uses the older direct Supabase connection. It keeps working; connecting with a reference key above replaces it.</p>` : ""}
-      <label><span class="l">Business ID (UUID from the businesses table)</span><input id="bizId" value="${esc(s.business.id)}" placeholder="00000000-0000-0000-0000-000000000000"></label>
-      <label><span class="l">Business name (for logs)</span><input id="bizName" value="${esc(s.business.name)}"></label>
-      <label><span class="l">Provider</span><select id="provider"><option value="supabase" ${s.cloud.provider !== "memory" ? "selected" : ""}>Supabase (PostgreSQL)</option><option value="memory" ${s.cloud.provider === "memory" ? "selected" : ""}>Memory (dry run, nothing leaves this PC)</option></select></label>
-      <label><span class="l">Supabase project URL</span><input id="sbUrl" value="${esc(s.cloud.supabaseUrl)}" placeholder="https://xxxx.supabase.co" ${env.includes("SUPABASE_URL") ? "disabled" : ""}></label>
-      <label><span class="l">Service-role key ${s.cloud.hasKey ? '<span class="tag ok">stored</span>' : '<span class="tag warn">not set</span>'} ${s.cloud.keyFromEnv ? '<span class="tag neutral">from environment</span>' : ""}</span>
-        <input id="sbKey" type="password" autocomplete="off" placeholder="${s.cloud.hasKey ? "leave blank to keep the stored key" : "paste the service_role key"}" ${s.cloud.keyFromEnv ? "disabled" : ""}></label>
-      ${s.cloud.keyError ? errorBox({ message: "Stored key cannot be read: " + s.cloud.keyError + " Enter it again." }) : ""}
-      <p class="small muted">Saved with "Save settings" (step 4). Never put the key in the mobile app.</p>
-    </details>`;
+    </form>`;
 }
 
 async function refreshSyncStatus() {
@@ -591,17 +578,8 @@ async function syncTallyTest(interactive) {
   renderSyncCompanies(t.connected ? t.companies : null);
 }
 
-// legacyCloud reads the "Advanced" Supabase fields, or keeps the saved values
-// when they are not on the page (connected with a reference key).
-function legacyCloud() {
-  const s = sync.settings;
-  if (!$("#provider")) return { business: s.business, cloud: { provider: s.cloud.provider, supabaseUrl: s.cloud.supabaseUrl, supabaseKey: "" } };
-  return { business: { id: $("#bizId").value, name: $("#bizName").value }, cloud: { provider: $("#provider").value, supabaseUrl: $("#sbUrl").value, supabaseKey: $("#sbKey").value } };
-}
-
 function collectSyncSettings() {
   return {
-    ...legacyCloud(),
     sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, fullReconcileHours: +$("#reconcile").value,
             suppliers: $("#syncSuppliers").checked, purchases: $("#syncPurchases").checked, inventory: $("#syncInventory").checked },
     companies: [...document.querySelectorAll("input.cmp")].map((el) => ({ tallyId: el.dataset.id, name: el.dataset.name, enabled: el.checked })),
@@ -613,7 +591,7 @@ function bindSyncActions() {
   $("#cloudTest").onclick = async () => {
     const out = $("#cloudResult"); out.textContent = "Testing…";
     try {
-      const r = await syncApi("POST", "/api/sync/cloud/test", legacyCloud());
+      const r = await syncApi("POST", "/api/sync/cloud/test", {});
       out.innerHTML = r.ok ? `<span class="tag ok">connected</span> ${esc(r.businessName || r.provider)} · business ${esc(r.businessId)} · ${r.responseMs} ms` : `<span class="tag bad">${esc(r.error.code)}</span> ${esc(r.error.message)}`;
     } catch (e) { out.innerHTML = `<span class="tag bad">error</span> ${esc(e.message)}`; }
   };

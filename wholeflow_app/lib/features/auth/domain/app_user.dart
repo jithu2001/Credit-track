@@ -13,7 +13,7 @@ enum UserRole {
   final String label;
 }
 
-/// A row of `public.users`: a Supabase Auth user tied to a business.
+/// A row of `public.users`: a login account tied to a business.
 @freezed
 abstract class AppUser with _$AppUser {
   const AppUser._();

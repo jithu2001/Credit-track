@@ -121,8 +121,7 @@ class _PausedScreenState extends ConsumerState<PausedScreen> with WidgetsBinding
                         onPressed: () => ref.read(sessionControllerProvider.notifier).signOut(),
                         child: const Text('Sign out'),
                       ),
-                      if (connection.isHosted)
-                        TextButton(onPressed: () => confirmSwitchBusiness(context, ref), child: const Text('Switch business')),
+                      TextButton(onPressed: () => confirmSwitchBusiness(context, ref), child: const Text('Switch business')),
                     ],
                   ),
                 ],

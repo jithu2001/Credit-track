@@ -1,14 +1,13 @@
 // manage-staff: owner-only staff account management for the WholeFlow mobile app.
 //
-// The mobile app only has the anon key, so it cannot create Supabase Auth users.
-// This function holds the service-role key and does it on the owner's behalf,
-// producing the same shape as the sync service's Cloud Sync page
-// (WholeFlow/internal/cloud/supabase/users.go): an email-confirmed Auth user
-// plus a public.users row, rolled back if the row cannot be written. Disabling
-// sets users.is_active = false and bans the Auth user.
+// The mobile app only has the anon key, so it cannot create login accounts.
+// This service holds the business's service key (on the WholeFlow server) and
+// does it on the owner's behalf: an email-confirmed login account plus a
+// public.users row, rolled back if the row cannot be written. Disabling sets
+// users.is_active = false and bans the login.
 //
-// All logic lives here behind the Backend interface so it can be tested without
-// a Supabase project; index.ts wires the real clients.
+// All logic lives here behind the Backend interface so it can be tested
+// without a server; multi.ts wires the real one (backend.ts).
 
 export type Role = "OWNER" | "STAFF";
 

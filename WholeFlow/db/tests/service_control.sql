@@ -25,7 +25,7 @@ create function pg_temp.claims(c jsonb) returns void language sql as $$
   select set_config('request.jwt.claims', c::text, true)
 $$;
 
--- No row (e.g. the Supabase project): everything is open.
+-- No row: everything is open.
 delete from public.service_status;
 select pg_temp.check(public.access_state() = 'active', 'no row: active');
 select public.check_request();

@@ -1,93 +1,63 @@
 # WholeFlow Mobile
 
-Flutter app (Material 3) for a business owner and their staff. It shows shop balances, statements and the outstanding report. The WholeFlow sync service on the Tally PC keeps this data up to date in Supabase ([../WholeFlow](../WholeFlow)).
+Flutter app (Material 3) for a business owner and their staff, in two flavors: **WholeFlow Owner** and **WholeFlow Staff**. It shows shop balances, statements, the outstanding and overdue reports, stock, purchases, sites and visits. The WholeFlow program on the Tally PC keeps this data up to date in the business's own database on the WholeFlow server ([../WholeFlow](../WholeFlow), [../README.md](../README.md)).
 
 ```
-TallyPrime ─▶ wholeflow.exe (Tally PC) ─▶ Supabase (Postgres + RLS) ─▶ this app
+TallyPrime ─▶ wholeflow.exe (Tally PC) ─▶ WholeFlow server: the business's database + login + data API ─▶ this app
 ```
 
-- **Read-only for business data.** The app never writes shops, transactions or any other table the sync service fills.
-- **Owners** see every company and manage staff: create accounts, assign companies with per-company area limits and transaction visibility, reset passwords, and disable or enable accounts.
-- **Staff** see only the companies the owner assigned them, limited to their areas. Row Level Security enforces this in the database, so the app only hides what RLS already refuses.
+- **Read-only for business data.** The app never writes shops, transactions or any other table the Tally PC fills.
+- **Owners** see every company and manage staff: create accounts, assign companies or sites and transaction visibility, reset passwords, and disable or enable accounts.
+- **Staff** see only the companies and sites the owner assigned them. Row Level Security enforces this in the database, so the app only hides what the server already refuses.
 
 ## Prerequisites
 
 - Flutter stable (built with 3.47 / Dart 3.13)
-- The Supabase project with `WholeFlow/supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql` **and** `0004_overdue.sql` applied, and the `manage-staff` Edge Function deployed (see below)
-- An owner account created from the WholeFlow **Cloud Sync** page ("Business owner & staff accounts")
+- The business created in the admin app (https://admin.jitsuji.xyz). That gives its **reference key** and the owner's login.
 
 ## Configure and run
 
-There are two kinds of build:
+The apps contain no business address or key. `env/hosted.json` holds only the WholeFlow server address (`CONTROL_URL`).
 
-- **Hosted (for customers):** `env/hosted.json` holds only the WholeFlow server address (`CONTROL_URL`). On first launch the app asks for the business's **reference key** (typed or scanned from the QR code in the admin app), shows "Connect to <business>?", remembers it, and then shows the normal login. Settings → **Switch business** forgets it. Owners see a "renewal due" banner, owners and staff see a red banner in the grace period, and once the subscription has ended (or the business is suspended) both apps show only a "paused" screen with a Refresh button. The server enforces this too (HTTP 402).
-- **Fixed project (development, or a business still on its own Supabase project):** `env/dev.json` with `SUPABASE_URL` and the **publishable (anon) key**; the connect screen is skipped. Never put the service-role key here: it bypasses RLS.
+- **First launch:** the app asks for the business's **reference key**, typed or scanned from the QR code in the admin app. It shows "Connect to <business>?", remembers the answer, then shows the normal login.
+- **Switching:** Settings → **Switch business** forgets the connection.
+- **Subscription:**
+  - Owners see a "renewal due" banner.
+  - Owners and staff see a red banner in the grace period.
+  - Once the subscription has ended, or the business is suspended, both apps show only a "paused" screen with a Refresh button. The server enforces this too (HTTP 402).
 
 ```bash
-# Hosted build
-flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
-flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
-
-# Fixed-project build
-cp env/example.json env/dev.json      # fill in SUPABASE_URL and SUPABASE_ANON_KEY
 flutter pub get
 
-# WholeFlow Owner (full business control, analytics, staff admin, sync health, stock valuation)
-flutter run --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/dev.json
-flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/dev.json
+# WholeFlow Owner (full business control, insights, staff admin, sync health, stock valuation)
+flutter run --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
+flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
 
-# WholeFlow Staff (lean, lightweight for 1-2 GB phones: assigned shops, dues, quantities)
-flutter run --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/dev.json
-flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/dev.json
+# WholeFlow Staff (lean, for 1-2 GB phones: assigned shops, dues, quantities, visits)
+flutter run --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
+flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
 ```
 
-Both apps can be installed and run side-by-side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). The Owner app keeps the v0.3.0 application id, so existing installs update in place to WholeFlow Owner; staff on v0.3.0 see an "Owner access required" screen and need to install WholeFlow Staff. Owner is the default flavor, so a plain `flutter run` builds it.
+Both apps can be installed side by side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). Owner is the default flavor, so a plain `flutter run` builds it. `env/*.json` is git-ignored except `hosted.json`, which holds no secrets.
 
-`env/*.json` is gitignored except `example.json` and `hosted.json` (no secrets in either).
+The app talks to the server's login (GoTrue) and data API (PostgREST) through the `supabase_flutter` package, which is only the client library for those open-source servers. There is no Supabase account or project.
 
-## Backend pieces (in `WholeFlow/supabase/`)
+## Backend pieces (in `WholeFlow/`)
 
 | Path | What it does |
 |---|---|
-| `migrations/0002_mobile_app.sql` | `staff_company_access` table (which companies each staff member works for, with areas and transaction visibility per company), RLS read policies that enforce it, and two service-role-only functions used by `manage-staff` |
-| `migrations/0004_overdue.sql` | `overdue_shops(company, credit_days, today)`: shops past the credit period for the Outstanding screen, aged FIFO on the server so staff without transaction access still get amounts and days; bills only for users who may see transactions |
-| `functions/manage-staff/` | Edge Function holding the service-role key; owner-only `create_staff`, `update_staff`, `set_companies`, `set_active`, `reset_password` |
-| `tests/rls_mobile.sql` | Impersonates owner and staff users and asserts what each can see; everything is rolled back |
-| `tests/overdue.sql` | Checks `overdue_shops()` amounts, days and bill visibility per user; rolled back |
+| `db/migrations/0001`–`0007` | The business database: tables, Row Level Security, reports (`overdue_shops`, `site_report`), sites and visits, subscription status. The WholeFlow server applies them to every business (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). |
+| `staff-service/` | The staff service, one for every business on the server (`multi.ts`): owner-only `create_staff`, `update_staff`, `set_companies`, `set_active`, `reset_password` |
+| `db/tests/*.sql` + `db/tests/run_local.sh` | Run every migration and SQL test on a throwaway Postgres in Docker; everything is rolled back |
 
-### Deploy
-
-From `WholeFlow/`:
-
-```bash
-# once: link the CLI to the project (run `supabase init` first if supabase/config.toml doesn't exist)
-npx supabase login
-npx supabase link --project-ref <project-ref>
-
-# database: apply 0002, then run the RLS checks (they roll back)
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_mobile_app.sql
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/rls_mobile.sql
-
-# overdue report: apply 0004, then its checks (they roll back)
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_overdue.sql
-psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/overdue.sql
-
-# Edge Function (SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are injected by the platform)
-npx supabase functions deploy manage-staff
-```
-
-Edge Function tests (Deno):
-
-```bash
-cd WholeFlow/supabase/functions && deno test manage-staff/handler_test.ts
-```
+Tests: `WholeFlow/db/tests/run_local.sh` (SQL) and `cd WholeFlow/staff-service && deno test` (staff service).
 
 ## How access works
 
 - A **staff member sees a company only when the owner assigned it** (`staff_company_access` row). There is no "all companies" default. A newly synced company stays hidden from staff until the owner assigns it. A staff member with no assignment sees a "not assigned to any company" screen.
 - Each assignment has **areas** (empty = every area of that company, case-insensitive) and **can view transactions** (off hides the Statement tab, and RLS returns no transactions).
 - New staff and password resets set `must_change_password`, so the app asks for a new password at the next sign-in.
-- Disabling an account sets `users.is_active = false` and bans the Auth user. RLS hides all data immediately. The app notices on the next refresh or resume and signs the user out.
+- Disabling an account sets `users.is_active = false` and bans the login. RLS hides all data immediately. The app notices on the next refresh or resume and signs the user out.
 
 ## Payment analytics (owner only)
 
@@ -118,7 +88,8 @@ The sync service fills `stock_items`, `purchases`, `purchase_lines` and `supplie
 
 ```
 lib/
-  main.dart, app.dart        Supabase init from dart-defines, ProviderScope, MaterialApp.router
+  main_owner.dart, main_staff.dart, bootstrap.dart
+                             connect screen or saved business, API client init, ProviderScope, MaterialApp.router
   core/                      env, theme (M3 + semantic Dr/Cr/warning colours), router, money (paise), errors, shared widgets
   features/
     auth/                    session controller, login, forced password change

@@ -48,8 +48,8 @@ WholeFlow gives a wholesale business its **shop outstanding balances, sales, sto
 | **Tally PC app** `wholeflow.exe` (Go) | [`WholeFlow/cmd/server`](WholeFlow/cmd/server), `WholeFlow/internal/*` | The business's Windows PC with TallyPrime, as a Windows service | Local web app at http://127.0.0.1:8080 (dashboards, shops, outstanding, suppliers, purchases, inventory, exports) and the background **Cloud Sync**. Sign-in uses your WholeFlow admin account. The PC connects to its business with a reference key and a one-time activation code. |
 | **Owner app** and **Staff app** (Flutter) | [`wholeflow_app/`](wholeflow_app) (flavors `owner`, `staff`) | Android phones | The owner and staff apps. On first launch they ask for the business's reference key (typed or QR), then show the normal login. They show subscription banners and a "paused" screen when the subscription ends. |
 | **Control service + admin app** (Go) | [`WholeFlow/cmd/control`](WholeFlow/cmd/control), [`WholeFlow/internal/control`](WholeFlow/internal/control) (pages in `internal/control/web`) | Server, systemd `wholeflow-control`, 127.0.0.1:8100 | Creates businesses, looks up reference keys for the apps, activates Tally PCs, records manual payments, enforces subscriptions. It also serves the admin web app at `https://admin.<domain>`. |
-| **Business databases and APIs** | [`WholeFlow/deploy/server`](WholeFlow/deploy/server) (scripts and templates), [`WholeFlow/supabase/migrations`](WholeFlow/supabase/migrations) (schema) | Server, Docker | One PostgreSQL 15 with a database `biz_<slug>` per business. Each business has its own GoTrue (login) and PostgREST (data API) container. These are Supabase-compatible, so the apps use them like a Supabase project. |
-| **Staff service** (Deno) | [`WholeFlow/supabase/functions/manage-staff`](WholeFlow/supabase/functions/manage-staff) | Server, Docker container `staff`, 127.0.0.1:8200 | Lets an owner create, edit, reset and disable staff accounts from the Owner app, for every business. |
+| **Business databases and APIs** | [`WholeFlow/deploy/server`](WholeFlow/deploy/server) (scripts and templates), [`WholeFlow/db/migrations`](WholeFlow/db/migrations) (schema) | Server, Docker | One PostgreSQL 15 with a database `biz_<slug>` per business. Each business has its own GoTrue (login) and PostgREST (data API) container. The apps reach them with the GoTrue/PostgREST client libraries. |
+| **Staff service** (Deno) | [`WholeFlow/staff-service`](WholeFlow/staff-service) | Server, Docker container `staff`, 127.0.0.1:8200 | Lets an owner create, edit, reset and disable staff accounts from the Owner app, for every business. |
 | **Server kit** | [`WholeFlow/deploy/server`](WholeFlow/deploy/server) | Copied to `/opt/wholeflow` | docker-compose, nginx config, systemd unit, scripts to create, migrate, back up and delete businesses. |
 
 Rules that hold everywhere:
@@ -72,16 +72,16 @@ Credit-track/
 │   │   ├── tally/                the ONLY code that talks to Tally (XML/TDL, read-only allow-list)
 │   │   ├── api/, export/         Tally PC web app API, CSV/xlsx
 │   │   ├── syncer/               sync engine, scheduler, settings, heartbeat, company limit
-│   │   ├── cloud/                cloud contract; cloud/supabase = PostgREST/GoTrue client
+│   │   ├── cloud/                cloud contract; cloud/rest = client for the business's API (PostgREST + GoTrue)
 │   │   ├── controlclient/        Tally PC → control service (activate, heartbeat, PC login)
 │   │   ├── admin/                Tally PC login + Cloud Sync API (/api/sync/*)
 │   │   ├── auth/, secrets/       password hashing, sessions, lockout; Windows DPAPI
 │   │   └── control/              control service: businesses, keys, PCs, subscriptions, admin API, admin web app (web/)
 │   ├── web/static/               Tally PC web app pages (embedded in the exe)
-│   ├── supabase/
+│   ├── db/
 │   │   ├── migrations/           0001–0007 business database schema (applied to every business)
-│   │   ├── functions/manage-staff/  staff service (handler.ts shared; multi.ts = server entry; index.ts = Supabase entry)
 │   │   └── tests/                SQL tests + run_local.sh (throwaway Postgres in Docker)
+│   ├── staff-service/            staff service, Deno (handler.ts logic; backend.ts API client; multi.ts = server entry)
 │   ├── deploy/                   Windows installer + release script (Install-WholeFlow.cmd, Build-Release.ps1)
 │   ├── deploy/server/            server kit → /opt/wholeflow (compose, nginx, systemd, scripts, templates)
 │   └── docs/                     MULTI_TENANT_PLAN, SYNC_SETUP, SYNC_ARCHITECTURE, DATABASE_SCHEMA
@@ -89,7 +89,7 @@ Credit-track/
     ├── lib/core/                 connection (reference key, connect screen), env, errors, router, theme, widgets
     ├── lib/features/             auth, dashboard, shops, shop_detail, outstanding, analytics, sites, visits,
     │                             staff, inventory, purchases, suppliers, stock, sync_health, subscription, settings
-    ├── env/                      hosted.json (WholeFlow server) · dev.json (fixed Supabase project, git-ignored)
+    ├── env/                      hosted.json (WholeFlow server address)
     └── test/                     unit and widget tests
 ```
 
@@ -207,8 +207,8 @@ On your PC, from the repo root:
 ```bash
 rsync -a WholeFlow/deploy/server/ wholeflow:/opt/wholeflow/
 ssh wholeflow 'mkdir -p /opt/wholeflow/{migrations,staff,bin,businesses} /etc/nginx/wholeflow-businesses && chmod 700 /opt/wholeflow/businesses && chmod +x /opt/wholeflow/scripts/*.sh'
-scp WholeFlow/supabase/migrations/*.sql wholeflow:/opt/wholeflow/migrations/
-scp WholeFlow/supabase/functions/manage-staff/{handler.ts,backend.ts,multi.ts,deno.json} wholeflow:/opt/wholeflow/staff/
+scp WholeFlow/db/migrations/*.sql wholeflow:/opt/wholeflow/migrations/
+scp WholeFlow/staff-service/{handler.ts,backend.ts,multi.ts,deno.json} wholeflow:/opt/wholeflow/staff/
 ```
 
 #### Step 6: Secrets and the database
@@ -377,10 +377,10 @@ go build ./... && GOOS=windows go build ./cmd/server
 go vet ./... && gofmt -l . && go test ./...
 
 # Database: every migration + SQL test on a throwaway Postgres in Docker (never touches a real server)
-supabase/tests/run_local.sh
+db/tests/run_local.sh
 
 # Staff service
-cd supabase/functions/manage-staff && deno test && cd -
+cd staff-service && deno test && cd -
 
 # Flutter
 cd ../wholeflow_app
@@ -397,8 +397,6 @@ APP_ADDR=127.0.0.1:18080 go run ./cmd/server run -data /tmp/wf-data
 ```
 
 Then open http://127.0.0.1:18080.
-
-**Fixed-project build** (for a business still on its own Supabase project): copy `env/example.json` to `env/dev.json`, fill in `SUPABASE_URL` and the anon key, and build with `--dart-define-from-file=env/dev.json`. The connect screen is skipped.
 
 ---
 
@@ -424,7 +422,7 @@ Then open http://127.0.0.1:18080.
 | What changed | How to roll it out |
 |---|---|
 | **Control service or admin pages** (`WholeFlow/internal/control`, `cmd/control`) | Build as in Step 8, `scp` to `/opt/wholeflow/bin/wholeflow-control.new`, then `cp wholeflow-control wholeflow-control.prev && mv wholeflow-control.new wholeflow-control && systemctl restart wholeflow-control`. Roll back with `.prev`. |
-| **Database** (new file in `WholeFlow/supabase/migrations/`) | Keep migrations additive. Run `supabase/tests/run_local.sh`, copy the file to `/opt/wholeflow/migrations/`, then admin app → **Settings → Update all businesses** (or `scripts/migrate.sh --all`). New businesses get every migration automatically. |
+| **Database** (new file in `WholeFlow/db/migrations/`) | Keep migrations additive. Run `db/tests/run_local.sh`, copy the file to `/opt/wholeflow/migrations/`, then admin app → **Settings → Update all businesses** (or `scripts/migrate.sh --all`). New businesses get every migration automatically. |
 | **Staff service** (`manage-staff/*.ts`) | Copy `handler.ts backend.ts multi.ts` to `/opt/wholeflow/staff/`, then `docker compose restart staff`. |
 | **Tally PC app** | Raise `Version` in `WholeFlow/internal/syncer/settings.go`, run `Build-Release.ps1`, and run `Install-WholeFlow.cmd` on each PC (it upgrades in place and keeps settings). The admin app shows each PC's version. |
 | **Phone apps** | Raise `version:` in `wholeflow_app/pubspec.yaml`, build the APKs (4.5) and share them. Saved connections and logins survive updates. |
@@ -484,12 +482,11 @@ Built, deployed and tested (October 2026):
 The `demo` business on the server is for testing.
 
 Open items:
-- **Move JMJ off Supabase**. JMJ still runs on its Supabase project.
+- **Set up JMJ fresh** (nothing is moved from the old Supabase project; Supabase support is removed everywhere):
   1. Create `jmj` in the admin app.
-  2. Update JMJ's Tally PC to 0.4.0 and connect it with the reference key and activation code.
-  3. Install the hosted apps.
-  4. Recreate the staff account, the Adimali site, the shop pins and the visit plan (test data).
-  5. Keep Supabase read-only for two weeks, then cancel it.
+  2. Install the current Tally PC release on JMJ's PC and connect it with the reference key and activation code.
+  3. Install the apps and connect them with the reference key. The owner adds staff, sites, shop pins and visit plans again.
+  4. Cancel the old Supabase project.
 - **Off-site backups** (Backblaze B2) are not set up; today the backups exist only on the server.
 - **Play Store signing key** (see 4.5).
 - **Server region**: the server is in Germany, which means about 200 ms per request from Kerala. Consider Contabo India or Singapore before many customers join.

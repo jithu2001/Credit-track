@@ -13,26 +13,28 @@ part 'business_connection.g.dart';
 
 /// Which business (and server address) the app talks to.
 class BusinessConnection {
-  const BusinessConnection({required this.businessName, required this.baseUrl, required this.anonKey, this.referenceKey});
+  const BusinessConnection({
+    required this.businessName,
+    required this.baseUrl,
+    required this.anonKey,
+    required this.referenceKey,
+  });
 
-  /// The build's fixed Supabase project (no reference key, cannot be switched).
-  factory BusinessConnection.fixed() =>
-      const BusinessConnection(businessName: '', baseUrl: Env.supabaseUrl, anonKey: Env.supabaseAnonKey);
+  /// Placeholder before a business is connected (and in tests).
+  static const none = BusinessConnection(businessName: '', baseUrl: '', anonKey: '', referenceKey: '');
 
   final String businessName;
+
+  /// The business's address on the WholeFlow server, e.g. https://api.jitsuji.xyz/b/jmj.
   final String baseUrl;
+
+  /// The business's public (anon) key; a login is still needed to read anything.
   final String anonKey;
+  final String referenceKey;
 
-  /// Null for a fixed project.
-  final String? referenceKey;
-
-  bool get isHosted => referenceKey != null;
-
-  /// Where the login session is saved. Each hosted business has its own, so
-  /// switching business never reuses another business's session. Fixed
-  /// projects keep supabase_flutter's default key.
-  String? get sessionKey {
-    if (!isHosted) return null;
+  /// Where the login session is saved. Each business has its own, so
+  /// switching business never reuses another business's session.
+  String get sessionKey {
     final slug = Uri.parse(baseUrl).pathSegments.where((s) => s.isNotEmpty).lastOrNull ?? 'default';
     return 'wf-session-$slug';
   }
@@ -41,17 +43,17 @@ class BusinessConnection {
     'business_name': businessName,
     'base_url': baseUrl,
     'anon_key': anonKey,
-    'reference_key': ?referenceKey,
+    'reference_key': referenceKey,
   };
 
   static BusinessConnection? fromJson(Map<String, dynamic> j) {
-    final base = j['base_url'], key = j['anon_key'];
-    if (base is! String || key is! String || base.isEmpty || key.isEmpty) return null;
+    final base = j['base_url'], key = j['anon_key'], ref = j['reference_key'];
+    if (base is! String || key is! String || ref is! String || base.isEmpty || key.isEmpty || ref.isEmpty) return null;
     return BusinessConnection(
       businessName: (j['business_name'] as String?) ?? '',
       baseUrl: base,
       anonKey: key,
-      referenceKey: j['reference_key'] as String?,
+      referenceKey: ref,
     );
   }
 }
@@ -133,7 +135,7 @@ class ControlApi {
 
 /// The connection the running app uses. Overridden in bootstrap.
 @Riverpod(keepAlive: true)
-BusinessConnection businessConnection(Ref ref) => BusinessConnection.fixed();
+BusinessConnection businessConnection(Ref ref) => BusinessConnection.none;
 
 /// Closes the current business and shows the connect screen. Overridden in
 /// bootstrap; a no-op in tests.

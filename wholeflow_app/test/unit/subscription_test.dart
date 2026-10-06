@@ -51,8 +51,11 @@ void main() {
       const b = BusinessConnection(businessName: 'B', baseUrl: 'https://api.x/b/beta', anonKey: 'k', referenceKey: 'R');
       expect(a.sessionKey, 'wf-session-alpha');
       expect(b.sessionKey, 'wf-session-beta');
-      expect(BusinessConnection.fixed().sessionKey, isNull);
-      expect(BusinessConnection.fixed().isHosted, isFalse);
+      expect(
+        BusinessConnection.fromJson({'base_url': 'https://api.x/b/c', 'anon_key': 'k'}),
+        isNull,
+        reason: 'a reference key is required',
+      );
     });
 
     test('a saved connection survives a round trip; junk does not load', () {
@@ -85,7 +88,6 @@ void main() {
       expect(asked.queryParameters['key'], 'DEMO-65YC-47X7-QMEZ');
       expect(c.businessName, 'Demo Traders');
       expect(c.referenceKey, 'DEMO-65YC-47X7-QMEZ');
-      expect(c.isHosted, isTrue);
     });
 
     test("the server's message is shown for an unknown key", () async {

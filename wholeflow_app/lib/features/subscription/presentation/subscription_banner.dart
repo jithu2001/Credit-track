@@ -78,8 +78,7 @@ class SubscriptionFrame extends ConsumerWidget {
   }
 }
 
-/// Settings rows: the subscription (owners) and "Switch business" (when the
-/// app was connected with a reference key).
+/// Settings rows: the subscription (owners) and "Switch business".
 class SubscriptionSettingsTiles extends ConsumerWidget {
   const SubscriptionSettingsTiles({super.key, required this.forOwner});
 
@@ -103,16 +102,15 @@ class SubscriptionSettingsTiles extends ConsumerWidget {
               _ => 'Paid until ${formatDate(status.paidUntil!)}',
             }),
           ),
-        if (connection.isHosted)
-          ListTile(
-            key: const Key('settings-switch-business'),
-            leading: const Icon(Icons.swap_horiz_rounded),
-            title: const Text('Switch business'),
-            subtitle: Text(
-              connection.businessName.isEmpty ? 'Connect with another reference key' : 'Connected to ${connection.businessName}',
-            ),
-            onTap: () => confirmSwitchBusiness(context, ref),
+        ListTile(
+          key: const Key('settings-switch-business'),
+          leading: const Icon(Icons.swap_horiz_rounded),
+          title: const Text('Switch business'),
+          subtitle: Text(
+            connection.businessName.isEmpty ? 'Connect with another reference key' : 'Connected to ${connection.businessName}',
           ),
+          onTap: () => confirmSwitchBusiness(context, ref),
+        ),
       ],
     );
   }

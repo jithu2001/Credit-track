@@ -237,6 +237,9 @@ func newApp(console bool) (*app, error) {
 	if err := dropStoredLogins(settings); err != nil {
 		return nil, err
 	}
+	if err := dropOldCloud(settings, log); err != nil {
+		return nil, err
+	}
 	state, err := syncer.LoadState(dir)
 	if err != nil {
 		return nil, fmt.Errorf("state: %w", err)
@@ -268,6 +271,23 @@ func dropStoredLogins(st *syncer.SettingsStore) error {
 		return nil
 	}
 	return st.Update(func(*syncer.Settings) error { return nil })
+}
+
+// dropOldCloud removes the direct cloud connection that versions before 0.5.0
+// kept in config.json (cloud URL, service key, a business id typed in by
+// hand). That connection is no longer supported: the PC syncs again once it
+// is connected with a reference key and activation code.
+func dropOldCloud(st *syncer.SettingsStore, log *slog.Logger) error {
+	if !st.HadOldCloud() {
+		return nil
+	}
+	if err := st.Update(func(*syncer.Settings) error { return nil }); err != nil {
+		return err
+	}
+	if !st.Get().Cloud.Link.Connected() {
+		log.Warn("the old direct cloud connection is no longer supported: connect this PC with the reference key and activation code on the Cloud Sync page")
+	}
+	return nil
 }
 
 // localURL is where the CLI reaches the running app.
@@ -789,7 +809,7 @@ func cmdConfig() int {
 		"dataDir": a.dataDir, "configFile": a.settings.Path(), "logFile": a.logPath, "url": a.localURL(),
 		"tally":    map[string]any{"host": a.cfg.TallyHost, "port": a.cfg.TallyPort, "portSource": a.cfg.PortSource, "timeout": a.cfg.TallyTimeout.String(), "shopGroups": a.cfg.ShopGroups},
 		"business": set.Business,
-		"cloud": map[string]any{"provider": set.Cloud.Provider, "supabaseUrl": set.Cloud.SupabaseURL, "keyStored": set.Cloud.SupabaseKey != "", "keyFromEnv": set.Cloud.KeyFromEnv, "keyError": set.Cloud.KeyError, "secretScheme": a.secrets.Scheme(),
+		"cloud": map[string]any{"provider": set.Cloud.Provider, "secretScheme": a.secrets.Scheme(),
 			"controlUrl": set.ControlURL(),
 			"link": map[string]any{"referenceKey": set.Cloud.Link.ReferenceKey, "baseUrl": set.Cloud.Link.BaseURL, "deviceId": set.Cloud.Link.DeviceID,
 				"businessName": set.Cloud.Link.BusinessName, "pcKeyStored": set.Cloud.Link.DeviceKey != "", "keyError": set.Cloud.Link.KeyError,

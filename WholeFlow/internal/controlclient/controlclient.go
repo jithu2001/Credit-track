@@ -95,7 +95,8 @@ type ActivateRequest struct {
 }
 
 // Activation is what the server returns for a good code. DeviceKey is a
-// secret: it is stored encrypted and used like the Supabase service key.
+// secret: it is stored encrypted and authenticates this PC to the business's
+// data API on the WholeFlow server.
 type Activation struct {
 	DeviceID          string `json:"device_id"`
 	BusinessID        string `json:"business_id"`

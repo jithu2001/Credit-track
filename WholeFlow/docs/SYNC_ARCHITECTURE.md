@@ -11,16 +11,17 @@ How the WholeFlow Tally Sync Service moves data from TallyPrime to the cloud, an
 │   internal/api    (dashboard / shops / exports)     │ Cloud Sync   │ │
 │   internal/syncer (engine, state, transformer)      │   page+API   │ │
 │   internal/cloud  (provider-neutral contract)       │ Scheduler    │ │
-│   internal/cloud/supabase  (PostgREST client)       │ Engine       │ │
+│   internal/cloud/rest  (PostgREST + GoTrue client)  │ Engine       │ │
 │   %ProgramData%\WholeFlow  config.json state.json   └──────┬───────┘ │
 └────────────────────────────────────────────────────────────┼─────────┘
-                                                      HTTPS  │ service-role key
+                                                      HTTPS  │ PC key (from the activation)
                                                              ▼
-                                                   Supabase (PostgreSQL + RLS)
+                                              WholeFlow server, per business:
+                                              PostgREST + PostgreSQL (RLS)
                                                              │
-                                                      HTTPS  │ Supabase Auth (owner / staff)
+                                                      HTTPS  │ GoTrue accounts (owner / staff)
                                                              ▼
-                                                        Mobile app (future)
+                                                  Owner / Staff phone apps
 ```
 
 The mobile app never talks to Tally and Tally is never exposed to the internet. The only path is Tally → local sync service → cloud → mobile app.
@@ -31,25 +32,25 @@ The mobile app never talks to Tally and Tally is never exposed to the internet. 
 |---|---|---|
 | `internal/tally` | TallyPrime HTTP/XML transport, TDL requests, parsing, error classification. Unchanged from the web app, plus `GetVouchers` / `GetVoucherIDs` and `AlterID` fields. | Tally only |
 | `internal/cloud` | `Provider` interface and plain Go models (`Company`, `Shop`, `Transaction`, `SyncState`, `SyncLog`) and cloud error kinds. | Nothing else |
-| `internal/cloud/supabase` | `Provider` implementation over Supabase's PostgREST API (standard library HTTP). Upserts, paging, soft deletes, error mapping. | Supabase only |
+| `internal/cloud/rest` | `Provider` implementation over the business's data API on the WholeFlow server (PostgREST + GoTrue, standard library HTTP). Upserts, paging, soft deletes, owner/staff accounts, error mapping. | The server's API only |
 | `internal/cloud/memory` | In-process `Provider` used by tests and the `memory` dry-run mode. Reference for upsert/soft-delete semantics. | Nothing |
 | `internal/syncer` | Settings (config.json), local state (state.json), transformer, engine (one run), backoff, scheduler (background loop), provider factory. | `tally` types and `cloud` interface |
 | `internal/auth` | Developer password hashing (PBKDF2-SHA256), sessions, login throttling. | Nothing |
-| `internal/secrets` | Encrypts the service-role key at rest (Windows DPAPI, machine scope). | OS |
+| `internal/secrets` | Encrypts the PC key at rest (Windows DPAPI, machine scope). | OS |
 | `internal/admin` | Admin login (wraps the whole app) and the Cloud Sync API at `/api/sync/*`. | `syncer`, `tally`, `auth` |
 | `internal/api`, `web/` | The existing web app API and frontend; the frontend now includes the Cloud Sync page. | `tally` |
 | `internal/logging` | Size-rotated structured log file. | Nothing |
 | `cmd/server` | The single executable: CLI, Windows service wrapper, process wiring of web app + sync. | Everything |
 
-The engine imports `cloud` but never `cloud/supabase`; the only place Supabase is named is the provider factory in `syncer/provider.go`. Adding a backend means implementing `cloud.Provider` in a new sub-package and adding one case to that factory.
+The engine imports `cloud` but never `cloud/rest`; the only place a backend is named is the provider factory in `syncer/provider.go`. Adding a backend means implementing `cloud.Provider` in a new sub-package and adding one case to that factory.
 
-**WholeFlow server connection (0.4.0).** Provider `wholeflow` reuses `cloud/supabase` unchanged: the business's database on the WholeFlow server is Supabase-compatible at `<base_url>/rest/v1` and `<base_url>/auth/v1`, and this PC's key (from `POST /control/activate`, stored DPAPI-encrypted as `cloud.link.deviceKeyEnc`) is sent exactly like the service key. `internal/controlclient` talks to the control service (activate, heartbeat, PC login). The server refuses on purpose with HTTP 402 (subscription ended → `CLOUD_SUBSCRIPTION_ENDED`, run status `paused`: no backoff, no deletions, logged once, resumes when requests succeed) and 403 `device_revoked` (→ `CLOUD_DEVICE_REVOKED`, run status `revoked`, saved as `cloud.link.revoked` so no further requests are made). The plan's `max_companies` caps `Settings.SyncCompanies()` (first N in the configured order) and ticking on the Cloud Sync page. `syncer.Heartbeat` reports the app version at start and after runs (≤ every 5 min) and keeps the limit and subscription state current.
+**WholeFlow server connection (0.4.0; the only one since 0.5.0).** Provider `wholeflow` (`cloud/rest`) talks to the business's API on the WholeFlow server at `<base_url>/rest/v1` (PostgREST) and `<base_url>/auth/v1` (GoTrue) with this PC's key (from `POST /control/activate`, stored DPAPI-encrypted as `cloud.link.deviceKeyEnc`). The only other provider is `memory` (tests, `CLOUD_PROVIDER=memory` dry run). The direct connection of older versions (cloud URL + service-role key) was removed in 0.5.0: `syncer.LoadSettings` recognises it in `config.json`, treats the PC as not connected, and the next save drops it. `internal/controlclient` talks to the control service (activate, heartbeat, PC login). The server refuses on purpose with HTTP 402 (subscription ended → `CLOUD_SUBSCRIPTION_ENDED`, run status `paused`: no backoff, no deletions, logged once, resumes when requests succeed) and 403 `device_revoked` (→ `CLOUD_DEVICE_REVOKED`, run status `revoked`, saved as `cloud.link.revoked` so no further requests are made). The plan's `max_companies` caps `Settings.SyncCompanies()` (first N in the configured order) and ticking on the Cloud Sync page. `syncer.Heartbeat` reports the app version at start and after runs (≤ every 5 min) and keeps the limit and subscription state current.
 
 ## One synchronisation run
 
 `Engine.Run` performs the steps below and never returns an error: every failure ends up in the `RunResult`, the local state file and the cloud `sync_state` row.
 
-1. **Settings snapshot.** If nothing is configured (no password, business, cloud key or selected company) the run is `skipped`.
+1. **Settings snapshot.** If nothing is configured (not connected by reference key, or no selected company) the run is `skipped`.
 2. **Cloud authenticate.** `Provider.Authenticate` proves the key works and the business row exists. Failure: every selected company is marked `AUTH_ERROR` / `CLOUD_OFFLINE`; Tally is not touched.
 3. **Tally company list.** Failure: every selected company is marked `TALLY_OFFLINE`; the cloud `sync_state` row (entity `company`) records the error but keeps `last_successful_sync_at`; no data rows change; no `sync_logs` row is written (an overnight outage must not produce hundreds of log rows).
 4. **Connection row.** `tally_connections` is upserted with hostname, host/port, version and `last_seen_at`.
@@ -125,8 +126,8 @@ Error codes are the existing Tally kinds (`TALLY_UNREACHABLE`, `TALLY_TIMEOUT`, 
 ## Security model
 
 - **Login protects the whole app**: every `/api/*` endpoint (dashboards, exports, sync configuration) requires a session; only `POST /api/sync/login` and `GET /api/sync/session` are open (the first-run `setup` step is gone). A login is a WholeFlow account checked by `POST /control/pc/login` at every sign-in; nothing is stored on the PC, and there is no offline or local login; 8 failures lock the account for 5 minutes; sessions are in memory with a 12 h sliding expiry; cookies are `HttpOnly` + `SameSite=Strict`; every non-GET request needs an `X-Requested-With` header (CSRF). The CLI authenticates with a random per-process token in `control.token`. `APP_ADDR` defaults to 127.0.0.1, so the app is not reachable from the LAN unless deliberately changed.
-- **Owner / staff** live in Supabase Auth and `public.users`; RLS restricts them to their `business_id`. The sync service never creates or touches these accounts.
-- **Service-role key** is stored DPAPI-encrypted in machine scope so the service (LocalSystem) and the developer console can both read it; it is redacted from error messages and never logged, returned by the API, or accepted from a non-localhost request.
+- **Owner / staff** live in the server's GoTrue accounts and `public.users`; RLS restricts them to their `business_id`. The sync never touches them; only the accounts section of the Cloud Sync page creates and manages them, through this PC's connection.
+- **PC key** is stored DPAPI-encrypted in machine scope so the service (LocalSystem) and the developer console can both read it; it is redacted from error messages and never logged, returned by the API, or accepted from a non-localhost request.
 - Logs contain identifiers, counts and error text, never credentials. Raw Tally XML is only written to disk when `TALLY_DEBUG_RAW=true` (development).
 
 ## Measured on the sample company (TallyPrime 6, Sep 2026)

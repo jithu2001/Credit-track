@@ -14,7 +14,7 @@ SSH: `ssh wholeflow` (key `~/.ssh/wholeflow_vps`; password login is off).
 |---|---|
 | `docker-compose.yml`, `.env` | Shared PostgreSQL 15 (localhost only). `.env` holds `POSTGRES_PASSWORD`, `PUBLIC_URL` (mode 600) |
 | `db/init/00-roles.sql` | Server-wide roles `anon`, `authenticated`, `service_role` |
-| `migrations/` | Copy of `WholeFlow/supabase/migrations/*.sql` |
+| `migrations/` | Copy of `WholeFlow/db/migrations/*.sql` |
 | `templates/` | Per-business compose file and nginx block |
 | `businesses/<slug>/` | That business's `env` (secrets, keys, ports) and `compose.yml` (mode 700) |
 | `nginx/wholeflow.conf` | Linked into `/etc/nginx/sites-enabled`; certbot added the HTTPS parts. Business routes are in `/etc/nginx/wholeflow-businesses/<slug>.conf` |
@@ -34,8 +34,8 @@ docker compose -p biz-<slug> -f businesses/<slug>/compose.yml --env-file busines
 ```
 
 A business's base URL is `https://api.<domain>/b/<slug>`; its anon key is in
-`businesses/<slug>/env` (`ANON_KEY`). The apps use these exactly like a Supabase
-URL and key. The service key in the same file must never leave the server
+`businesses/<slug>/env` (`ANON_KEY`). The apps use these with the
+PostgREST/GoTrue client libraries. The service key in the same file must never leave the server
 (phase 2 gives each Tally PC its own key instead).
 
 ## Control service and admin app

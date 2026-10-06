@@ -46,14 +46,14 @@ alter role ${SLUG}_auth set search_path = auth;
 create database $DB;
 revoke all on database $DB from public;
 grant connect on database $DB to ${SLUG}_auth, ${SLUG}_api;
--- As on Supabase: signed-in API roles may use temporary tables (anon may not).
+-- Signed-in API roles may use temporary tables (anon may not).
 grant temporary on database $DB to authenticated, service_role;
 grant create on database $DB to ${SLUG}_auth;
 SQL
 psql_admin -d "$DB" <<SQL
 create schema auth authorization ${SLUG}_auth;
 grant usage on schema auth to anon, authenticated, service_role;
--- What Supabase gives a project: the API roles may use the public schema, and
+-- What the data API (PostgREST) expects: the API roles may use the public schema, and
 -- objects that migrations (run as postgres) create are granted to them.
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;

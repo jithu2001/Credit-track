@@ -7,7 +7,7 @@
 //   INTERNAL_TOKEN  shared with the control service
 //   PORT            8200
 
-import { supabaseBackend } from "./backend.ts";
+import { apiBackend } from "./backend.ts";
 import { type Backend, corsHeaders, handle } from "./handler.ts";
 
 const controlUrl = Deno.env.get("CONTROL_URL") ?? "http://127.0.0.1:8100";
@@ -23,7 +23,7 @@ async function backendFor(slug: string): Promise<Backend | null> {
   const res = await fetch(`${controlUrl}/control/internal/tenant/${slug}`, { headers: { "X-Internal-Token": token } });
   if (!res.ok) return null;
   const t = await res.json() as { base_url: string; service_key: string };
-  const backend = supabaseBackend(t.base_url, t.service_key);
+  const backend = apiBackend(t.base_url, t.service_key);
   cache.set(slug, { backend, until: Date.now() + 60_000 });
   return backend;
 }

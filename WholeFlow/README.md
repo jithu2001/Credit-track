@@ -46,7 +46,7 @@ go test ./...
 .\bin\wholeflow.exe sync | config | uninstall
 ```
 
-Cloud sync in one minute: run the app → open http://127.0.0.1:8080, log in with your WholeFlow account → Cloud Sync → reference key + activation code → Connect → Test cloud connection, discover & tick companies, Save settings, Sync now, enable background sync, Save settings → `install`. (PCs set up earlier with a Supabase URL + service-role key keep working; that form is under *Advanced* on the same page.)
+Cloud sync in one minute: run the app → open http://127.0.0.1:8080, log in with your WholeFlow account → Cloud Sync → reference key + activation code → Connect → Test cloud connection, discover & tick companies, Save settings, Sync now, enable background sync, Save settings → `install`. This is the only way to connect: the older direct connection (cloud URL + service key) was removed in 0.5.0.
 
 Data lives in `%ProgramData%\WholeFlow` (`config.json` with the key DPAPI-encrypted, `state.json`, `logs\app.log`).
 Environment variables / `.env` override the file (see `.env.example`). `CLOUD_PROVIDER=memory` is a dry run.
@@ -64,7 +64,7 @@ First find which case you are in. On the client PC, look for `C:\Program Files\W
 | Case | What you see | Follow |
 |---|---|---|
 | **1. First time** | No `C:\Program Files\WholeFlow` and no WholeFlow service | [Case 1](#case-1-first-time-install) |
-| **2. Older version installed** (0.2 / 0.3, connected to Supabase with a URL and service key) | `status` shows a version below 0.4.0 (for 0.4.0 itself, Case 3 is enough) | [Case 2](#case-2-pc-already-has-an-older-version) |
+| **2. Older version installed** (0.2 / 0.3, connected directly with a cloud URL and service key) | `status` shows a version below 0.4.0, or the PC was never connected with a reference key | [Case 2](#case-2-pc-already-has-an-older-version) |
 | **3. Already on 0.4+, just a newer release** | `status` shows 0.4.0 or later | [Rolling out an update](#rolling-out-an-update) |
 | **4. Replacement or second PC** for a business that is already connected | — | [Case 4](#case-4-replacement-or-second-pc) |
 
@@ -101,31 +101,22 @@ First find which case you are in. On the client PC, look for `C:\Program Files\W
 
 ### Case 2: PC already has an older version
 
-Upgrading **never loses settings or sync progress**: they live in `C:\ProgramData\WholeFlow` and are kept. Do it in two parts. Part A is safe on its own, and you can do Part B the same day or later, when the business moves to the WholeFlow server.
+Versions before 0.4.0 connected directly to a cloud project with a URL and a service key. That connection is no longer supported: from 0.5.0 on, every PC connects only to the WholeFlow server. The update keeps the ticked companies and sync options, removes the old connection from `config.json`, and the PC does not sync until it is connected with a reference key.
 
-**Part A: update the program (keeps syncing to Supabase as before)**
+Do this once the business exists in the admin app.
 
-1. Optional safety copy, from an Administrator console: `Copy-Item C:\ProgramData\WholeFlow C:\WholeFlow-backup -Recurse`. Keep the old release zip too.
-2. Extract the new zip and double-click **`Install-WholeFlow.cmd`** (accept UAC). It prints `Upgrading WholeFlow 0.3.x -> 0.4.0`. It then stops the service, waits for Windows to release the old exe, copies the new one, restarts the service and prints `status`.
-3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow admin account** (email + password; needs internet the first time). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**. 0.4.1 deletes it from `config.json` when it starts, so there is no way to open the app without the server.
-4. The PC keeps syncing to **Supabase exactly as before**. On the Cloud Sync page those settings are now under *Advanced: connect with Supabase URL and key*, which opens by itself on such PCs. Check `status` shows the new version and a fresh `Last successful sync`.
+1. Optional safety copy, from an Administrator console: `Copy-Item C:\ProgramData\WholeFlow C:\WholeFlow-backup -Recurse`.
+2. Extract the new zip and double-click **`Install-WholeFlow.cmd`** (accept UAC). It prints `Upgrading WholeFlow 0.3.x -> <new>`. It then stops the service, waits for Windows to release the old exe, copies the new one, restarts the service and prints `status`, which says the PC is *not connected*.
+3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow admin account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
+4. Cloud Sync → **Step 1 · Connect to WholeFlow**: enter the **reference key** and **activation code**, then click **Connect**.
+5. Click **Test cloud connection**. Check the ticked companies are still right: the plan's limit applies, and the page refuses more than the plan allows. Click **Save settings**.
+6. Click **Sync now**. The first sync is automatically a **full** one: the app sees a new cloud company and starts its markers from zero, so all history goes up. It takes a few minutes per company.
+7. Make sure **Background synchronisation enabled** is still ticked, then click **Save settings**. Check `status` and the admin app's *Tally PCs* list, as in Case 1 steps 6–7.
+8. Afterwards owner and staff install the **hosted** phone apps and connect with the **reference key**. Their old mobile logins do not carry over: the owner signs in with the login from the admin app's *New business* screen, then recreates staff in the Owner app (Settings → Staff).
 
-**Part B: move the PC to the WholeFlow server**
+If an old `.env` sits next to the exe or in `C:\ProgramData\WholeFlow`, its cloud lines (`CLOUD_PROVIDER`, `BUSINESS_ID`, the old URL and key) are now ignored; delete them.
 
-Do this only once the business exists in the admin app and you are ready to move it.
-
-1. Cloud Sync → **Step 1 · Connect to WholeFlow**: enter the **reference key** and **activation code**, then click **Connect**. The PC now uses the WholeFlow server, and the Supabase settings are no longer used.
-2. Click **Test cloud connection**. Check the ticked companies are still right: the plan's limit applies now, and the page refuses more than the plan allows. Click **Save settings**.
-3. Click **Sync now**. The first sync to the new server is automatically a **full** one: the app sees a new cloud company and starts its markers from zero. All history goes up, not just changes since the last Supabase sync. It takes a few minutes per company, and nothing in Supabase is deleted.
-4. Make sure **Background synchronisation enabled** is still ticked, then click **Save settings**. Check `status` and the admin app's *Tally PCs* list, as in Case 1 steps 6–7.
-5. Afterwards:
-   - Owner and staff install the **hosted** phone apps and connect with the **reference key**.
-   - Mobile logins do **not** move from Supabase. The owner signs in with the login from the admin app's *New business* screen, then recreates staff in the Owner app (Settings → Staff).
-   - Supabase stops receiving updates from this PC. Keep it read-only for a while before cancelling it.
-
-**Going back:**
-- After Part A: install the previous release zip the same way. Its settings are untouched.
-- After Part B: going back below 0.4.0 isn't supported, because older versions don't understand a reference-key connection. Either stay on 0.4+, or use *Advanced* to point it at Supabase again.
+**Going back:** not supported below 0.4.0, because older versions don't understand a reference-key connection. Going back to 0.4.x keeps the connection.
 
 ### Case 4: replacement or second PC
 
@@ -159,7 +150,7 @@ Then continue with sign-in and Cloud Sync (Case 1, steps 3–7). Remove later wi
 
 1. Copy `wholeflow.exe` to a permanent folder the user can read, e.g. `C:\Users\<user>\WholeFlow` (not Downloads or a USB stick).
 2. Open a normal console in that folder and run `.\wholeflow.exe autostart`. This registers the Task Scheduler task **WholeFlow** for the current Windows user (runs `wholeflow.exe run -background` at logon) and starts the app hidden right away.
-3. Sign in and set up Cloud Sync as in Case 1, steps 3–5 (Case 2 Part B for a PC moving from Supabase).
+3. Sign in and set up Cloud Sync as in Case 1, steps 3–5.
 4. Check: log off and on again, wait half a minute, then run `.\wholeflow.exe status`. Expect `Logon autostart: ready` and `Process: running as background`.
 5. **Updating such a PC**: log in as that user, run `.\wholeflow.exe stop` in the program folder, overwrite `wholeflow.exe` with the new one, then run `.\wholeflow.exe start`.
 
@@ -186,7 +177,7 @@ The customer sees nothing: no window, no tray icon, no login. Sync runs every in
 
 ### Rolling out an update
 
-An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted PC key (or the older Supabase key) and the sync progress all live in `C:\ProgramData\WholeFlow` and are kept, so there is nothing to set up again.
+An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted PC key and the sync progress all live in `C:\ProgramData\WholeFlow` and are kept, so there is nothing to set up again.
 
 **On your PC, once per release:**
 
@@ -196,7 +187,7 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1
    ```
    Result: `dist\WholeFlow-<version>.zip` with `wholeflow.exe`, `Install-WholeFlow.cmd` / `.ps1`, `README.txt`, `.env.example` and `migrations\`. The script prints the exe's SHA-256 so you can check the copy on the client.
-3. **Database first.** If the release adds a file under `supabase/migrations/`, apply it before updating any PC. For businesses on the WholeFlow server: copy it to `/opt/wholeflow/migrations/`, then admin app → Settings → **Update all businesses**. For a business still on Supabase: run it in Supabase → SQL Editor. Migrations are additive, so the old version keeps working against the new schema. Releases so far:
+3. **Database first.** If the release adds a file under `db/migrations/`, apply it before updating any PC. On the WholeFlow server: copy it to `/opt/wholeflow/migrations/`, then admin app → Settings → **Update all businesses**. Migrations are additive, so the old version keeps working against the new schema. Releases so far:
 
    | Version | Migration to apply | What it adds |
    |---|---|---|
@@ -204,6 +195,7 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    | 0.3.0 | `0003_purchasing.sql` | suppliers, stock items, purchase bills; background mode and autostart |
    | 0.4.0 | `0004`–`0007` (applied by the server to every business) | connect by reference key + activation code, WholeFlow account login, subscription pause, plan company limit, heartbeat |
    | 0.4.1 | none | local account and offline login removed: `set-password` is gone, every sign-in is checked by the server, and logins stored by older versions are deleted from `config.json` at start |
+   | 0.5.0 | none | Supabase connection removed; only the WholeFlow server. A PC still set up with a cloud URL and service key counts as not connected until it connects with a reference key (see Case 2) |
 
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 
@@ -235,9 +227,9 @@ Documentation:
 - [deploy/](deploy/README.md) — what to copy to a client PC; `Install-WholeFlow.cmd` installs/upgrades/removes the service
 - [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md) — developer setup runbook, Windows service and logon autostart installation
 - [docs/SYNC_ARCHITECTURE.md](docs/SYNC_ARCHITECTURE.md) — how a run works, incremental sync by Tally `ALTERID`, retry/backoff, offline rules, security model
-- [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — Supabase tables, RLS for owner/staff, example queries
-- [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql) — the schema
-- [supabase/migrations/0002_mobile_app.sql](supabase/migrations/0002_mobile_app.sql), [0003_purchasing.sql](supabase/migrations/0003_purchasing.sql) — staff access; suppliers, stock items, purchase bills
+- [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — database tables, RLS for owner/staff, example queries
+- [db/migrations/0001_init.sql](db/migrations/0001_init.sql) — the schema
+- [db/migrations/0002_mobile_app.sql](db/migrations/0002_mobile_app.sql), [0003_purchasing.sql](db/migrations/0003_purchasing.sql) — staff access; suppliers, stock items, purchase bills
 - [STATUS.md](STATUS.md) — current project status
 
 ---
@@ -323,14 +315,14 @@ internal/config        .env + tally.ini port detection (shared)
 internal/tally         TallyService: XML/TDL requests, parsing, balances, transactions, vouchers (ONLY place that knows Tally XML)
 internal/api           web app REST API, snapshot, filters, exports
 internal/export        CSV and .xlsx writers
-internal/cloud         provider-neutral cloud contract + models;  cloud/supabase (PostgREST), cloud/memory (tests, dry run)
+internal/cloud         provider-neutral cloud contract + models;  cloud/rest (the server's PostgREST + GoTrue API), cloud/memory (tests, dry run)
 internal/syncer        settings, local state, transformer, engine, backoff, scheduler
 internal/auth          login: PBKDF2 hashes, sessions, lockout
-internal/secrets       DPAPI encryption of the PC key (or older service-role key)
+internal/secrets       DPAPI encryption of the PC key
 internal/controlclient talks to the WholeFlow control service: activate, heartbeat, PC login
 internal/admin         admin login (protects the whole app) + Cloud Sync API (/api/sync/*)
 internal/logging       rotating structured log
-supabase/migrations    SQL schema with Row Level Security
+db/migrations    SQL schema with Row Level Security
 docs/                  setup, architecture, schema
 web/static             frontend incl. the Cloud Sync page (embedded into the exe)
 ```

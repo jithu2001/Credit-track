@@ -20,8 +20,9 @@
 --     pin, measures the distance itself and stamps the time; rejected attempts
 --     are kept in visit_failed_attempts. Visits are never edited by clients.
 --
--- Apply in the Supabase dashboard: SQL Editor → paste this file → Run.
--- Checks: supabase/tests/sites_visits.sql (rolled back).
+-- Applied by the WholeFlow server to every business (scripts/migrate.sh, or the
+-- admin app → Settings → Update all businesses).
+-- Checks: tests/sites_visits.sql (rolled back).
 
 begin;
 

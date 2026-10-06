@@ -1,6 +1,6 @@
-# Database Schema (Supabase / PostgreSQL)
+# Database Schema (one PostgreSQL database per business)
 
-Migrations: `supabase/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, `0004_overdue.sql`, `0005_sites_visits.sql`, `0006_small_radius.sql`, applied in that order in the Supabase SQL editor (or with `supabase db push`).
+Migrations: `db/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, `0004_overdue.sql`, `0005_sites_visits.sql`, `0006_small_radius.sql`, `0007_service_control.sql`, applied in that order to every business database by the WholeFlow server (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). The business's login (GoTrue) and data API (PostgREST) run on top of it.
 
 ```
 businesses ─┬─ users (auth.users)            OWNER | STAFF
@@ -26,7 +26,7 @@ insert into businesses (name) values ('JMJ Marketing') returning id;
 ```
 
 ### users
-One row per Supabase Auth user; `id` references `auth.users(id)`.
+One row per login account; `id` references `auth.users(id)` (the login service's table).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -37,7 +37,7 @@ One row per Supabase Auth user; `id` references `auth.users(id)`.
 | permissions | jsonb | reserved for staff restrictions, e.g. `{"areas":["Pala"],"transactions":false}` |
 | created_by | uuid | the owner who created a staff user |
 
-The developer never has a row here. Owners (and staff) are created from the app's Cloud Sync page, section "Business owner & staff accounts": it calls the Supabase Auth admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service role; disabling an account sets `is_active = false` and bans the auth user. The manual equivalent is: create the auth user in the dashboard, then `insert into users (id, business_id, role) values (<auth uid>, <business>, 'OWNER')`.
+Admins (you) never have a row here. The owner is created with the business in the admin app; staff are created by the owner in the Owner app (through the staff service), or from the Tally PC's Cloud Sync page, section "Business owner & staff accounts". Each calls the login service's admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service key; disabling an account sets `is_active = false` and bans the login.
 
 ### tally_connections
 | Column | Notes |
@@ -148,7 +148,7 @@ select last_successful_sync_at, status, error_code from sync_state where company
 
 ## Mobile app additions (migration 0002)
 
-Migration: `supabase/migrations/0002_mobile_app.sql` (additive; the sync service is unaffected). Checks: `supabase/tests/rls_mobile.sql` (rolled back).
+Migration: `db/migrations/0002_mobile_app.sql` (additive; the sync service is unaffected). Checks: `db/tests/rls_mobile.sql` (rolled back).
 
 ### staff_company_access
 Which companies each STAFF user works for. **No row, no data:** a staff member sees only the companies the owner assigned, and a newly synced company stays hidden from staff until assigned. Owners always see every company of their business and have no rows here.
@@ -178,7 +178,7 @@ The helpers are `security definer`. They return true for an active owner, and fo
 
 ## Sites and staff visits (migration 0005)
 
-Migration: `supabase/migrations/0005_sites_visits.sql`. **Not additive**: staff access by Tally area is replaced by access by site, so the mobile app and the `manage-staff` Edge Function must be deployed with it. The sync service is unaffected (it never writes `shops.site_id`). Checks: `supabase/tests/sites_visits.sql`, plus the updated `rls_mobile.sql` and `overdue.sql` (all rolled back).
+Migration: `db/migrations/0005_sites_visits.sql`. **Not additive**: staff access by Tally area is replaced by access by site, so the mobile app and the staff service (`manage-staff`) must be deployed with it. The sync service is unaffected (it never writes `shops.site_id`). Checks: `db/tests/sites_visits.sql`, plus the updated `rls_mobile.sql` and `overdue.sql` (all rolled back).
 
 | Table / column | Content |
 |---|---|
@@ -199,7 +199,7 @@ Functions for the app: `site_report(company, from, to)` (per site: shops, shops 
 
 ## Suppliers, stock and purchases (migration 0003)
 
-Migration: `supabase/migrations/0003_purchasing.sql` (additive). Written by the sync service after shops and transactions; each part can be switched off on the Cloud Sync page (step 4) or with `SYNC_SUPPLIERS`, `SYNC_PURCHASES`, `SYNC_INVENTORY` in `.env`. A failure in these steps is a warning: the company is still `SYNCED`, the error goes to that entity's `sync_state` row and to the sync log (`error_code = STEP_WARNINGS`).
+Migration: `db/migrations/0003_purchasing.sql` (additive). Written by the sync service after shops and transactions; each part can be switched off on the Cloud Sync page (step 4) or with `SYNC_SUPPLIERS`, `SYNC_PURCHASES`, `SYNC_INVENTORY` in `.env`. A failure in these steps is a warning: the company is still `SYNCED`, the error goes to that entity's `sync_state` row and to the sync log (`error_code = STEP_WARNINGS`).
 
 | Table | Key | Content | How it is synced |
 |---|---|---|---|

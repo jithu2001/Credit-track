@@ -5,16 +5,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/connection/business_connection.dart';
 import 'core/connection/connect_screen.dart';
-import 'core/env.dart';
 import 'core/providers.dart';
 
-/// Starts the app: with the build's fixed project, or the business saved on
-/// the connect screen, or the connect screen itself.
+/// Starts the app: with the business saved on the connect screen, or the
+/// connect screen itself.
 Future<void> bootstrapWholeFlow({required Widget appWidget, required String title}) async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   final store = ConnectionStore(prefs);
-  var supabaseReady = false;
+  var clientReady = false;
 
   late Future<void> Function(BusinessConnection) start;
 
@@ -36,21 +35,18 @@ Future<void> bootstrapWholeFlow({required Widget appWidget, required String titl
     }
     await store.clear();
     await Supabase.instance.dispose();
-    supabaseReady = false;
+    clientReady = false;
     showConnect();
   }
 
   start = (c) async {
-    if (supabaseReady) await Supabase.instance.dispose();
-    final sessionKey = c.sessionKey;
+    if (clientReady) await Supabase.instance.dispose();
     await Supabase.initialize(
       url: c.baseUrl,
       publishableKey: c.anonKey,
-      authOptions: sessionKey == null
-          ? const FlutterAuthClientOptions()
-          : FlutterAuthClientOptions(localStorage: SharedPreferencesLocalStorage(persistSessionKey: sessionKey)),
+      authOptions: FlutterAuthClientOptions(localStorage: SharedPreferencesLocalStorage(persistSessionKey: c.sessionKey)),
     );
-    supabaseReady = true;
+    clientReady = true;
     runApp(
       ProviderScope(
         overrides: [
@@ -66,7 +62,7 @@ Future<void> bootstrapWholeFlow({required Widget appWidget, required String titl
     );
   };
 
-  final saved = Env.hasFixedProject ? BusinessConnection.fixed() : store.load();
+  final saved = store.load();
   if (saved == null) {
     showConnect();
   } else {

@@ -7,7 +7,7 @@
 #
 # Result (version from internal/syncer/settings.go):
 #   dist/WholeFlow-<version>/      wholeflow.exe, Install-WholeFlow.cmd/.ps1,
-#                                  README.txt, .env.example, migrations/
+#                                  README.txt, .env.example
 #   dist/WholeFlow-<version>.zip   the same files: copy this to the client PC
 set -euo pipefail
 cd "$(dirname "$0")/.."                       # the WholeFlow folder
@@ -32,7 +32,6 @@ crlf deploy/Install-WholeFlow.cmd "$out/Install-WholeFlow.cmd"
 crlf deploy/Install-WholeFlow.ps1 "$out/Install-WholeFlow.ps1"
 crlf deploy/README.md "$out/README.txt"
 crlf .env.example "$out/.env.example"
-cp -r supabase/migrations "$out/migrations"
 
 (cd "$out" && zip -qr -X "../$name.zip" .)
 hash=$(sha256sum "$out/wholeflow.exe" | cut -d' ' -f1)

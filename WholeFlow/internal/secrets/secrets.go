@@ -1,4 +1,4 @@
-// Package secrets encrypts configuration secrets (the cloud service-role key)
+// Package secrets encrypts configuration secrets (this PC's key from the activation)
 // at rest. On Windows it uses DPAPI in machine scope so both the Windows
 // service (LocalSystem) and the developer's console session can decrypt.
 // Elsewhere it falls back to an obfuscated-but-not-secret encoding, clearly

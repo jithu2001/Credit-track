@@ -11,7 +11,7 @@ part of 'session_controller.dart';
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 
 @ProviderFor(SessionController)
 final sessionControllerProvider = SessionControllerProvider._();
@@ -19,13 +19,13 @@ final sessionControllerProvider = SessionControllerProvider._();
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 final class SessionControllerProvider
     extends $AsyncNotifierProvider<SessionController, Session> {
   /// The app's single source of truth for who is signed in.
   ///
   /// A session only counts as signed in once the caller's `public.users` row is
-  /// loaded and active; otherwise the Supabase session is dropped.
+  /// loaded and active; otherwise the login session is dropped.
   SessionControllerProvider._()
     : super(
         from: null,
@@ -50,7 +50,7 @@ String _$sessionControllerHash() => r'fcd750510588882d8faa3c4e3f41ef31fc49158f';
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 
 abstract class _$SessionController extends $AsyncNotifier<Session> {
   FutureOr<Session> build();

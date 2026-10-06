@@ -215,25 +215,24 @@ func TestQuitEndpoint(t *testing.T) {
 	}
 }
 
-func TestSettingsNeverEchoKey(t *testing.T) {
+// The page saves only the sync options and companies: the business and cloud
+// settings come from the activation and cannot be changed through it.
+func TestSettingsSaveKeepsBusinessAndCloud(t *testing.T) {
 	ts, s := newTestServer(t, true)
 	c := &client{t: t, base: ts.URL}
 	c.login("pw-online")
-	body := `{"business":{"id":"biz","name":"JMJ"},"cloud":{"provider":"supabase","supabaseUrl":"https://x.supabase.co","supabaseKey":"sk-very-secret"},
+	body := `{"business":{"id":"other","name":"JMJ"},"cloud":{"provider":"wholeflow"},
 	          "sync":{"enabled":false,"intervalSeconds":600,"transactions":true,"fullReconcileHours":24},"companies":[{"tallyId":"g1","name":"Co","enabled":true}]}`
 	resp, out := c.do("PUT", "/api/sync/settings", body, true)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("save = %d %s", resp.StatusCode, out)
 	}
-	if strings.Contains(out, "sk-very-secret") || !strings.Contains(out, `"hasKey":true`) {
-		t.Fatalf("key leaked or not stored: %s", out)
-	}
-	if got := s.Settings.Get(); got.Cloud.SupabaseKey != "sk-very-secret" || got.Sync.IntervalSeconds != 600 || len(got.EnabledCompanies()) != 1 {
+	got := s.Settings.Get()
+	if got.Sync.IntervalSeconds != 600 || len(got.EnabledCompanies()) != 1 {
 		t.Fatalf("settings not applied: %+v", got)
 	}
-	c.do("PUT", "/api/sync/settings", strings.Replace(body, `"supabaseKey":"sk-very-secret"`, `"supabaseKey":""`, 1), true)
-	if got := s.Settings.Get(); got.Cloud.SupabaseKey != "sk-very-secret" {
-		t.Fatal("blank key must keep the stored key")
+	if got.Business.ID != "biz" || got.Business.Name != "" || got.Cloud.Provider != syncer.ProviderMemory {
+		t.Fatalf("business or cloud changed by save: %+v %+v", got.Business, got.Cloud)
 	}
 	resp, _ = c.do("PUT", "/api/sync/settings", strings.Replace(body, `"intervalSeconds":600`, `"intervalSeconds":5`, 1), true)
 	if resp.StatusCode != http.StatusBadRequest || s.Settings.Get().Sync.IntervalSeconds != 600 {

@@ -1,4 +1,4 @@
-package supabase
+package rest
 
 import (
 	"context"
@@ -13,35 +13,37 @@ import (
 	"wholeflow/internal/cloud"
 )
 
-// Storage is the Supabase cloud.Provider.
+// Storage is the cloud.Provider for the business's data API on the WholeFlow
+// server.
 type Storage struct {
 	c          *client
 	businessID string
 }
 
-// Config is everything the Supabase provider needs.
+// Config is everything the provider needs: the business's address on the
+// WholeFlow server, this PC's key and the business id from the activation.
 type Config struct {
-	URL            string
-	ServiceRoleKey string
-	BusinessID     string
-	Timeout        time.Duration
+	URL        string
+	Key        string
+	BusinessID string
+	Timeout    time.Duration
 }
 
 func New(cfg Config, log *slog.Logger) (*Storage, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 60 * time.Second
 	}
-	c, err := newClient(cfg.URL, cfg.ServiceRoleKey, cfg.Timeout, log)
+	c, err := newClient(cfg.URL, cfg.Key, cfg.Timeout, log)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(cfg.BusinessID) == "" {
-		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "BUSINESS_ID is required"}
+		return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "business id is required"}
 	}
 	return &Storage{c: c, businessID: cfg.BusinessID}, nil
 }
 
-func (s *Storage) Name() string { return "supabase" }
+func (s *Storage) Name() string { return "wholeflow" }
 
 // Authenticate proves the key works and the business row exists.
 func (s *Storage) Authenticate(ctx context.Context) error {
@@ -395,5 +397,5 @@ func truncate(s string, n int) string {
 
 // String describes the target without revealing the key.
 func (s *Storage) String() string {
-	return fmt.Sprintf("supabase %s (business %s)", s.c.base, s.businessID)
+	return fmt.Sprintf("wholeflow %s (business %s)", s.c.base, s.businessID)
 }

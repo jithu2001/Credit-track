@@ -1,6 +1,6 @@
 // Package auth implements the developer login for the local setup interface.
 // It is deliberately separate from the owner/staff accounts, which live in
-// the cloud (Supabase Auth) and never touch this service.
+// the cloud (on the WholeFlow server) and never touch this service.
 package auth
 
 import (

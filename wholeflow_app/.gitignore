@@ -47,9 +47,8 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# WholeFlow: per-environment Supabase config (publishable key only; never a service-role key)
+# WholeFlow: build settings. hosted.json (the WholeFlow server address) is shared; others stay local.
 /env/*.json
-!/env/example.json
 !/env/hosted.json
 .env
 .env.*

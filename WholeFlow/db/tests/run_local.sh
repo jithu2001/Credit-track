@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs every migration and every SQL test against a throwaway local Postgres
-# (Docker, postgres:15) with a minimal stand-in for Supabase's auth schema.
-# Nothing touches a real project. Usage: supabase/tests/run_local.sh
+# (Docker, postgres:15) with a minimal stand-in for the login service's auth
+# schema. Nothing touches a real server. Usage: tests/run_local.sh
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 NAME=wholeflow-sqltest

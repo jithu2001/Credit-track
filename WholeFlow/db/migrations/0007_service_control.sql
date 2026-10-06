@@ -1,8 +1,8 @@
 -- WholeFlow — subscription status and per-PC keys, for businesses hosted on
 -- the WholeFlow server (see docs/MULTI_TENANT_PLAN.md, sections 3 and 5.4).
 --
--- Additive. On a database without a service_status row (e.g. the old
--- Supabase project) everything behaves as "active", so it is harmless there.
+-- Additive. On a database without a service_status row everything behaves as
+-- "active" (no subscription to enforce).
 --
 --   * service_status: one row, written only by the control service (it
 --     connects as postgres), read by signed-in users for the app banners.

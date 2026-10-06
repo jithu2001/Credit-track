@@ -1,7 +1,7 @@
 // Package cloud defines the provider-neutral contract between the sync engine
 // and whatever stores the synchronised data. The engine only ever imports this
-// package; concrete backends (Supabase today, others later) live in
-// sub-packages and must not leak their types upward.
+// package; concrete backends (rest: the WholeFlow server's data API; memory:
+// tests and dry runs) live in sub-packages and must not leak their types upward.
 package cloud
 
 import (
@@ -15,7 +15,7 @@ import (
 // call repeatedly with the same data: the sync engine relies on upserts keyed
 // by Tally identifiers, never on "insert once".
 type Provider interface {
-	// Name identifies the backend for logs and status ("supabase", "memory").
+	// Name identifies the backend for logs and status ("wholeflow", "memory").
 	Name() string
 	// Authenticate verifies credentials and that the configured business exists.
 	Authenticate(ctx context.Context) error

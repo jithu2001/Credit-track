@@ -7,7 +7,7 @@ import (
 
 	"wholeflow/internal/cloud"
 	"wholeflow/internal/cloud/memory"
-	"wholeflow/internal/cloud/supabase"
+	"wholeflow/internal/cloud/rest"
 )
 
 // ProviderFactory builds a cloud.Provider from settings. The engine calls it
@@ -20,15 +20,9 @@ func NewProviderFactory(log *slog.Logger, cloudTimeout time.Duration) ProviderFa
 	var mem *memory.Store
 	return func(s Settings) (cloud.Provider, error) {
 		switch s.Cloud.Provider {
-		case ProviderSupabase:
-			if s.Cloud.KeyError != "" {
-				return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "stored Supabase key cannot be read: " + s.Cloud.KeyError}
-			}
-			return supabase.New(supabase.Config{URL: s.Cloud.SupabaseURL, ServiceRoleKey: s.Cloud.SupabaseKey,
-				BusinessID: s.Business.ID, Timeout: cloudTimeout}, log)
 		case ProviderWholeFlow:
-			// The business's own API on the WholeFlow server is Supabase-compatible;
-			// this PC's key takes the place of the service key.
+			// The business's data API on the WholeFlow server, reached with
+			// this PC's key from the activation.
 			l := s.Cloud.Link
 			switch {
 			case l.Revoked:
@@ -38,7 +32,7 @@ func NewProviderFactory(log *slog.Logger, cloudTimeout time.Duration) ProviderFa
 			case l.BaseURL == "" || l.DeviceKey == "":
 				return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "not connected: enter the reference key and activation code on the Cloud Sync page"}
 			}
-			return supabase.New(supabase.Config{URL: l.BaseURL, ServiceRoleKey: l.DeviceKey,
+			return rest.New(rest.Config{URL: l.BaseURL, Key: l.DeviceKey,
 				BusinessID: s.Business.ID, Timeout: cloudTimeout}, log)
 		case ProviderMemory:
 			if mem == nil || mem.BusinessID != s.Business.ID {

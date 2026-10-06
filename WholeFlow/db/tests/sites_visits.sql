@@ -2,8 +2,9 @@
 --
 -- Seeds one business, impersonates the owner and staff, and asserts results.
 -- Everything runs in one transaction that is ROLLED BACK at the end, so it is
--- safe on the real Supabase project. Run it after 0005 as `postgres`: in the
--- SQL editor, or `psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f sites_visits.sql`.
+-- safe on a real business database. Run all tests with
+-- tests/run_local.sh (throwaway Postgres in Docker), or with psql as `postgres`
+-- against a business database.
 -- A failed check aborts with "assertion failed: <label>".
 --
 -- Business S, companies S1 and S2.

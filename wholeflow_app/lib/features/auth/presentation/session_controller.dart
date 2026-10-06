@@ -40,7 +40,7 @@ class Paused extends Session {
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 @Riverpod(keepAlive: true)
 class SessionController extends _$SessionController {
   StreamSubscription<AuthState>? _sub;

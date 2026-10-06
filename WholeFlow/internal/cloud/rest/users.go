@@ -1,4 +1,4 @@
-package supabase
+package rest
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"wholeflow/internal/cloud"
 )
 
-// Owner / staff accounts live in Supabase Auth plus a row in public.users
-// that ties the auth user to the business (Row Level Security keys on it).
-// Both are created here with the service-role key through the Auth admin API.
+// Owner / staff accounts live in the server's GoTrue (accounts) plus a row in
+// public.users that ties the account to the business (Row Level Security keys
+// on it). Both are created here with this PC's key through the GoTrue admin API.
 
 type userRow struct {
 	ID        string    `json:"id"`

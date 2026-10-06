@@ -8,7 +8,6 @@ WholeFlow is one executable, `wholeflow.exe`. It serves the shop-outstanding web
 - TallyPrime acting as **Server** or **Both**: Help (F1) > Settings > Connectivity > Client/Server configuration. Note the port (default 9000); the app reads it from `tally.ini` automatically.
 - The business created in the WholeFlow admin app, with its **reference key** (e.g. `DEMO-65YC-47X7-QMEZ`) and an **activation code** for this PC (`XXXX-XXXX`, single use, valid 48 h; "Add PC" issues another).
 - A WholeFlow account (email + password) to log in to the PC's page.
-- Only for the older direct connection (*Advanced* on the Cloud Sync page): a Supabase project with the migrations applied, a `businesses` row and the project's service-role key.
 - `bin\wholeflow.exe` built with `go build -o bin\wholeflow.exe ./cmd/server`.
 
 ## 1. Copy the executable
@@ -32,13 +31,13 @@ There is **no local account** (removed in 0.4.1; `set-password` is gone, and an 
 After logging in, the Dashboard, Shops, Outstanding and Tally Status pages work as before. Open **Cloud Sync** in the navigation and work through the numbered sections:
 
 1. **Connect to WholeFlow** – enter the **reference key** and the **activation code**, click **Connect**. The app sends them with the PC name, Windows account and app version to `POST /control/activate` and stores what comes back: the business id and name, the business's address on the server (`https://api.jitsuji.xyz/b/<business>`), this PC's id and **PC key** (encrypted with Windows DPAPI, never displayed), and the plan's company limit. The section then shows **Connected to <business>** and a **Disconnect** button (which forgets the connection; connecting again needs a new activation code). A refused code shows the server's message (unknown key, code already used or expired, business closed).
-   *Advanced: connect with Supabase URL and key* is the older direct connection (business id, Supabase URL, service-role key, saved with **Save settings**). PCs set up that way keep working unchanged.
+   This is the only way to connect. The older direct connection (cloud URL + service-role key) was removed in 0.5.0: a PC still set up that way counts as *not connected* after the update, the old values are dropped from `config.json`, and nothing syncs until it is connected here. Its first sync is then a full one.
 2. **Test the connection** – **Test cloud connection** checks that the PC key works and the business exists.
 3. **TallyPrime companies** – click **Test Tally & discover companies**. Tick the companies to synchronise. Untick anything that must not leave the PC; only ticked companies are ever read. With a reference-key connection the plan's limit applies: ticking more is refused with "Your plan allows N companies. Ask WholeFlow support to upgrade."
 4. **Sync settings** – interval (default 5 minutes), whether to sync transactions (recommended), how often to look for deleted vouchers (default 24 h). Leave *Background synchronisation* off for now. Click **Save settings**.
-5. **Run & verify** – click **Sync now**. Watch the status table and log. A first full sync of ~6,000 vouchers takes about 15 s. Check that shops created matches Tally's Sundry Debtor count, then spot-check a shop's balance in the Supabase table editor against the Shops page.
+5. **Run & verify** – click **Sync now**. Watch the status table and log. A first full sync of ~6,000 vouchers takes about 15 s. Check that shops created matches Tally's Sundry Debtor count, then spot-check a shop's balance in the Owner app against the Shops page.
 6. Tick **Background synchronisation enabled** and save. From now on the app syncs on its own; the header shows "Cloud sync: SYNCED · time" on every page.
-7. **Business owner & staff accounts** – create the owner's mobile-app login: email, name, password (min 8 characters), role *Owner*. The app creates the Supabase Auth user (email pre-confirmed, no verification mail) and the matching `users` row tied to this business. Give the email and password to the owner. The same section lists existing accounts, resets a password and disables/enables an account (a disabled account is also banned in Supabase Auth, so an open mobile session stops working). Staff can be added here too, or later by the owner from the mobile app.
+7. **Business owner & staff accounts** – create the owner's mobile-app login: email, name, password (min 8 characters), role *Owner*. The app creates the account on the WholeFlow server (GoTrue, email pre-confirmed, no verification mail) and the matching `users` row tied to this business, using this PC's connection. Give the email and password to the owner. The same section lists existing accounts, resets a password and disables/enables an account (a disabled account is also banned on the server, so an open mobile session stops working). Staff can be added here too, or later by the owner from the mobile app.
 
 Press Ctrl+C in the console when done.
 
@@ -46,7 +45,7 @@ While connected by reference key the app sends a **heartbeat** (`POST /control/h
 
 **Subscription ended**: the server refuses every data request with HTTP 402. The sync then **pauses**: the header and status show "Subscription ended — sync paused", the log says it once, nothing is deleted or counted as a failure, and the app keeps trying at its normal interval. It resumes by itself once a payment is recorded (straight away if the heartbeat notices first). **PC revoked** in the admin app (HTTP 403 `device_revoked`): the sync stops and the page says "This PC's access was revoked. Connect again with a new activation code."
 
-Headless alternative (older direct connection only): put the values in `C:\ProgramData\WholeFlow\.env` (see `.env.example`: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BUSINESS_ID`, `SYNC_COMPANIES=<guid,guid>`, `SYNC_ENABLED=true`) and run `wholeflow.exe check` then `wholeflow.exe sync`. Environment values override the page and are never written to config.json; prefer the page so the key is stored encrypted rather than in a text file.
+The connection itself is made only on this page. Sync options can also come from `C:\ProgramData\WholeFlow\.env` (see `.env.example`: `SYNC_COMPANIES=<guid,guid>`, `SYNC_ENABLED=true`, …); environment values override the page. `CLOUD_PROVIDER=memory` is a dry run that sends nothing; older cloud lines in a `.env` (any other `CLOUD_PROVIDER`, `BUSINESS_ID`, the old URL and key) are ignored.
 
 ## 4. Install as a Windows service
 
@@ -93,12 +92,13 @@ Nothing. PC boots → service starts → when Tally is opened the next cycle suc
 |---|---|---|
 | `TALLY_OFFLINE` | `status`, Tally Status page | Tally closed, not in Server mode, wrong port (the page shows the port and its source), firewall |
 | `COMPANY_NOT_OPEN` | Cloud Sync status table | The selected company is not loaded in Tally; open it, or untick it |
-| `AUTH_ERROR` / `CLOUD_AUTH_ERROR` | Cloud Sync → Test cloud connection | Wrong service-role key or URL; key encrypted on another PC ("re-enter it", or connect again with a new activation code) |
+| `AUTH_ERROR` / `CLOUD_AUTH_ERROR` | Cloud Sync → Test cloud connection | The PC key was refused, or it was encrypted on another PC: connect again with a new activation code |
 | `SUBSCRIPTION_ENDED` ("Subscription ended — sync paused") | status, header | The business's subscription ended or it was suspended. Record the payment in the admin app; the PC resumes by itself |
 | `DEVICE_REVOKED` | Cloud Sync page | This PC was revoked in the admin app. Issue a new activation code ("Add PC") and connect again |
 | `OVER_PLAN_LIMIT` | Cloud Sync status table | More companies ticked than the plan allows; only the first N sync. Untick some or upgrade the plan |
-| `CLOUD_NOT_FOUND` | Test cloud connection | `BUSINESS_ID` has no row in `businesses`, or migration not applied |
-| `CLOUD_OFFLINE` | log | No internet / Supabase down; resolves itself |
+| `CLOUD_NOT_FOUND` | Test cloud connection | The business is missing on the server, or a migration is not applied |
+| `CLOUD_OFFLINE` | log | No internet / WholeFlow server down; resolves itself |
+| "not connected: enter the reference key and activation code" | status, Cloud Sync page | Never connected, disconnected, or set up with the old direct connection before 0.5.0: connect on Cloud Sync step 1 |
 | `TALLY_TIMEOUT` on the first sync | log | Very large company; set `TALLY_TIMEOUT_SECONDS=600` in `.env` and restart |
 | `SYNC_ERROR` with `TALLY_INVALID_RESPONSE` | `logs\raw-errors\` | Tally returned XML we could not parse; send the file for analysis (contains accounting data) |
 | Service does not start | `C:\ProgramData\WholeFlow\startup-error.txt`, `logs\app.log` | Bad config file, port in use |

@@ -15,7 +15,13 @@ final businessConnectionProvider = BusinessConnectionProvider._();
 
 /// The connection the running app uses. Overridden in bootstrap.
 
-final class BusinessConnectionProvider extends $FunctionalProvider<BusinessConnection, BusinessConnection, BusinessConnection>
+final class BusinessConnectionProvider
+    extends
+        $FunctionalProvider<
+          BusinessConnection,
+          BusinessConnection,
+          BusinessConnection
+        >
     with $Provider<BusinessConnection> {
   /// The connection the running app uses. Overridden in bootstrap.
   BusinessConnectionProvider._()
@@ -34,7 +40,9 @@ final class BusinessConnectionProvider extends $FunctionalProvider<BusinessConne
 
   @$internal
   @override
-  $ProviderElement<BusinessConnection> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<BusinessConnection> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   BusinessConnection create(Ref ref) {
@@ -43,11 +51,15 @@ final class BusinessConnectionProvider extends $FunctionalProvider<BusinessConne
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(BusinessConnection value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<BusinessConnection>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<BusinessConnection>(value),
+    );
   }
 }
 
-String _$businessConnectionHash() => r'6380467000db7b13fd991c739f555c892ee4b3aa';
+String _$businessConnectionHash() =>
+    r'6524758e6bb3233644eb354754a087a4fe0c488d';
 
 /// Closes the current business and shows the connect screen. Overridden in
 /// bootstrap; a no-op in tests.
@@ -59,7 +71,12 @@ final switchBusinessProvider = SwitchBusinessProvider._();
 /// bootstrap; a no-op in tests.
 
 final class SwitchBusinessProvider
-    extends $FunctionalProvider<Future<void> Function(), Future<void> Function(), Future<void> Function()>
+    extends
+        $FunctionalProvider<
+          Future<void> Function(),
+          Future<void> Function(),
+          Future<void> Function()
+        >
     with $Provider<Future<void> Function()> {
   /// Closes the current business and shows the connect screen. Overridden in
   /// bootstrap; a no-op in tests.
@@ -79,7 +96,9 @@ final class SwitchBusinessProvider
 
   @$internal
   @override
-  $ProviderElement<Future<void> Function()> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<Future<void> Function()> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   Future<void> Function() create(Ref ref) {
@@ -88,7 +107,10 @@ final class SwitchBusinessProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(Future<void> Function() value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<Future<void> Function()>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<Future<void> Function()>(value),
+    );
   }
 }
 

@@ -15,7 +15,8 @@
 --   * stock_items: the owner, and staff assigned to the company
 --     (staff_company_access), e.g. so a salesman can check stock.
 --
--- Apply in the Supabase dashboard: SQL Editor → paste this file → Run.
+-- Applied by the WholeFlow server to every business (scripts/migrate.sh, or the
+-- admin app → Settings → Update all businesses).
 
 begin;
 

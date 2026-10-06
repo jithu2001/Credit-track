@@ -8,7 +8,6 @@ What is in this folder
   Install-WholeFlow.ps1    the installer itself (used by the .cmd)
   README.txt               this file
   .env.example             optional settings; rename to .env (next to the .cmd) only if needed
-  migrations\              database files; the WholeFlow server applies them, nothing to do here
 
 (On the development PC this package is built by deploy\Build-Release.ps1,
 or on Linux by deploy/build-release.sh.)
@@ -69,17 +68,22 @@ B. UPDATE (an older WholeFlow is installed)
      deleted on the first start of 0.4.1 or later.
   3a. PC already connected with a reference key (0.4.x): nothing else to do.
       Check "status" shows the new version and a new "Last successful sync".
-  3b. PC still syncing to Supabase (0.2 / 0.3): it keeps syncing to Supabase
-      as before. To move it to the WholeFlow server, open Cloud Sync:
+  3b. PC set up before the reference key (0.2 / 0.3, direct connection
+      with a cloud URL and key): that connection is no longer supported and
+      is removed by the update; the PC does not sync until it is connected.
+      Open Cloud Sync:
         Step 1  Reference key + Activation code > Connect
         Step 2  Test cloud connection
         Step 3  check the ticked companies (plan limit applies)
         Step 4  Save settings
         Step 5  Sync now (automatically a FULL sync: all history is uploaded)
         Step 4  keep "Background synchronisation enabled" ticked > Save settings
-      Afterwards owner and staff use the phone apps with the reference key.
-      Phone logins do not move from Supabase: the owner uses the login from
-      the admin app and adds staff again in the Owner app.
+      Afterwards owner and staff use the phone apps with the reference key:
+      the owner uses the login from the admin app and adds staff again in
+      the Owner app.
+      If an old .env sits next to the .cmd or in C:\ProgramData\WholeFlow,
+      its old cloud lines (CLOUD_PROVIDER, BUSINESS_ID, the cloud URL and
+      key) are ignored now; delete them.
 
 Replacement PC
 --------------

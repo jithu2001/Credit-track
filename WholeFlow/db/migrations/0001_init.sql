@@ -1,13 +1,13 @@
--- WholeFlow Tally Sync — initial schema for Supabase (PostgreSQL 15+).
+-- WholeFlow Tally Sync — initial schema of a business database (PostgreSQL 15+).
 --
 -- Multi-tenant: every business-owned row carries business_id. Row Level
--- Security lets owners/staff (Supabase Auth users mapped through public.users)
+-- Security lets owners/staff (login accounts mapped through public.users)
 -- read only their own business. Nothing here grants write access to
 -- authenticated users: only the sync service, using the service-role key
 -- (which bypasses RLS), writes business data. The service-role key must never
 -- be embedded in the mobile app.
 --
--- Apply with the Supabase SQL editor or `supabase db push`.
+-- Applied by the WholeFlow server to every business (scripts/migrate.sh).
 
 begin;
 
@@ -31,7 +31,7 @@ create table public.businesses (
   updated_at  timestamptz not null default now()
 );
 
--- One row per Supabase Auth user. Owners are created by the developer (or an
+-- One row per login account. Owners are created by the developer (or an
 -- onboarding flow); staff are created by their owner. permissions is reserved
 -- for per-staff restrictions (e.g. {"areas": ["Pala"], "transactions": false}).
 create table public.users (
