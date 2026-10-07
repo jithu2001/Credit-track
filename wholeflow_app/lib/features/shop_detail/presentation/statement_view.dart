@@ -22,7 +22,9 @@ class StatementView extends ConsumerStatefulWidget {
 
 class _StatementViewState extends ConsumerState<StatementView> {
   final Set<TxnCategory> _categories = {};
-  DateTimeRange? _range;
+
+  DateTimeRange? get _range => ref.read(statementRangeProvider(widget.shop.id));
+  void _setRange(DateTimeRange? range) => ref.read(statementRangeProvider(widget.shop.id).notifier).set(range);
 
   Future<void> _pickRange() async {
     final now = DateTime.now();
@@ -33,12 +35,13 @@ class _StatementViewState extends ConsumerState<StatementView> {
       initialDateRange: _range,
       helpText: 'Show transactions between',
     );
-    if (picked != null) setState(() => _range = picked);
+    if (picked != null) _setRange(picked);
   }
 
   @override
   Widget build(BuildContext context) {
     final statement = ref.watch(shopStatementProvider(widget.shop.id));
+    ref.watch(statementRangeProvider(widget.shop.id)); // rebuild when the dates change
     return RefreshIndicator(
       onRefresh: () async {
         ref.invalidate(shopDetailProvider(widget.shop.id));
@@ -78,7 +81,7 @@ class _StatementViewState extends ConsumerState<StatementView> {
               label: Text(_range == null ? 'Any date' : '${formatDate(_range!.start)} – ${formatDate(_range!.end)}'),
               selected: _range != null,
               onSelected: (_) => _pickRange(),
-              onDeleted: _range == null ? null : () => setState(() => _range = null),
+              onDeleted: _range == null ? null : () => _setRange(null),
             ),
             const SizedBox(width: Insets.s),
             for (final c in TxnCategory.values) ...[

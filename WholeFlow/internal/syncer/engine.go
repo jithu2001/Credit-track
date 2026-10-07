@@ -29,17 +29,29 @@ type Engine struct {
 	Now       func() time.Time
 
 	mu gosync.Mutex
+	// stopCode is the refusal (subscription ended / PC revoked) the last run
+	// stopped on, so it is logged once and "resumed" is logged when it clears.
+	stopCode string
 }
 
 // RunResult summarises one run for the status page, logs and tests.
 type RunResult struct {
 	StartedAt    time.Time       `json:"startedAt"`
 	CompletedAt  time.Time       `json:"completedAt"`
-	Status       string          `json:"status"` // success | partial | failed | skipped
+	Status       string          `json:"status"` // success | partial | failed | skipped | paused | revoked
 	ErrorCode    string          `json:"errorCode,omitempty"`
 	ErrorMessage string          `json:"errorMessage,omitempty"`
 	Companies    []CompanyResult `json:"companies"`
+	// Warnings about the run as a whole (e.g. companies left out by the plan's limit).
+	Warnings []string `json:"warnings,omitempty"`
 }
+
+// Run statuses for a server that refuses on purpose. Neither counts as a
+// failure: there is nothing to retry faster, and no data was touched.
+const (
+	RunPaused  = "paused"  // subscription ended; resumes by itself
+	RunRevoked = "revoked" // this PC's key was revoked; needs a new activation code
+)
 
 // Failed reports whether the run should count towards backoff.
 func (r *RunResult) Failed() bool { return r.Status == "failed" || r.Status == "partial" }
@@ -99,7 +111,12 @@ func (e *Engine) Run(ctx context.Context) *RunResult {
 		res.Status, res.ErrorCode, res.ErrorMessage = "skipped", "NOT_CONFIGURED", why
 		return res
 	}
-	enabled := set.EnabledCompanies()
+	enabled, over := set.SyncCompanies()
+	if over > 0 {
+		w := CompanyLimitWarning(set.CompanyLimit(), len(enabled)+over)
+		e.Log.Warn("company limit", "detail", w)
+		res.Warnings = append(res.Warnings, w)
+	}
 	e.Log.Info("sync run started", "business", set.Business.ID, "companies", len(enabled), "provider", set.Cloud.Provider)
 
 	prov, err := e.Provider(set)
@@ -110,6 +127,10 @@ func (e *Engine) Run(ctx context.Context) *RunResult {
 	if err := prov.Authenticate(ctx); err != nil {
 		e.failAll(res, enabled, err)
 		return res
+	}
+	if e.stopCode != "" {
+		e.Log.Info("the cloud accepts this PC again; sync resumed", "was", e.stopCode)
+		e.stopCode = ""
 	}
 
 	tallyCompanies, err := e.Tally.GetCompanies(ctx)
@@ -151,6 +172,13 @@ func (e *Engine) Run(ctx context.Context) *RunResult {
 			okCount++
 		}
 		res.Companies = append(res.Companies, cr)
+		if isStop(cr.ErrorCode) {
+			// Every further request would be refused the same way.
+			stopErr := &cloud.Error{Kind: cloud.ErrorKind(cr.ErrorCode), Op: "sync", Msg: cr.ErrorMessage}
+			res.Companies = res.Companies[:len(res.Companies)-1]
+			e.failAll(res, enabled[len(res.Companies):], stopErr)
+			return res
+		}
 	}
 	switch {
 	case okCount == len(res.Companies):
@@ -176,13 +204,20 @@ func firstError(crs []CompanyResult) (string, string) {
 	return "", ""
 }
 
-// failAll marks the run and every listed company as failed with the same error.
+// failAll marks the run and every listed company as failed with the same
+// error. A deliberate refusal (subscription ended, PC revoked) pauses or
+// stops the run instead, and is logged only when it first appears.
 func (e *Engine) failAll(res *RunResult, companies []CompanySetting, err error) {
 	code, msg := classify(err)
 	res.Status, res.ErrorCode, res.ErrorMessage = "failed", code, msg
+	if isStop(code) {
+		e.stop(res, code, msg)
+		code, msg = res.ErrorCode, res.ErrorMessage
+	} else {
+		e.Log.Error("sync run failed", "code", code, "error", msg)
+	}
 	status := statusFor(code)
 	now := e.now()
-	e.Log.Error("sync run failed", "code", code, "error", msg)
 	for _, cs := range companies {
 		res.Companies = append(res.Companies, CompanyResult{TallyID: cs.TallyID, Name: cs.Name, StartedAt: now,
 			Status: status, ErrorCode: code, ErrorMessage: msg})
@@ -190,6 +225,35 @@ func (e *Engine) failAll(res *RunResult, companies []CompanySetting, err error) 
 			c.Name, c.Status, c.LastErrorCode, c.LastError = cs.Name, status, code, msg
 			c.LastAttemptAt = &now
 		})
+	}
+}
+
+// isStop reports whether code is a deliberate refusal by the server.
+func isStop(code string) bool {
+	return code == string(cloud.KindSubscriptionEnded) || code == string(cloud.KindDeviceRevoked)
+}
+
+// stop turns the run into "paused" (subscription ended) or "revoked". A
+// revoked PC is remembered in the settings so no further requests are made
+// until it is connected again.
+func (e *Engine) stop(res *RunResult, code, serverMsg string) {
+	res.ErrorCode = code
+	if code == string(cloud.KindDeviceRevoked) {
+		res.Status, res.ErrorMessage = RunRevoked, MsgDeviceRevoked
+		if err := e.Settings.Update(func(s *Settings) error {
+			if s.Linked() {
+				s.Cloud.Link.Revoked = true
+			}
+			return nil
+		}); err != nil {
+			e.Log.Warn("could not save the revoked state", "error", err.Error())
+		}
+	} else {
+		res.Status, res.ErrorMessage = RunPaused, MsgSubscriptionEnded
+	}
+	if e.stopCode != code {
+		e.stopCode = code
+		e.Log.Warn(res.ErrorMessage, "code", code, "server", serverMsg)
 	}
 }
 
@@ -247,7 +311,8 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 				c.CloudID = cr.CloudID
 			}
 		})
-		if cr.CloudID != "" && cloud.KindOf(err) != cloud.KindUnreachable && cloud.KindOf(err) != cloud.KindTimeout && cloud.KindOf(err) != cloud.KindAuth {
+		if k := cloud.KindOf(err); cr.CloudID != "" && k != cloud.KindUnreachable && k != cloud.KindTimeout && k != cloud.KindAuth &&
+			k != cloud.KindSubscriptionEnded && k != cloud.KindDeviceRevoked {
 			e.writeState(ctx, prov, set, cr.CloudID, entity, now, nil, "", 0, code, msg)
 			e.writeState(ctx, prov, set, cr.CloudID, cloud.EntityCompany, now, prev.LastSuccessAt, strconv.FormatInt(prev.VoucherCursor, 10), 0, code, msg)
 			prov.UpsertCompany(ctx, companyFromTally(set.Business.ID, connID, tc, cs, cr.Status, prev.LastSuccessAt))
@@ -560,6 +625,10 @@ func statusFor(code string) string {
 	switch {
 	case code == "":
 		return StatusSynced
+	case code == string(cloud.KindSubscriptionEnded):
+		return StatusSubscriptionEnded
+	case code == string(cloud.KindDeviceRevoked):
+		return StatusDeviceRevoked
 	case code == string(tally.KindUnreachable), code == string(tally.KindTimeout):
 		return StatusTallyOffline
 	case code == string(cloud.KindUnreachable), code == string(cloud.KindTimeout):

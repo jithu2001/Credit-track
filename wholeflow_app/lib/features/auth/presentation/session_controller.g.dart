@@ -11,7 +11,7 @@ part of 'session_controller.dart';
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 
 @ProviderFor(SessionController)
 final sessionControllerProvider = SessionControllerProvider._();
@@ -19,12 +19,13 @@ final sessionControllerProvider = SessionControllerProvider._();
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
-final class SessionControllerProvider extends $AsyncNotifierProvider<SessionController, Session> {
+/// loaded and active; otherwise the login session is dropped.
+final class SessionControllerProvider
+    extends $AsyncNotifierProvider<SessionController, Session> {
   /// The app's single source of truth for who is signed in.
   ///
   /// A session only counts as signed in once the caller's `public.users` row is
-  /// loaded and active; otherwise the Supabase session is dropped.
+  /// loaded and active; otherwise the login session is dropped.
   SessionControllerProvider._()
     : super(
         from: null,
@@ -44,12 +45,12 @@ final class SessionControllerProvider extends $AsyncNotifierProvider<SessionCont
   SessionController create() => SessionController();
 }
 
-String _$sessionControllerHash() => r'4f748e5f5513e9f6c6fc40a918047ae92fdc7fb5';
+String _$sessionControllerHash() => r'fcd750510588882d8faa3c4e3f41ef31fc49158f';
 
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 
 abstract class _$SessionController extends $AsyncNotifier<Session> {
   FutureOr<Session> build();
@@ -58,7 +59,13 @@ abstract class _$SessionController extends $AsyncNotifier<Session> {
   WhenComplete runBuild() {
     final ref = this.ref as $Ref<AsyncValue<Session>, Session>;
     final element =
-        ref.element as $ClassProviderElement<AnyNotifier<AsyncValue<Session>, Session>, AsyncValue<Session>, Object?, Object?>;
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<Session>, Session>,
+              AsyncValue<Session>,
+              Object?,
+              Object?
+            >;
     return element.handleCreate(ref, build);
   }
 }
@@ -72,7 +79,9 @@ final currentUserProvider = CurrentUserProvider._();
 /// The signed-in user; null while signed out (screens can rebuild for a frame
 /// during sign-out before the router moves to the login screen).
 
-final class CurrentUserProvider extends $FunctionalProvider<AppUser?, AppUser?, AppUser?> with $Provider<AppUser?> {
+final class CurrentUserProvider
+    extends $FunctionalProvider<AppUser?, AppUser?, AppUser?>
+    with $Provider<AppUser?> {
   /// The signed-in user; null while signed out (screens can rebuild for a frame
   /// during sign-out before the router moves to the login screen).
   CurrentUserProvider._()
@@ -91,7 +100,8 @@ final class CurrentUserProvider extends $FunctionalProvider<AppUser?, AppUser?, 
 
   @$internal
   @override
-  $ProviderElement<AppUser?> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<AppUser?> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
 
   @override
   AppUser? create(Ref ref) {
@@ -100,7 +110,10 @@ final class CurrentUserProvider extends $FunctionalProvider<AppUser?, AppUser?, 
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(AppUser? value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<AppUser?>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AppUser?>(value),
+    );
   }
 }
 

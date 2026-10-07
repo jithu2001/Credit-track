@@ -27,6 +27,22 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appName"] = "WholeFlow"
+    }
+
+    flavorDimensions += listOf("role")
+    productFlavors {
+        create("owner") {
+            dimension = "role"
+            // Keeps the v0.3.0 id so existing installs update in place to the Owner app.
+            applicationId = "com.wholeflow.wholeflow_app"
+            manifestPlaceholders["appName"] = "WholeFlow Owner"
+        }
+        create("staff") {
+            dimension = "role"
+            applicationId = "com.wholeflow.staff"
+            manifestPlaceholders["appName"] = "WholeFlow Staff"
+        }
     }
 
     buildTypes {

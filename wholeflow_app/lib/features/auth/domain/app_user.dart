@@ -13,7 +13,7 @@ enum UserRole {
   final String label;
 }
 
-/// A row of `public.users`: a Supabase Auth user tied to a business.
+/// A row of `public.users`: a login account tied to a business.
 @freezed
 abstract class AppUser with _$AppUser {
   const AppUser._();
@@ -25,11 +25,14 @@ abstract class AppUser with _$AppUser {
     @Default('') String name,
     String? email,
     @Default(true) bool isActive,
+
+    /// Staff who check in at shops on planned visit days (they get a Visits tab).
+    @Default(false) bool requiresCheckIn,
   }) = _AppUser;
 
   factory AppUser.fromJson(Map<String, dynamic> json) => _$AppUserFromJson(json);
 
-  static const columns = 'id,business_id,role,name,email,is_active';
+  static const columns = 'id,business_id,role,name,email,is_active,requires_check_in';
 
   bool get isOwner => role == UserRole.owner;
 

@@ -1,19 +1,40 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-enum FailureKind { network, unauthenticated, invalidCredentials, forbidden, notFound, invalidInput, emailTaken, server, unknown }
+enum FailureKind {
+  network,
+  unauthenticated,
+  invalidCredentials,
+  forbidden,
+  notFound,
+  invalidInput,
+  emailTaken,
+  server,
+  subscriptionEnded,
+  unknown,
+}
 
 /// Every error shown to the user goes through this type, so screens only deal
-/// with friendly copy and never with Supabase exceptions.
+/// with friendly copy and never with the API client's exceptions.
 class AppFailure implements Exception {
-  const AppFailure(this.kind, [this.detail]);
+  const AppFailure(this.kind, [this.detail, this.contact]);
 
   final FailureKind kind;
 
-  /// Server-provided, user-safe text (e.g. validation messages from manage-staff).
+  /// Server-provided, user-safe text (e.g. validation messages from manage-staff,
+  /// or how to renew when the subscription has ended).
   final String? detail;
+
+  /// For [FailureKind.subscriptionEnded]: who to contact (phone / UPI id).
+  final String? contact;
+
+  /// Called whenever a request is refused because the business's subscription
+  /// has ended (HTTP 402 from the data API), wherever it happened. The session
+  /// controller uses it to switch to the "paused" screen at once.
+  static void Function(AppFailure failure)? onSubscriptionEnded;
 
   String get message => switch (kind) {
     FailureKind.network => 'No internet connection. Check your network and try again.',
@@ -24,6 +45,7 @@ class AppFailure implements Exception {
     FailureKind.invalidInput => detail ?? 'Please check the details and try again.',
     FailureKind.emailTaken => 'An account with this email already exists.',
     FailureKind.server => 'The server had a problem. Please try again in a moment.',
+    FailureKind.subscriptionEnded => 'WholeFlow is paused for this business.',
     FailureKind.unknown => 'Something went wrong. Please try again.',
   };
 
@@ -72,6 +94,20 @@ class AppFailure implements Exception {
 
   static AppFailure _fromPostgrest(PostgrestException e) {
     final code = e.code ?? '';
+    if (code == 'PT402' || code == '402' || e.message.contains('subscription_ended')) {
+      var details = e.details, hint = e.hint;
+      // `.maybeSingle()` re-wraps errors: code becomes the HTTP status and the
+      // server's JSON is left as text in the message.
+      if (code == '402') {
+        try {
+          final body = jsonDecode(e.message);
+          if (body is Map) (details, hint) = (body['details'], body['hint']);
+        } catch (_) {}
+      }
+      final f = AppFailure(FailureKind.subscriptionEnded, _text(details), _text(hint));
+      onSubscriptionEnded?.call(f);
+      return f;
+    }
     if (code == 'PGRST301' || code == 'PGRST303' || e.message.contains('JWT expired')) {
       return const AppFailure(FailureKind.unauthenticated);
     }
@@ -80,6 +116,8 @@ class AppFailure implements Exception {
     if (code.startsWith('5') || code.startsWith('XX')) return const AppFailure(FailureKind.server);
     return const AppFailure(FailureKind.unknown);
   }
+
+  static String? _text(Object? v) => v is String && v.trim().isNotEmpty ? v.trim() : null;
 
   /// manage-staff returns `{ "error": { "code", "message" } }`.
   static AppFailure _fromFunction(FunctionException e) {
@@ -103,6 +141,11 @@ class AppFailure implements Exception {
         return AppFailure(FailureKind.notFound, message);
     }
     if (e.status == 401) return const AppFailure(FailureKind.unauthenticated);
+    if (e.status == 402) {
+      const f = AppFailure(FailureKind.subscriptionEnded);
+      onSubscriptionEnded?.call(f);
+      return f;
+    }
     if (e.status >= 500) return const AppFailure(FailureKind.server);
     return const AppFailure(FailureKind.unknown);
   }

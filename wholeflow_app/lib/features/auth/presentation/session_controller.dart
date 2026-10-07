@@ -27,10 +27,20 @@ class SignedIn extends Session {
   final bool mustChangePassword;
 }
 
+/// Signed in, but the business's WholeFlow subscription has ended (or was
+/// suspended): the server refuses every data request, so the app shows only
+/// the paused screen with [message] and [contact] until it is renewed.
+class Paused extends Session {
+  const Paused({this.message, this.contact});
+
+  final String? message;
+  final String? contact;
+}
+
 /// The app's single source of truth for who is signed in.
 ///
 /// A session only counts as signed in once the caller's `public.users` row is
-/// loaded and active; otherwise the Supabase session is dropped.
+/// loaded and active; otherwise the login session is dropped.
 @Riverpod(keepAlive: true)
 class SessionController extends _$SessionController {
   StreamSubscription<AuthState>? _sub;
@@ -46,13 +56,36 @@ class SessionController extends _$SessionController {
     final repo = ref.watch(authRepositoryProvider);
     await _sub?.cancel();
     _sub = repo.authStateChanges().listen(_onAuthEvent, onError: (_) {});
-    ref.onDispose(() => _sub?.cancel());
+    AppFailure.onSubscriptionEnded = _onSubscriptionEnded;
+    ref.onDispose(() {
+      _sub?.cancel();
+      if (AppFailure.onSubscriptionEnded == _onSubscriptionEnded) AppFailure.onSubscriptionEnded = null;
+    });
     return _resolve();
+  }
+
+  /// Any screen's request was refused with HTTP 402. Deferred: errors are
+  /// also mapped while widgets build.
+  void _onSubscriptionEnded(AppFailure f) => scheduleMicrotask(() => _pause(f));
+
+  void _pause(AppFailure f) {
+    if (!ref.mounted || !_repo.hasSession) return;
+    final current = state.value;
+    if (current is Paused && current.message == f.detail && current.contact == f.contact) return;
+    // A 402 from a function call carries no text; keep the text we have.
+    if (current is Paused && f.detail == null) return;
+    state = AsyncData(Paused(message: f.detail, contact: f.contact));
   }
 
   Future<Session> _resolve() async {
     if (!_repo.hasSession) return const SignedOut();
-    final user = await _repo.loadProfile();
+    final AppUser? user;
+    try {
+      user = await _repo.loadProfile();
+    } on AppFailure catch (f) {
+      if (f.kind == FailureKind.subscriptionEnded) return Paused(message: f.detail, contact: f.contact);
+      rethrow;
+    }
     if (user == null || !user.isActive) {
       await _dropSession();
       return const SignedOut(message: inactiveAccountMessage);
@@ -73,7 +106,7 @@ class SessionController extends _$SessionController {
     switch (event.event) {
       case AuthChangeEvent.signedOut:
         // Signed out elsewhere: refresh token revoked, account banned, etc.
-        if (!_signingOut && state.value is SignedIn) {
+        if (!_signingOut && (state.value is SignedIn || state.value is Paused)) {
           state = const AsyncData(SignedOut(message: 'Your session has ended. Please sign in again.'));
         }
       case AuthChangeEvent.userUpdated:
@@ -110,6 +143,7 @@ class SessionController extends _$SessionController {
   /// is signed out promptly, even while its access token is still valid.
   Future<void> revalidate() async {
     final current = state.value;
+    if (current is Paused) return retry();
     if (current is! SignedIn) return;
     try {
       final user = await _repo.loadProfile();
@@ -120,14 +154,19 @@ class SessionController extends _$SessionController {
       }
     } on AppFailure catch (f) {
       if (f.kind == FailureKind.unauthenticated) await signOut(message: f.message);
+      // subscriptionEnded: already handled by _onSubscriptionEnded.
       // Network errors: keep the session; screens show their own error states.
     }
   }
 
-  /// Retry after a start-up failure (e.g. offline when the app opened).
+  /// Retry after a start-up failure (e.g. offline when the app opened), and
+  /// the paused screen's Refresh.
   Future<void> retry() async {
-    state = const AsyncLoading();
-    state = await AsyncValue.guard(_resolve);
+    final previous = state.value;
+    // While paused, stay on the paused screen (it shows its own progress).
+    if (previous is! Paused) state = const AsyncLoading();
+    final next = await AsyncValue.guard(_resolve);
+    state = next.hasError && previous is Paused ? AsyncData(previous) : next;
   }
 }
 

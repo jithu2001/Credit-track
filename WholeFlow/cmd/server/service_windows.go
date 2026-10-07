@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -85,8 +84,18 @@ func installService(name, display, desc, exe string, args []string) (updated boo
 	s, err := m.OpenService(name)
 	if err == nil {
 		updated = true
-		cfg.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
-		if err := s.UpdateConfig(cfg); err != nil {
+		// UpdateConfig passes every field to ChangeServiceConfig verbatim (unlike
+		// CreateService it does not default ServiceType), so start from the
+		// current config; a zero ServiceType fails with "The parameter is incorrect".
+		cur, err := s.Config()
+		if err != nil {
+			s.Close()
+			return true, fmt.Errorf("read service config: %w", err)
+		}
+		cur.DisplayName, cur.Description = cfg.DisplayName, cfg.Description
+		cur.StartType, cur.DelayedAutoStart, cur.ErrorControl = cfg.StartType, cfg.DelayedAutoStart, cfg.ErrorControl
+		cur.BinaryPathName = windows.ComposeCommandLine(append([]string{exe}, args...))
+		if err := s.UpdateConfig(cur); err != nil {
 			s.Close()
 			return true, fmt.Errorf("update service: %w", err)
 		}
@@ -405,25 +414,6 @@ func stateName(s svc.State) string {
 		return "paused"
 	}
 	return fmt.Sprintf("state %d", s)
-}
-
-// readPassword reads a line without echo when stdin is a console.
-func readPassword(in *bufio.Reader, prompt string) (string, error) {
-	fmt.Print(prompt)
-	h := windows.Handle(os.Stdin.Fd())
-	var mode uint32
-	if err := windows.GetConsoleMode(h, &mode); err != nil {
-		line, err := in.ReadString('\n')
-		return strings.TrimRight(line, "\r\n"), err
-	}
-	windows.SetConsoleMode(h, mode&^windows.ENABLE_ECHO_INPUT)
-	defer windows.SetConsoleMode(h, mode)
-	line, err := in.ReadString('\n')
-	fmt.Println()
-	if err != nil && line == "" {
-		return "", err
-	}
-	return strings.TrimRight(line, "\r\n"), nil
 }
 
 // secureDataDir replaces the data directory's inherited ACL (ProgramData lets

@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../../core/money/money.dart';
 import '../data/analytics_repository.dart';
 import '../domain/payment_analysis.dart';
 
@@ -18,10 +19,9 @@ class CreditDays extends _$CreditDays {
 }
 
 enum AnalyticsSort {
-  overdueAmount('Most overdue ₹'),
-  longestOverdue('Longest overdue'),
-  slowestPayer('Slowest payers'),
-  lowestOnTime('Lowest on-time %');
+  slowestPayer('Slowest payers first'),
+  overdueAmount('Most overdue first'),
+  name('Name A–Z');
 
   const AnalyticsSort(this.label);
   final String label;
@@ -30,7 +30,7 @@ enum AnalyticsSort {
 @Riverpod(keepAlive: true)
 class AnalyticsSortController extends _$AnalyticsSortController {
   @override
-  AnalyticsSort build() => AnalyticsSort.overdueAmount;
+  AnalyticsSort build() => AnalyticsSort.slowestPayer;
 
   void set(AnalyticsSort s) => state = s;
 }
@@ -48,38 +48,35 @@ Future<BusinessPaymentSummary> paymentSummary(Ref ref, String companyId) async {
   return analyseBusiness(shops: data.shops, txns: data.txns, creditDays: days, booksFrom: data.booksFrom, today: DateTime.now());
 }
 
+/// Overdue 30 days ago with the same credit period, for the trend line.
+@riverpod
+Future<Money?> overdueMonthAgo(Ref ref, String companyId) async {
+  final data = await ref.watch(analyticsDataProvider(companyId).future);
+  final days = ref.watch(creditDaysProvider);
+  return overdueDaysAgo(shops: data.shops, txns: data.txns, creditDays: days, booksFrom: data.booksFrom, today: DateTime.now());
+}
+
 List<ShopPaymentProfile> sortProfiles(List<ShopPaymentProfile> shops, AnalyticsSort sort) {
   int byName(ShopPaymentProfile a, ShopPaymentProfile b) => a.shop.name.toLowerCase().compareTo(b.shop.name.toLowerCase());
   final list = [...shops];
   switch (sort) {
+    case AnalyticsSort.slowestPayer:
+      // Shops that never paid go last: there is nothing to measure.
+      list.sort((a, b) {
+        final x = a.avgDaysToPay, y = b.avgDaysToPay;
+        if (x == null && y == null) return b.overdue.compareTo(a.overdue);
+        if (x == null) return 1;
+        if (y == null) return -1;
+        final c = y.compareTo(x);
+        return c != 0 ? c : byName(a, b);
+      });
     case AnalyticsSort.overdueAmount:
       list.sort((a, b) {
         final c = b.overdue.compareTo(a.overdue);
         return c != 0 ? c : byName(a, b);
       });
-    case AnalyticsSort.longestOverdue:
-      list.sort((a, b) {
-        final c = b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
-        return c != 0 ? c : b.overdue.compareTo(a.overdue);
-      });
-    case AnalyticsSort.slowestPayer:
-      // Shops that never paid go last: there is nothing to measure.
-      list.sort((a, b) {
-        final x = a.avgDaysToPay, y = b.avgDaysToPay;
-        if (x == null && y == null) return byName(a, b);
-        if (x == null) return 1;
-        if (y == null) return -1;
-        return y.compareTo(x);
-      });
-    case AnalyticsSort.lowestOnTime:
-      list.sort((a, b) {
-        final x = a.onTimeRate, y = b.onTimeRate;
-        if (x == null && y == null) return byName(a, b);
-        if (x == null) return 1;
-        if (y == null) return -1;
-        final c = x.compareTo(y);
-        return c != 0 ? c : b.overdue.compareTo(a.overdue);
-      });
+    case AnalyticsSort.name:
+      list.sort(byName);
   }
   return list;
 }

@@ -10,6 +10,7 @@ import '../../../core/widgets/states.dart';
 import '../../auth/data/auth_repository.dart';
 import '../../auth/presentation/password_form.dart';
 import '../../auth/presentation/session_controller.dart';
+import '../../subscription/presentation/subscription_banner.dart';
 import 'theme_controller.dart';
 
 part 'settings_screen.g.dart';
@@ -69,6 +70,14 @@ class SettingsScreen extends ConsumerWidget {
             const Divider(),
             if (user.isOwner)
               ListTile(
+                leading: const Icon(Icons.group_outlined),
+                title: const Text('Staff'),
+                subtitle: const Text('Accounts, companies and sites'),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => context.push('/staff'),
+              ),
+            if (user.isOwner)
+              ListTile(
                 leading: const Icon(Icons.sync_rounded),
                 title: const Text('Sync health'),
                 subtitle: const Text('Tally PC, companies and recent sync runs'),
@@ -80,6 +89,7 @@ class SettingsScreen extends ConsumerWidget {
               title: const Text('Change password'),
               onTap: () => _changePassword(context),
             ),
+            const SubscriptionSettingsTiles(forOwner: true),
             ListTile(
               leading: const Icon(Icons.logout_rounded),
               title: const Text('Sign out'),
@@ -103,7 +113,7 @@ class SettingsScreen extends ConsumerWidget {
       isScrollControlled: true,
       showDragHandle: true,
       useSafeArea: true,
-      builder: (context) => const _ChangePasswordSheet(),
+      builder: (context) => const ChangePasswordSheet(),
     );
   }
 
@@ -122,14 +132,14 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _ChangePasswordSheet extends ConsumerStatefulWidget {
-  const _ChangePasswordSheet();
+class ChangePasswordSheet extends ConsumerStatefulWidget {
+  const ChangePasswordSheet({super.key});
 
   @override
-  ConsumerState<_ChangePasswordSheet> createState() => _ChangePasswordSheetState();
+  ConsumerState<ChangePasswordSheet> createState() => _ChangePasswordSheetState();
 }
 
-class _ChangePasswordSheetState extends ConsumerState<_ChangePasswordSheet> {
+class _ChangePasswordSheetState extends ConsumerState<ChangePasswordSheet> {
   bool _busy = false;
 
   Future<void> _submit(String password) async {

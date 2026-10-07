@@ -1,0 +1,47 @@
+# Shared services on the WholeFlow server: one PostgreSQL holding the control
+# database and one database per business. Each business's login (GoTrue) and
+# data API (PostgREST) run from businesses/<slug>/compose.yml on the same
+# network, created by scripts/new-business.sh.
+name: wholeflow
+
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    # Only reachable from this machine (backups, admin); never from the internet.
+    ports:
+      - "127.0.0.1:5432:5432"
+    networks: [wf]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+
+  # Staff management (manage-staff) for every business: /b/<slug>/functions/v1/.
+  staff:
+    image: denoland/deno:2.1.4
+    restart: unless-stopped
+    network_mode: host  # reaches the control service and nginx on 127.0.0.1
+    working_dir: /app
+    volumes:
+      - ./staff:/app:ro
+      - deno-cache:/deno-dir
+    environment:
+      CONTROL_URL: http://127.0.0.1:8100
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN in .env}
+      PORT: "8200"
+    command: ["run", "--no-lock", "--allow-net", "--allow-env", "multi.ts"]
+    mem_limit: 192m
+
+volumes:
+  pgdata:
+  deno-cache:
+
+networks:
+  wf:
+    name: wf

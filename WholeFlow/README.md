@@ -3,8 +3,8 @@
 One executable, `wholeflow.exe`, one process, one port, one login:
 
 - **Web app** (http://127.0.0.1:8080): dashboard, shop list, shop detail with reconciled transaction summary, outstanding report, suppliers (payables), purchase register with item lines, inventory with purchase history per item, CSV/Excel export — read live from a running TallyPrime. Suppliers, purchases (with item lines) and inventory are also synced to the cloud (migration `0003_purchasing.sql`).
-- **Cloud Sync** (the app's *Cloud Sync* page): select which Tally companies to synchronise, configure Supabase, run and monitor the **background sync** that upserts shops, balances and transactions into the cloud every few minutes for the future owner/staff mobile app.
-- **Admin login for everything.** The app is for the developer/administrator only: every page and every API call requires the single admin account. On the first run the browser asks you to create it (default username `admin`; there is no default password); `set-password` resets it from the console. The business owner and staff never use this app; they will use the mobile app against the cloud.
+- **Cloud Sync** (the app's *Cloud Sync* page): connect this PC to its business on the WholeFlow server with a **reference key + activation code**, select which Tally companies to synchronise, run and monitor the **background sync** that upserts shops, balances and transactions into the cloud every few minutes for the Owner and Staff phone apps.
+- **Login for everything.** The app is for the developer/administrator only: every page and every API call requires a login. Log in with your **WholeFlow account** (email + password, checked by the WholeFlow server at **every** sign-in). There is **no local account and no offline login** (both removed in 0.4.1), so the app can't be opened without the server. Once signed in, the session lasts 12 hours, even if the internet drops. There is no first-run account step either. The business owner and staff never use this app; they use the mobile app against the cloud.
 - **Runs unattended in the background.** Installed as the Windows service **WholeFlow** it starts at every boot, before anyone logs in, with no window. Where Administrator rights are not available, `autostart` starts it hidden at every logon instead. Nobody has to open anything for the sync to run. See [Deploying on a client PC](#deploying-on-a-client-pc).
 
 **Nothing is ever written to Tally**, and Tally's data files are never touched. This is enforced in code, not just by convention:
@@ -17,7 +17,7 @@ One executable, `wholeflow.exe`, one process, one port, one login:
 The only third-party dependency is `golang.org/x/sys` (Windows service and DPAPI).
 
 ```
-TallyPrime  ──HTTP/XML──▶  wholeflow.exe (this PC: web app + sync)  ──HTTPS──▶  Supabase  ──▶  Mobile app (owner / staff)
+TallyPrime  ──HTTP/XML──▶  wholeflow.exe (this PC: web app + sync)  ──HTTPS──▶  WholeFlow server (api.jitsuji.xyz/b/<business>)  ──▶  Owner / Staff apps
 ```
 
 ## Build
@@ -39,7 +39,6 @@ go test ./...
 .\bin\wholeflow.exe                  # foreground: web app + sync at http://127.0.0.1:8080  (Ctrl+C to stop)
 .\bin\wholeflow.exe run -background  # same, but hidden: no console window; returns at once. Stop with "stop"
 .\bin\wholeflow.exe check            # Tally + cloud connection test, prints status and exits  (also -check)
-.\bin\wholeflow.exe set-password     # reset the admin account (first-time creation happens in the browser)
 .\bin\wholeflow.exe install          # Windows service "WholeFlow": starts at boot, hidden (Administrator); re-run to upgrade
 .\bin\wholeflow.exe autostart        # no Administrator: start hidden at every logon of this user  ("autostart off" removes it)
 .\bin\wholeflow.exe status           # service / autostart / process state + cloud sync state per company
@@ -47,79 +46,130 @@ go test ./...
 .\bin\wholeflow.exe sync | config | uninstall
 ```
 
-Cloud sync in one minute: run the app → open http://127.0.0.1:8080, create the admin account → Cloud Sync → business id, Supabase URL + service-role key, discover & tick companies, Save, Sync now, enable background sync, Save → `install`.
+Cloud sync in one minute: run the app → open http://127.0.0.1:8080, log in with your WholeFlow account → Cloud Sync → reference key + activation code → Connect → Test cloud connection, discover & tick companies, Save settings, Sync now, enable background sync, Save settings → `install`. This is the only way to connect: the older direct connection (cloud URL + service key) was removed in 0.5.0.
 
 Data lives in `%ProgramData%\WholeFlow` (`config.json` with the key DPAPI-encrypted, `state.json`, `logs\app.log`).
 Environment variables / `.env` override the file (see `.env.example`). `CLOUD_PROVIDER=memory` is a dry run.
 
 While the service runs from `bin\wholeflow.exe`, `go build` cannot overwrite that file: build to another name, or `wholeflow.exe stop` first and `install` (Administrator) afterwards to pick up the new build. Because the service runs as LocalSystem, `install` refuses an exe outside Program Files; on a development PC add `-allow-any-location`.
 
-The data folder is locked to SYSTEM, Administrators and the account the app runs as; the app sets this on every start. With the service installed, run `status`, `sync`, `check`, `config` and `set-password` from an **Administrator** console. A normal console gets "access denied".
+The data folder is locked to SYSTEM, Administrators and the account the app runs as; the app sets this on every start. With the service installed, run `status`, `sync`, `check` and `config` from an **Administrator** console. A normal console gets "access denied".
 
 ## Deploying on a client PC
 
-Goal: the customer's Tally PC syncs to the cloud on its own, every few minutes, from the moment Windows starts, with nothing to open and no window on screen. Two ways, pick one per PC:
+Goal: the customer's Tally PC syncs to the WholeFlow server on its own, every few minutes, from the moment Windows starts, with nothing to open and no window on screen.
 
-| | **A. Windows service** (recommended) | **B. Logon autostart** (no Administrator) |
+First find which case you are in. On the client PC, look for `C:\Program Files\WholeFlow\wholeflow.exe`, or run `"C:\Program Files\WholeFlow\wholeflow.exe" status` from an Administrator console; it prints the version.
+
+| Case | What you see | Follow |
 |---|---|---|
-| Needs | An Administrator account once, at install time | Nothing |
-| Starts | At boot, before anyone logs in | 20 s after the Windows user logs in |
-| Runs as | LocalSystem, hidden | The logged-in user, hidden |
-| Survives crashes | Restarted by Windows (30 s, 60 s, 5 min) | Started again at next logon |
-| Command | `install` (or the script below) | `autostart` |
+| **1. First time** | No `C:\Program Files\WholeFlow` and no WholeFlow service | [Case 1](#case-1-first-time-install) |
+| **2. Older version installed** (0.2 / 0.3, connected directly with a cloud URL and service key) | `status` shows a version below 0.4.0, or the PC was never connected with a reference key | [Case 2](#case-2-pc-already-has-an-older-version) |
+| **3. Already on 0.4+, just a newer release** | `status` shows 0.4.0 or later | [Rolling out an update](#rolling-out-an-update) |
+| **4. Replacement or second PC** for a business that is already connected | — | [Case 4](#case-4-replacement-or-second-pc) |
 
-Tally itself must be open with the company loaded for a sync to succeed; while it is closed the app waits and retries, and nothing is deleted in the cloud.
+### Before you start (every case)
 
-### Before you start: create the business in Supabase
+1. **The business exists on the WholeFlow server.** In https://admin.jitsuji.xyz → **New business**. The result screen shows the **reference key** and a first **activation code**. For a business that already exists: open it → **Add a Tally PC** gives a new activation code. Codes work **once** and expire after **48 hours**.
+2. **The release package.** On your PC: `powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1` produces `dist\WholeFlow-<version>.zip` (see [Rolling out an update](#rolling-out-an-update)). Copy it to the client PC (USB, WhatsApp Desktop, AnyDesk file transfer).
+3. **Your WholeFlow admin account** (email + password, the same one as the admin app). It signs in on the PC's page. Every sign-in needs internet, because the server checks it each time.
+4. **An Administrator account on the client PC**, for the UAC prompt. Without one, use [logon autostart](#b-logon-autostart-no-administrator) instead of the service.
+5. **TallyPrime in server mode**: Help (F1) → Settings → Connectivity → Client/Server configuration → *TallyPrime acts as* = **Server** (or Both). Note the port; the app reads it from `tally.ini`. The company must be open in Tally for a sync to work.
 
-Each client (business) needs one row in the `businesses` table. Its id is the **business id** you enter on the Cloud Sync page. In the Supabase dashboard open **SQL Editor** and run:
+### Case 1: first-time install
 
-```sql
-insert into public.businesses (name)
-values ('Client Business Name')
-returning id, name, created_at;
-```
-
-Copy the `id` from the result. Only the name is needed; `id`, `created_at` and `updated_at` fill themselves in. The *Test cloud connection* button on the Cloud Sync page checks that this row exists, so a mistyped id shows up straight away.
-
-To list existing businesses and their ids later:
-
-```sql
-select id, name, created_at from public.businesses order by created_at;
-```
-
-Several clients can share one Supabase project, one row each; Row Level Security keeps their data apart. A second Tally PC of the **same** business uses the same id (each PC must have a different Windows computer name). Owner and staff logins for the mobile app are created afterwards from the Cloud Sync page.
-
-### A. Windows service, step by step
-
-1. **Prepare one folder** (USB stick or `Downloads\WholeFlow` on the client PC) with:
-   - `wholeflow.exe` — from `go build -o bin\wholeflow.exe ./cmd/server`
-   - `deploy\Install-WholeFlow.cmd` and `deploy\Install-WholeFlow.ps1`
-   - optional `.env` (from `.env.example`) only if you need overrides such as `APP_ADDR`, `TALLY_PORT` or `TALLY_TIMEOUT_SECONDS`
-2. **TallyPrime**: Help (F1) → Settings → Connectivity → Client/Server configuration → *TallyPrime acts as* = **Server** (or Both). Note the port; the app reads it from `tally.ini`.
-3. **Double-click `Install-WholeFlow.cmd`** and accept the UAC prompt. It copies the exe to `C:\Program Files\WholeFlow`, registers and starts the service (delayed automatic start, restart on failure) and opens http://127.0.0.1:8080. Doing it by hand instead: copy the exe there, open an Administrator console in that folder, run `.\wholeflow.exe install`.
-4. **Create the admin account** on the page that opens (username, password ≥ 10 characters). Do this immediately: the first person to open the page claims the account. The app only listens on 127.0.0.1, so that is whoever sits at this PC.
-5. **Cloud Sync page** (`/#/sync`): business id (from [the query above](#before-you-start-create-the-business-in-supabase)), Supabase URL and service-role key → *Test cloud connection* → *Test Tally & discover companies* → tick the companies → *Save* → *Sync now* → tick *Background synchronisation enabled* → *Save*. Details: [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
-6. **Verify**: close the browser, reboot the PC, do not log in yet or log in and open nothing. After a few minutes, from an Administrator console:
+1. **Extract** the zip on the client PC (right-click → *Extract All*, e.g. to `Downloads\WholeFlow-0.4.0`). Run from the extracted folder, not from inside the zip.
+2. **Double-click `Install-WholeFlow.cmd`** and accept the UAC prompt. If Windows SmartScreen warns about an unknown publisher: *More info* → *Run anyway*. The script:
+   - copies the exe to `C:\Program Files\WholeFlow`;
+   - registers and starts the Windows service **WholeFlow** (delayed automatic start, restarted on failure);
+   - opens http://127.0.0.1:8080.
+3. **Sign in** with your WholeFlow admin account (email + password).
+4. There is **no local account and no offline login**. The server checks every sign-in, and nothing stored on the PC can open this page, so a subscription can't be bypassed on the PC. The background sync never needs a login.
+5. **Cloud Sync page** (menu *Cloud Sync*):
+   1. **Step 1 · Connect to WholeFlow**: enter the **reference key** and the **activation code**, then click **Connect**. It shows *Connected to <business>* and the plan's company limit.
+   2. **Step 2**: click **Test cloud connection**. Expect OK and the business name.
+   3. **Step 3**: click **Test Tally & discover companies**, then tick the companies to sync (up to the plan's limit).
+   4. **Step 4**: click **Save settings**.
+   5. **Step 5**: click **Sync now**. The first sync uploads everything, which takes about half a minute to a few minutes per company.
+   6. **Step 4** again: tick **Background synchronisation enabled** and click **Save settings**.
+6. **Check on the PC**: close the browser and reboot. Without opening anything, wait a few minutes, then from an Administrator console:
    ```powershell
    & "C:\Program Files\WholeFlow\wholeflow.exe" status
    ```
-   Expect `Windows service: running (automatic start)`, `Process: running as service`, and `Last successful sync` on each ticked company (needs Tally open).
+   Expect `Windows service: running (automatic start)`, `Process: running as service, version 0.4.0`, *Connected to <business>*, and a `Last successful sync` per ticked company (Tally must be open).
+7. **Check in the admin app**: the business page → *Tally PCs* lists this PC with its version and *last seen*. The owner's phone app shows the data after a pull-to-refresh.
 
-Upgrade: see [Rolling out an update](#rolling-out-an-update). Remove: `Install-WholeFlow.cmd -Uninstall` (add `-PurgeData` to delete `C:\ProgramData\WholeFlow` too).
+### Case 2: PC already has an older version
+
+Versions before 0.4.0 connected directly to a cloud project with a URL and a service key. That connection is no longer supported: from 0.5.0 on, every PC connects only to the WholeFlow server. The update keeps the ticked companies and sync options, removes the old connection from `config.json`, and the PC does not sync until it is connected with a reference key.
+
+Do this once the business exists in the admin app.
+
+1. Optional safety copy, from an Administrator console: `Copy-Item C:\ProgramData\WholeFlow C:\WholeFlow-backup -Recurse`.
+2. Extract the new zip and double-click **`Install-WholeFlow.cmd`** (accept UAC). It prints `Upgrading WholeFlow 0.3.x -> <new>`. It then stops the service, waits for Windows to release the old exe, copies the new one, restarts the service and prints `status`, which says the PC is *not connected*.
+3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow admin account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
+4. Cloud Sync → **Step 1 · Connect to WholeFlow**: enter the **reference key** and **activation code**, then click **Connect**.
+5. Click **Test cloud connection**. Check the ticked companies are still right: the plan's limit applies, and the page refuses more than the plan allows. Click **Save settings**.
+6. Click **Sync now**. The first sync is automatically a **full** one: the app sees a new cloud company and starts its markers from zero, so all history goes up. It takes a few minutes per company.
+7. Make sure **Background synchronisation enabled** is still ticked, then click **Save settings**. Check `status` and the admin app's *Tally PCs* list, as in Case 1 steps 6–7.
+8. Afterwards owner and staff install the **hosted** phone apps and connect with the **reference key**. Their old mobile logins do not carry over: the owner signs in with the login from the admin app's *New business* screen, then recreates staff in the Owner app (Settings → Staff).
+
+If an old `.env` sits next to the exe or in `C:\ProgramData\WholeFlow`, its cloud lines (`CLOUD_PROVIDER`, `BUSINESS_ID`, the old URL and key) are now ignored; delete them.
+
+**Going back:** not supported below 0.4.0, because older versions don't understand a reference-key connection. Going back to 0.4.x keeps the connection.
+
+### Case 4: replacement or second PC
+
+- **Replacement PC** (old PC broken or sold):
+  1. In the admin app → business → **Add a Tally PC** for a new activation code.
+  2. Install on the new PC as in Case 1.
+  3. Then **Revoke** the old PC in *Tally PCs*. A revoked PC stops syncing immediately and shows "This PC's access was revoked".
+- **Second PC of the same business** (e.g. another branch with its own Tally companies): use a new activation code from **Add a Tally PC** and the same reference key. Each PC must have a different Windows computer name. The plan's company limit counts each business's companies.
+
+### A. Windows service by hand
+
+Use this if the script cannot be used. From an Administrator console:
+
+```powershell
+New-Item -ItemType Directory -Force "C:\Program Files\WholeFlow" | Out-Null
+Copy-Item "<extracted folder>\wholeflow.exe" "C:\Program Files\WholeFlow\" -Force
+& "C:\Program Files\WholeFlow\wholeflow.exe" install     # registers or upgrades the service and starts it
+& "C:\Program Files\WholeFlow\wholeflow.exe" status
+```
+
+Then continue with sign-in and Cloud Sync (Case 1, steps 3–7). Remove later with `Install-WholeFlow.cmd -Uninstall`; add `-PurgeData` to delete `C:\ProgramData\WholeFlow` too.
 
 ### B. Logon autostart (no Administrator)
 
-1. Copy `wholeflow.exe` to a permanent folder the user can read, e.g. `C:\Users\<user>\WholeFlow` (not Downloads or a USB stick).
-2. Open a normal console in that folder and run:
-   ```powershell
-   .\wholeflow.exe autostart
-   ```
-   This registers the Task Scheduler task **WholeFlow** for the current Windows user (runs `wholeflow.exe run -background` at logon, no time limit, no elevation) and starts the app hidden right away.
-3. Create the admin account and configure Cloud Sync exactly as in steps 4–5 above.
-4. Verify: log off and on again (or reboot and log in), wait half a minute, run `.\wholeflow.exe status`: expect `Logon autostart: ready (runs at logon of PC\user)` and `Process: running as background`.
+|  | **Windows service** (recommended) | **Logon autostart** |
+|---|---|---|
+| Needs | An Administrator account once | Nothing |
+| Starts | At boot, before anyone logs in | 20 s after the Windows user logs in |
+| Runs as | LocalSystem, hidden | The logged-in user, hidden |
+| Survives crashes | Restarted by Windows (30 s, 60 s, 5 min) | Started again at next logon |
 
-The app then runs only while that user is logged in; a locked screen is fine, a logged-off PC is not. `.\wholeflow.exe autostart off` removes the task; `stop` ends the running process. `install` later (Administrator) removes the task automatically and replaces it with the service.
+1. Copy `wholeflow.exe` to a permanent folder the user can read, e.g. `C:\Users\<user>\WholeFlow` (not Downloads or a USB stick).
+2. Open a normal console in that folder and run `.\wholeflow.exe autostart`. This registers the Task Scheduler task **WholeFlow** for the current Windows user (runs `wholeflow.exe run -background` at logon) and starts the app hidden right away.
+3. Sign in and set up Cloud Sync as in Case 1, steps 3–5.
+4. Check: log off and on again, wait half a minute, then run `.\wholeflow.exe status`. Expect `Logon autostart: ready` and `Process: running as background`.
+5. **Updating such a PC**: log in as that user, run `.\wholeflow.exe stop` in the program folder, overwrite `wholeflow.exe` with the new one, then run `.\wholeflow.exe start`.
+
+The app then runs only while that user is logged in; a locked screen is fine, a logged-off PC is not. `.\wholeflow.exe autostart off` removes the task. Running `install` later (Administrator) replaces the task with the service.
+
+### When something is wrong
+
+| Message or symptom | What to do |
+|---|---|
+| "This activation code is wrong, already used or expired. Ask for a new one." | Admin app → business → **Add a Tally PC** for a fresh code. Codes work once, for 48 hours. |
+| "No business has this reference key" | Copy the key again from the admin app; case and spaces don't matter. |
+| "Your plan allows N companies. Ask WholeFlow support to upgrade." | Untick a company, or change the business's plan in the admin app. |
+| "Subscription ended — sync paused" | Record the payment in the admin app. The PC resumes by itself within a few minutes. |
+| "This PC's access was revoked. Connect again with a new activation code." | It was revoked in the admin app. Give it a new activation code if that was a mistake. |
+| "Cannot reach the WholeFlow server to check your login…" | The PC has no internet, or the server is down. Every sign-in needs the server; there is no offline or local login. The background sync carries on by itself. |
+| Tally shows *Not connected* | TallyPrime must be open with the company loaded and in Server mode. Check the port on the *Tally Status* page, and set `TALLY_PORT` in `.env` if it differs. |
+| Port 8080 already in use | Put `APP_ADDR=127.0.0.1:8090` in a `.env` next to `wholeflow.exe` before installing. |
+| `status` says "access denied" | Run it from an **Administrator** console when the service is installed. |
+| Anything else | `C:\ProgramData\WholeFlow\logs\app.log`, or the log at the bottom of the Cloud Sync page. |
 
 ### Daily operation
 
@@ -127,7 +177,7 @@ The customer sees nothing: no window, no tray icon, no login. Sync runs every in
 
 ### Rolling out an update
 
-An update replaces only `wholeflow.exe`. The admin login, the Cloud Sync settings, the encrypted Supabase key and the sync progress all live in `C:\ProgramData\WholeFlow` and are kept, so there is nothing to set up again.
+An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted PC key and the sync progress all live in `C:\ProgramData\WholeFlow` and are kept, so there is nothing to set up again.
 
 **On your PC, once per release:**
 
@@ -137,12 +187,16 @@ An update replaces only `wholeflow.exe`. The admin login, the Cloud Sync setting
    powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1
    ```
    Result: `dist\WholeFlow-<version>.zip` with `wholeflow.exe`, `Install-WholeFlow.cmd` / `.ps1`, `README.txt`, `.env.example` and `migrations\`. The script prints the exe's SHA-256 so you can check the copy on the client.
-3. **Database first.** If the release adds a file under `supabase/migrations/`, run that file in Supabase → SQL Editor before updating any PC, once per Supabase project. Migrations are additive, so the old version keeps working against the new schema. Releases so far:
+3. **Database first.** If the release adds a file under `db/migrations/`, apply it before updating any PC. On the WholeFlow server: copy it to `/opt/wholeflow/migrations/`, then admin app → Settings → **Update all businesses**. Migrations are additive, so the old version keeps working against the new schema. Releases so far:
 
    | Version | Migration to apply | What it adds |
    |---|---|---|
    | 0.2.0 | `0001_init.sql`, `0002_mobile_app.sql` | shops, transactions, staff access |
    | 0.3.0 | `0003_purchasing.sql` | suppliers, stock items, purchase bills; background mode and autostart |
+   | 0.4.0 | `0004`–`0007` (applied by the server to every business) | connect by reference key + activation code, WholeFlow account login, subscription pause, plan company limit, heartbeat |
+   | 0.4.1 | none | local account and offline login removed: `set-password` is gone, every sign-in is checked by the server, and logins stored by older versions are deleted from `config.json` at start |
+   | 0.5.0 | none | Supabase connection removed; only the WholeFlow server. A PC still set up with a cloud URL and service key counts as not connected until it connects with a reference key (see Case 2) |
+   | 0.5.1 | none | new look for the PC's pages, matching the admin and phone apps (Material 3, side navigation) |
 
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 
@@ -170,12 +224,13 @@ Copy-Item "<extracted folder>\wholeflow.exe" . -Force   # retry after a few seco
 
 Documentation:
 
+- [../README.md](../README.md) — the whole project: server, admin app, phone apps, fresh setup
 - [deploy/](deploy/README.md) — what to copy to a client PC; `Install-WholeFlow.cmd` installs/upgrades/removes the service
 - [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md) — developer setup runbook, Windows service and logon autostart installation
 - [docs/SYNC_ARCHITECTURE.md](docs/SYNC_ARCHITECTURE.md) — how a run works, incremental sync by Tally `ALTERID`, retry/backoff, offline rules, security model
-- [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — Supabase tables, RLS for owner/staff, example queries
-- [supabase/migrations/0001_init.sql](supabase/migrations/0001_init.sql) — the schema
-- [supabase/migrations/0002_mobile_app.sql](supabase/migrations/0002_mobile_app.sql), [0003_purchasing.sql](supabase/migrations/0003_purchasing.sql) — staff access; suppliers, stock items, purchase bills
+- [docs/DATABASE_SCHEMA.md](docs/DATABASE_SCHEMA.md) — database tables, RLS for owner/staff, example queries
+- [db/migrations/0001_init.sql](db/migrations/0001_init.sql) — the schema
+- [db/migrations/0002_mobile_app.sql](db/migrations/0002_mobile_app.sql), [0003_purchasing.sql](db/migrations/0003_purchasing.sql) — staff access; suppliers, stock items, purchase bills
 - [STATUS.md](STATUS.md) — current project status
 
 ---
@@ -261,13 +316,14 @@ internal/config        .env + tally.ini port detection (shared)
 internal/tally         TallyService: XML/TDL requests, parsing, balances, transactions, vouchers (ONLY place that knows Tally XML)
 internal/api           web app REST API, snapshot, filters, exports
 internal/export        CSV and .xlsx writers
-internal/cloud         provider-neutral cloud contract + models;  cloud/supabase (PostgREST), cloud/memory (tests, dry run)
+internal/cloud         provider-neutral cloud contract + models;  cloud/rest (the server's PostgREST + GoTrue API), cloud/memory (tests, dry run)
 internal/syncer        settings, local state, transformer, engine, backoff, scheduler
-internal/auth          admin login: PBKDF2 hashes, sessions, lockout
-internal/secrets       DPAPI encryption of the service-role key
+internal/auth          login: PBKDF2 hashes, sessions, lockout
+internal/secrets       DPAPI encryption of the PC key
+internal/controlclient talks to the WholeFlow control service: activate, heartbeat, PC login
 internal/admin         admin login (protects the whole app) + Cloud Sync API (/api/sync/*)
 internal/logging       rotating structured log
-supabase/migrations    SQL schema with Row Level Security
+db/migrations    SQL schema with Row Level Security
 docs/                  setup, architecture, schema
 web/static             frontend incl. the Cloud Sync page (embedded into the exe)
 ```

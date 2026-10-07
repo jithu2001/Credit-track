@@ -8,16 +8,23 @@ part of 'providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// The Supabase client. Overridden in main() after Supabase.initialize and in tests.
+/// The client for the business's login and data API on the WholeFlow server
+/// (GoTrue + PostgREST, through the supabase_flutter package). Overridden in
+/// bootstrap once a business is connected, and in tests.
 
 @ProviderFor(supabase)
 final supabaseProvider = SupabaseProvider._();
 
-/// The Supabase client. Overridden in main() after Supabase.initialize and in tests.
+/// The client for the business's login and data API on the WholeFlow server
+/// (GoTrue + PostgREST, through the supabase_flutter package). Overridden in
+/// bootstrap once a business is connected, and in tests.
 
-final class SupabaseProvider extends $FunctionalProvider<SupabaseClient, SupabaseClient, SupabaseClient>
+final class SupabaseProvider
+    extends $FunctionalProvider<SupabaseClient, SupabaseClient, SupabaseClient>
     with $Provider<SupabaseClient> {
-  /// The Supabase client. Overridden in main() after Supabase.initialize and in tests.
+  /// The client for the business's login and data API on the WholeFlow server
+  /// (GoTrue + PostgREST, through the supabase_flutter package). Overridden in
+  /// bootstrap once a business is connected, and in tests.
   SupabaseProvider._()
     : super(
         from: null,
@@ -34,7 +41,8 @@ final class SupabaseProvider extends $FunctionalProvider<SupabaseClient, Supabas
 
   @$internal
   @override
-  $ProviderElement<SupabaseClient> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<SupabaseClient> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
 
   @override
   SupabaseClient create(Ref ref) {
@@ -43,7 +51,10 @@ final class SupabaseProvider extends $FunctionalProvider<SupabaseClient, Supabas
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(SupabaseClient value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<SupabaseClient>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<SupabaseClient>(value),
+    );
   }
 }
 
@@ -56,7 +67,13 @@ final sharedPreferencesProvider = SharedPreferencesProvider._();
 
 /// Loaded in main() before runApp so reads are synchronous.
 
-final class SharedPreferencesProvider extends $FunctionalProvider<SharedPreferences, SharedPreferences, SharedPreferences>
+final class SharedPreferencesProvider
+    extends
+        $FunctionalProvider<
+          SharedPreferences,
+          SharedPreferences,
+          SharedPreferences
+        >
     with $Provider<SharedPreferences> {
   /// Loaded in main() before runApp so reads are synchronous.
   SharedPreferencesProvider._()
@@ -75,7 +92,9 @@ final class SharedPreferencesProvider extends $FunctionalProvider<SharedPreferen
 
   @$internal
   @override
-  $ProviderElement<SharedPreferences> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<SharedPreferences> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   SharedPreferences create(Ref ref) {
@@ -84,7 +103,10 @@ final class SharedPreferencesProvider extends $FunctionalProvider<SharedPreferen
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(SharedPreferences value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<SharedPreferences>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<SharedPreferences>(value),
+    );
   }
 }
 

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://wholeflow.jitsuji.xyz/sitemap.xml

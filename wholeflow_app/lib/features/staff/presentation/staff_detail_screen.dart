@@ -8,6 +8,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/domain/company.dart';
 import '../../company/presentation/company_providers.dart';
+import '../../sites/presentation/site_providers.dart';
 import '../data/staff_repository.dart';
 import '../domain/staff.dart';
 import 'staff_form_screen.dart';
@@ -117,6 +118,7 @@ class _LoadedState extends ConsumerState<_Loaded> {
   @override
   Widget build(BuildContext context) {
     final names = {for (final c in widget.companies) c.id: c.companyName};
+    final siteNames = <String, String>{for (final s in ref.watch(allSitesProvider).value ?? const []) s.id: s.name};
     return Scaffold(
       appBar: AppBar(
         title: Text(m.displayName),
@@ -150,6 +152,22 @@ class _LoadedState extends ConsumerState<_Loaded> {
                 ],
               ),
             ),
+            if (!m.isOwner) ...[
+              const SizedBox(height: Insets.l),
+              Card.outlined(
+                child: ListTile(
+                  leading: const Icon(Icons.where_to_vote_outlined),
+                  title: Text(m.requiresCheckIn ? 'Checks in at shops' : 'No shop check-in'),
+                  subtitle: Text(
+                    m.requiresCheckIn
+                        ? 'Checks in with GPS at each shop on planned visit days.'
+                        : 'Turn on in Change companies, sites or name if they visit shops.',
+                  ),
+                  trailing: m.requiresCheckIn ? const Icon(Icons.chevron_right_rounded) : null,
+                  onTap: m.requiresCheckIn ? () => context.push('/staff/${m.id}/visits') : null,
+                ),
+              ),
+            ],
             const SizedBox(height: Insets.xl),
             Text('Companies', style: context.text.titleMedium),
             const SizedBox(height: Insets.s),
@@ -177,7 +195,7 @@ class _LoadedState extends ConsumerState<_Loaded> {
                       ListTile(
                         leading: const Icon(Icons.business_outlined),
                         title: Text(names[a.companyId] ?? 'Company'),
-                        subtitle: Text(describeGrant(CompanyGrant.fromAccess(a))),
+                        subtitle: Text(describeGrant(CompanyGrant.fromAccess(a), siteNames)),
                       ),
                   ],
                 ),
@@ -193,7 +211,7 @@ class _LoadedState extends ConsumerState<_Loaded> {
               FilledButton.tonalIcon(
                 onPressed: _busy ? null : () => context.push('/staff/${m.id}/edit'),
                 icon: const Icon(Icons.business_center_outlined),
-                label: const Text('Change companies or name'),
+                label: const Text('Change companies, sites or name'),
               ),
               const SizedBox(height: Insets.s),
               OutlinedButton.icon(

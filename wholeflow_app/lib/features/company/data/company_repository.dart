@@ -31,7 +31,7 @@ class CompanyRepository {
     }
   }
 
-  /// Distinct areas of a company's active shops, sorted (for filters and the staff form).
+  /// Distinct Tally areas of a company's active shops, sorted (the site editor's "By area").
   Future<List<String>> areasOf(String companyId) async {
     try {
       final rows = await fetchAll(

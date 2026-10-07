@@ -19,21 +19,20 @@ abstract class Company with _$Company {
   static const columns = 'id,company_name,sync_status,last_sync_at';
 }
 
-/// A row of `staff_company_access`: one company a staff member works for.
+/// A row of `staff_company_access`: one company a staff member works for,
+/// either the whole company or only the shops in [siteIds]
+/// (from `staff_site_access`, filled in by the repository).
 @freezed
 abstract class CompanyAccess with _$CompanyAccess {
-  const CompanyAccess._();
-
   const factory CompanyAccess({
     required String userId,
     required String companyId,
-    @Default(<String>[]) List<String> areas,
+    @Default(true) bool fullCompany,
+    @JsonKey(includeFromJson: false, includeToJson: false) @Default(<String>[]) List<String> siteIds,
     @Default(true) bool canViewTransactions,
   }) = _CompanyAccess;
 
   factory CompanyAccess.fromJson(Map<String, dynamic> json) => _$CompanyAccessFromJson(json);
 
-  static const columns = 'user_id,company_id,areas,can_view_transactions';
-
-  bool get allAreas => areas.isEmpty;
+  static const columns = 'user_id,company_id,full_company,can_view_transactions';
 }

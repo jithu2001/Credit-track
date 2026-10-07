@@ -11,9 +11,9 @@
 
       1. copies wholeflow.exe (and .env if present) to C:\Program Files\WholeFlow
       2. registers and starts the Windows service (delayed automatic start,
-         restart on failure) — or updates it in place if it already exists
-      3. opens http://127.0.0.1:8080 so you can create the admin account and
-         configure Cloud Sync (see docs/SYNC_SETUP.md)
+         restart on failure) - or updates it in place if it already exists
+      3. opens http://127.0.0.1:8080 so you can sign in with your WholeFlow admin
+         account and connect Cloud Sync (see docs/SYNC_SETUP.md)
 
     Run again with a newer wholeflow.exe to upgrade. -Uninstall removes the
     service and the program folder; data in C:\ProgramData\WholeFlow is kept
@@ -150,7 +150,7 @@ try {
     $null = Invoke-WholeFlow @('status')
     Write-Host ''
     if (-not $isUpgrade) {
-        Write-Host 'Next: create the admin account in the browser (first run), then configure Cloud Sync.'
+        Write-Host 'Next: sign in with your WholeFlow admin account in the browser, then connect Cloud Sync with the reference key and activation code.'
     }
     Write-Host 'Manage later from an Administrator console:  wholeflow.exe status | stop | start | restart | uninstall'
 

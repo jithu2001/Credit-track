@@ -8,6 +8,9 @@ part 'shop.g.dart';
 
 Object? _readShopId(Map<dynamic, dynamic> json, String key) => json['shop_id'] ?? json['id'];
 
+// `site_name` from the view, or the embedded `sites(name)` from the table.
+Object? _readSiteName(Map<dynamic, dynamic> json, String key) => json['site_name'] ?? (json['sites'] as Map?)?['name'];
+
 /// One line of a shop list: from `shops` or `v_shop_outstanding`.
 @freezed
 abstract class ShopSummary with _$ShopSummary {
@@ -17,12 +20,14 @@ abstract class ShopSummary with _$ShopSummary {
     String? area,
     String? phone,
     @MoneyConverter() @Default(Money.zero) Money receivable,
+    String? siteId,
+    @JsonKey(readValue: _readSiteName) String? siteName,
   }) = _ShopSummary;
 
   factory ShopSummary.fromJson(Map<String, dynamic> json) => _$ShopSummaryFromJson(json);
 
-  static const shopColumns = 'id,name,area,phone,receivable';
-  static const viewColumns = 'shop_id,name,area,phone,receivable';
+  static const shopColumns = 'id,name,area,phone,receivable,site_id,sites(name)';
+  static const viewColumns = 'shop_id,name,area,phone,receivable,site_id,site_name';
 }
 
 /// Everything the shop detail screen shows.
@@ -49,13 +54,15 @@ abstract class ShopDetail with _$ShopDetail {
     @Default('') String openingBalanceType,
     @MoneyConverter() @Default(Money.zero) Money receivable,
     DateTime? syncedAt,
+    String? siteId,
+    @JsonKey(readValue: _readSiteName) String? siteName,
   }) = _ShopDetail;
 
   factory ShopDetail.fromJson(Map<String, dynamic> json) => _$ShopDetailFromJson(json);
 
   static const columns =
       'id,company_id,name,area,phone,phones,phone_source,contact_person,email,gstin,address,'
-      'address_lines,state,pincode,opening_balance_amount,opening_balance_type,receivable,synced_at';
+      'address_lines,state,pincode,opening_balance_amount,opening_balance_type,receivable,synced_at,site_id,sites(name)';
 
   /// Signed like `receivable`: Dr opening balance is positive.
   Money get openingBalance => openingBalanceType == 'CR' ? -openingBalanceAmount.abs() : openingBalanceAmount.abs();
@@ -97,20 +104,22 @@ enum BalanceFilter {
 enum ShopSort {
   balanceDesc('Balance: high to low'),
   balanceAsc('Balance: low to high'),
-  name('Name'),
-  area('Area');
+  name('Name');
 
   const ShopSort(this.label);
   final String label;
 }
 
-/// Search, filter and sort of the shop list.
+/// Search, filter and sort of the shop list. [siteIds] may hold [noSite]
+/// for shops that are in no site.
 @freezed
 abstract class ShopFilter with _$ShopFilter {
   const factory ShopFilter({
     @Default('') String query,
     @Default(BalanceFilter.all) BalanceFilter balance,
-    @Default(<String>{}) Set<String> areas,
+    @Default(<String>{}) Set<String> siteIds,
     @Default(ShopSort.balanceDesc) ShopSort sort,
   }) = _ShopFilter;
+
+  static const noSite = 'no-site';
 }

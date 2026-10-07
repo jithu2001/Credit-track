@@ -15,7 +15,13 @@ final companiesProvider = CompaniesProvider._();
 
 /// Companies the signed-in user can see (RLS-filtered). Reloaded per user.
 
-final class CompaniesProvider extends $FunctionalProvider<AsyncValue<List<Company>>, List<Company>, FutureOr<List<Company>>>
+final class CompaniesProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<Company>>,
+          List<Company>,
+          FutureOr<List<Company>>
+        >
     with $FutureModifier<List<Company>>, $FutureProvider<List<Company>> {
   /// Companies the signed-in user can see (RLS-filtered). Reloaded per user.
   CompaniesProvider._()
@@ -34,7 +40,9 @@ final class CompaniesProvider extends $FunctionalProvider<AsyncValue<List<Compan
 
   @$internal
   @override
-  $FutureProviderElement<List<Company>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<Company>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<Company>> create(Ref ref) {
@@ -58,7 +66,9 @@ final class MyAccessProvider
           Map<String, CompanyAccess>,
           FutureOr<Map<String, CompanyAccess>>
         >
-    with $FutureModifier<Map<String, CompanyAccess>>, $FutureProvider<Map<String, CompanyAccess>> {
+    with
+        $FutureModifier<Map<String, CompanyAccess>>,
+        $FutureProvider<Map<String, CompanyAccess>> {
   /// The staff member's assignments keyed by company id; empty for owners.
   MyAccessProvider._()
     : super(
@@ -76,7 +86,9 @@ final class MyAccessProvider
 
   @$internal
   @override
-  $FutureProviderElement<Map<String, CompanyAccess>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<Map<String, CompanyAccess>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<Map<String, CompanyAccess>> create(Ref ref) {
@@ -92,7 +104,8 @@ String _$myAccessHash() => r'37065d631f43c73f21ed9438720743ff773d45ba';
 final selectedCompanyIdProvider = SelectedCompanyIdProvider._();
 
 /// The remembered company choice (may point to a company no longer visible).
-final class SelectedCompanyIdProvider extends $NotifierProvider<SelectedCompanyId, String?> {
+final class SelectedCompanyIdProvider
+    extends $NotifierProvider<SelectedCompanyId, String?> {
   /// The remembered company choice (may point to a company no longer visible).
   SelectedCompanyIdProvider._()
     : super(
@@ -114,7 +127,10 @@ final class SelectedCompanyIdProvider extends $NotifierProvider<SelectedCompanyI
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(String? value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<String?>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<String?>(value),
+    );
   }
 }
 
@@ -128,7 +144,14 @@ abstract class _$SelectedCompanyId extends $Notifier<String?> {
   @override
   WhenComplete runBuild() {
     final ref = this.ref as $Ref<String?, String?>;
-    final element = ref.element as $ClassProviderElement<AnyNotifier<String?, String?>, String?, Object?, Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<String?, String?>,
+              String?,
+              Object?,
+              Object?
+            >;
     return element.handleCreate(ref, build);
   }
 }
@@ -142,7 +165,9 @@ final activeCompanyProvider = ActiveCompanyProvider._();
 /// The company every data screen is scoped to: the remembered one if still
 /// visible, otherwise the first. Null when the user can see no company.
 
-final class ActiveCompanyProvider extends $FunctionalProvider<AsyncValue<Company?>, Company?, FutureOr<Company?>>
+final class ActiveCompanyProvider
+    extends
+        $FunctionalProvider<AsyncValue<Company?>, Company?, FutureOr<Company?>>
     with $FutureModifier<Company?>, $FutureProvider<Company?> {
   /// The company every data screen is scoped to: the remembered one if still
   /// visible, otherwise the first. Null when the user can see no company.
@@ -162,7 +187,8 @@ final class ActiveCompanyProvider extends $FunctionalProvider<AsyncValue<Company
 
   @$internal
   @override
-  $FutureProviderElement<Company?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<Company?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<Company?> create(Ref ref) {
@@ -179,16 +205,20 @@ final canViewTransactionsProvider = CanViewTransactionsFamily._();
 
 /// Whether the Statement tab is shown for [companyId].
 
-final class CanViewTransactionsProvider extends $FunctionalProvider<bool, bool, bool> with $Provider<bool> {
+final class CanViewTransactionsProvider
+    extends $FunctionalProvider<bool, bool, bool>
+    with $Provider<bool> {
   /// Whether the Statement tab is shown for [companyId].
-  CanViewTransactionsProvider._({required CanViewTransactionsFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'canViewTransactionsProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CanViewTransactionsProvider._({
+    required CanViewTransactionsFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'canViewTransactionsProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$canViewTransactionsHash();
@@ -202,7 +232,8 @@ final class CanViewTransactionsProvider extends $FunctionalProvider<bool, bool, 
 
   @$internal
   @override
-  $ProviderElement<bool> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<bool> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
 
   @override
   bool create(Ref ref) {
@@ -212,7 +243,10 @@ final class CanViewTransactionsProvider extends $FunctionalProvider<bool, bool, 
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(bool value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<bool>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<bool>(value),
+    );
   }
 
   @override
@@ -226,11 +260,13 @@ final class CanViewTransactionsProvider extends $FunctionalProvider<bool, bool, 
   }
 }
 
-String _$canViewTransactionsHash() => r'd37750b6d402ef937fe065f649921150e991bbf2';
+String _$canViewTransactionsHash() =>
+    r'd37750b6d402ef937fe065f649921150e991bbf2';
 
 /// Whether the Statement tab is shown for [companyId].
 
-final class CanViewTransactionsFamily extends $Family with $FunctionalFamilyOverride<bool, String> {
+final class CanViewTransactionsFamily extends $Family
+    with $FunctionalFamilyOverride<bool, String> {
   CanViewTransactionsFamily._()
     : super(
         retry: null,
@@ -242,7 +278,8 @@ final class CanViewTransactionsFamily extends $Family with $FunctionalFamilyOver
 
   /// Whether the Statement tab is shown for [companyId].
 
-  CanViewTransactionsProvider call(String companyId) => CanViewTransactionsProvider._(argument: companyId, from: this);
+  CanViewTransactionsProvider call(String companyId) =>
+      CanViewTransactionsProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'canViewTransactionsProvider';
@@ -255,17 +292,25 @@ final companyAreasProvider = CompanyAreasFamily._();
 
 /// Distinct shop areas of a company.
 
-final class CompanyAreasProvider extends $FunctionalProvider<AsyncValue<List<String>>, List<String>, FutureOr<List<String>>>
+final class CompanyAreasProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<String>>,
+          List<String>,
+          FutureOr<List<String>>
+        >
     with $FutureModifier<List<String>>, $FutureProvider<List<String>> {
   /// Distinct shop areas of a company.
-  CompanyAreasProvider._({required CompanyAreasFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'companyAreasProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CompanyAreasProvider._({
+    required CompanyAreasFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'companyAreasProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$companyAreasHash();
@@ -279,7 +324,9 @@ final class CompanyAreasProvider extends $FunctionalProvider<AsyncValue<List<Str
 
   @$internal
   @override
-  $FutureProviderElement<List<String>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<String>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<String>> create(Ref ref) {
@@ -302,7 +349,8 @@ String _$companyAreasHash() => r'd013f248e4f0be6b2e4cc5f6ac1a2491edf9e7c2';
 
 /// Distinct shop areas of a company.
 
-final class CompanyAreasFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<String>>, String> {
+final class CompanyAreasFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<List<String>>, String> {
   CompanyAreasFamily._()
     : super(
         retry: null,
@@ -314,7 +362,8 @@ final class CompanyAreasFamily extends $Family with $FunctionalFamilyOverride<Fu
 
   /// Distinct shop areas of a company.
 
-  CompanyAreasProvider call(String companyId) => CompanyAreasProvider._(argument: companyId, from: this);
+  CompanyAreasProvider call(String companyId) =>
+      CompanyAreasProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'companyAreasProvider';

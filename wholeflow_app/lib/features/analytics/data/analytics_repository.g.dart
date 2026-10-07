@@ -12,7 +12,13 @@ part of 'analytics_repository.dart';
 @ProviderFor(analyticsRepository)
 final analyticsRepositoryProvider = AnalyticsRepositoryProvider._();
 
-final class AnalyticsRepositoryProvider extends $FunctionalProvider<AnalyticsRepository, AnalyticsRepository, AnalyticsRepository>
+final class AnalyticsRepositoryProvider
+    extends
+        $FunctionalProvider<
+          AnalyticsRepository,
+          AnalyticsRepository,
+          AnalyticsRepository
+        >
     with $Provider<AnalyticsRepository> {
   AnalyticsRepositoryProvider._()
     : super(
@@ -30,7 +36,9 @@ final class AnalyticsRepositoryProvider extends $FunctionalProvider<AnalyticsRep
 
   @$internal
   @override
-  $ProviderElement<AnalyticsRepository> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
+  $ProviderElement<AnalyticsRepository> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   AnalyticsRepository create(Ref ref) {
@@ -39,8 +47,12 @@ final class AnalyticsRepositoryProvider extends $FunctionalProvider<AnalyticsRep
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(AnalyticsRepository value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<AnalyticsRepository>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AnalyticsRepository>(value),
+    );
   }
 }
 
-String _$analyticsRepositoryHash() => r'cb68eae70dc508acfb304a6e33b0353c0903ae27';
+String _$analyticsRepositoryHash() =>
+    r'cb68eae70dc508acfb304a6e33b0353c0903ae27';

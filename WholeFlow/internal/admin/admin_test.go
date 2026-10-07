@@ -26,10 +26,10 @@ func newTestServer(t *testing.T, withPassword bool) (*httptest.Server, *Server) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Never the real control service: tests that need one point this at a fake.
+	set.Update(func(s *syncer.Settings) error { s.Cloud.ControlURL = "http://127.0.0.1:1"; return nil })
 	if withPassword {
-		hash, _ := auth.HashPassword("admin-secret-1")
 		set.Update(func(s *syncer.Settings) error {
-			s.Developer = syncer.DeveloperSettings{Username: "admin", PasswordHash: hash}
 			s.Business.ID = "biz"
 			s.Cloud.Provider = syncer.ProviderMemory
 			return nil
@@ -55,6 +55,9 @@ func newTestServer(t *testing.T, withPassword bool) (*httptest.Server, *Server) 
 	mux.Handle("/api/", s.RequireLogin(webAPI))
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
+	if withPassword {
+		newFakeControl(t, s) // accepts jithu@example.com / pw-online
+	}
 	return ts, s
 }
 
@@ -99,55 +102,24 @@ func (c *client) do(method, path string, body string, csrf bool) (*http.Response
 }
 
 func (c *client) login(password string) *http.Response {
-	resp, _ := c.do("POST", "/api/sync/login", `{"username":"admin","password":"`+password+`"}`, true)
+	resp, _ := c.do("POST", "/api/sync/login", `{"email":"jithu@example.com","password":"`+password+`"}`, true)
 	return resp
 }
 
-func TestSetupRequiredWithoutPassword(t *testing.T) {
+// Without a local account there is no first-run "create an account" step:
+// the page shows the login form and everything stays locked.
+func TestNoLocalAccountShowsLogin(t *testing.T) {
 	ts, _ := newTestServer(t, false)
 	c := &client{t: t, base: ts.URL}
 	_, body := c.do("GET", "/api/sync/session", "", false)
-	if !strings.Contains(body, `"setupRequired":true`) {
+	if !strings.Contains(body, `"loggedIn":false`) || strings.Contains(body, "setupRequired") {
 		t.Fatal(body)
 	}
-	resp, _ := c.do("POST", "/api/sync/login", `{"username":"admin","password":"anything-at-all"}`, true)
-	if resp.StatusCode != http.StatusConflict {
-		t.Fatalf("login without a configured password must be refused, got %d", resp.StatusCode)
+	if resp, _ := c.do("POST", "/api/sync/setup", `{"username":"admin","password":"first-password-1","confirm":"first-password-1"}`, true); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("first-run setup must be gone, got %d", resp.StatusCode)
 	}
 	if resp, _ := c.do("GET", "/api/dashboard", "", false); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("web app reachable without any account: %d", resp.StatusCode)
-	}
-}
-
-func TestFirstRunSetupFromBrowser(t *testing.T) {
-	ts, s := newTestServer(t, false)
-	c := &client{t: t, base: ts.URL}
-	if resp, _ := c.do("POST", "/api/sync/setup", `{"username":"admin","password":"first-password-1","confirm":"first-password-1"}`, false); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("setup without CSRF header = %d", resp.StatusCode)
-	}
-	if resp, _ := c.do("POST", "/api/sync/setup", `{"username":"admin","password":"short","confirm":"short"}`, true); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("weak password accepted: %d", resp.StatusCode)
-	}
-	if resp, _ := c.do("POST", "/api/sync/setup", `{"username":"admin","password":"first-password-1","confirm":"other-password-1"}`, true); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("mismatch accepted: %d", resp.StatusCode)
-	}
-	resp, body := c.do("POST", "/api/sync/setup", `{"username":"","password":"first-password-1","confirm":"first-password-1"}`, true)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"username":"admin"`) || c.cookie == nil {
-		t.Fatalf("setup = %d %s cookie=%v", resp.StatusCode, body, c.cookie)
-	}
-	if got := s.Settings.Get().Developer; got.Username != "admin" || !auth.VerifyPassword(got.PasswordHash, "first-password-1") {
-		t.Fatalf("account not stored: %+v", got)
-	}
-	// Logged in straight away, and setup can never run again.
-	if resp, _ := c.do("GET", "/api/dashboard", "", false); resp.StatusCode != http.StatusOK {
-		t.Fatalf("not logged in after setup: %d", resp.StatusCode)
-	}
-	other := &client{t: t, base: ts.URL}
-	if resp, _ := other.do("POST", "/api/sync/setup", `{"username":"x","password":"another-password-1","confirm":"another-password-1"}`, true); resp.StatusCode != http.StatusConflict {
-		t.Fatalf("second setup accepted: %d", resp.StatusCode)
-	}
-	if _, body := other.do("GET", "/api/sync/session", "", false); !strings.Contains(body, `"setupRequired":false`) {
-		t.Fatal(body)
 	}
 }
 
@@ -159,7 +131,7 @@ func TestWholeAppRequiresLogin(t *testing.T) {
 			t.Fatalf("%s served without login: %d", p, resp.StatusCode)
 		}
 	}
-	if resp := c.login("admin-secret-1"); resp.StatusCode != http.StatusOK || c.cookie == nil || !c.cookie.HttpOnly || c.cookie.SameSite != http.SameSiteStrictMode {
+	if resp := c.login("pw-online"); resp.StatusCode != http.StatusOK || c.cookie == nil || !c.cookie.HttpOnly || c.cookie.SameSite != http.SameSiteStrictMode {
 		t.Fatalf("login = %d cookie=%+v", resp.StatusCode, c.cookie)
 	}
 	if resp, body := c.do("GET", "/api/dashboard", "", false); resp.StatusCode != http.StatusOK || body != "dashboard" {
@@ -189,7 +161,7 @@ func TestWholeAppRequiresLogin(t *testing.T) {
 func TestLoginRejectsBadCredentialsAndLocksOut(t *testing.T) {
 	ts, _ := newTestServer(t, true)
 	c := &client{t: t, base: ts.URL}
-	if resp, _ := c.do("POST", "/api/sync/login", `{"username":"admin","password":"admin-secret-1"}`, false); resp.StatusCode != http.StatusForbidden {
+	if resp, _ := c.do("POST", "/api/sync/login", `{"email":"jithu@example.com","password":"pw-online"}`, false); resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("login without CSRF header = %d", resp.StatusCode)
 	}
 	for i := 0; i < 3; i++ {
@@ -197,7 +169,7 @@ func TestLoginRejectsBadCredentialsAndLocksOut(t *testing.T) {
 			t.Fatalf("bad password = %d", resp.StatusCode)
 		}
 	}
-	if resp := c.login("admin-secret-1"); resp.StatusCode != http.StatusTooManyRequests {
+	if resp := c.login("pw-online"); resp.StatusCode != http.StatusTooManyRequests {
 		t.Fatalf("expected lockout, got %d", resp.StatusCode)
 	}
 }
@@ -237,31 +209,30 @@ func TestQuitEndpoint(t *testing.T) {
 		t.Fatalf("wrong token accepted: %d", resp.StatusCode)
 	}
 	browser := &client{t: t, base: ts.URL}
-	browser.login("admin-secret-1")
+	browser.login("pw-online")
 	if resp, _ := browser.do("POST", "/api/sync/quit", "", true); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("browser session may not stop the app: got %d", resp.StatusCode)
 	}
 }
 
-func TestSettingsNeverEchoKey(t *testing.T) {
+// The page saves only the sync options and companies: the business and cloud
+// settings come from the activation and cannot be changed through it.
+func TestSettingsSaveKeepsBusinessAndCloud(t *testing.T) {
 	ts, s := newTestServer(t, true)
 	c := &client{t: t, base: ts.URL}
-	c.login("admin-secret-1")
-	body := `{"business":{"id":"biz","name":"JMJ"},"cloud":{"provider":"supabase","supabaseUrl":"https://x.supabase.co","supabaseKey":"sk-very-secret"},
+	c.login("pw-online")
+	body := `{"business":{"id":"other","name":"JMJ"},"cloud":{"provider":"wholeflow"},
 	          "sync":{"enabled":false,"intervalSeconds":600,"transactions":true,"fullReconcileHours":24},"companies":[{"tallyId":"g1","name":"Co","enabled":true}]}`
 	resp, out := c.do("PUT", "/api/sync/settings", body, true)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("save = %d %s", resp.StatusCode, out)
 	}
-	if strings.Contains(out, "sk-very-secret") || !strings.Contains(out, `"hasKey":true`) {
-		t.Fatalf("key leaked or not stored: %s", out)
-	}
-	if got := s.Settings.Get(); got.Cloud.SupabaseKey != "sk-very-secret" || got.Sync.IntervalSeconds != 600 || len(got.EnabledCompanies()) != 1 {
+	got := s.Settings.Get()
+	if got.Sync.IntervalSeconds != 600 || len(got.EnabledCompanies()) != 1 {
 		t.Fatalf("settings not applied: %+v", got)
 	}
-	c.do("PUT", "/api/sync/settings", strings.Replace(body, `"supabaseKey":"sk-very-secret"`, `"supabaseKey":""`, 1), true)
-	if got := s.Settings.Get(); got.Cloud.SupabaseKey != "sk-very-secret" {
-		t.Fatal("blank key must keep the stored key")
+	if got.Business.ID != "biz" || got.Business.Name != "" || got.Cloud.Provider != syncer.ProviderMemory {
+		t.Fatalf("business or cloud changed by save: %+v %+v", got.Business, got.Cloud)
 	}
 	resp, _ = c.do("PUT", "/api/sync/settings", strings.Replace(body, `"intervalSeconds":600`, `"intervalSeconds":5`, 1), true)
 	if resp.StatusCode != http.StatusBadRequest || s.Settings.Get().Sync.IntervalSeconds != 600 {

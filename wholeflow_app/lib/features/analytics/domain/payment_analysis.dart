@@ -37,7 +37,7 @@ class ShopOpening {
   const ShopOpening({
     required this.id,
     required this.name,
-    this.area,
+    this.siteName,
     this.phone,
     required this.opening,
     required this.receivable,
@@ -45,7 +45,9 @@ class ShopOpening {
 
   final String id;
   final String name;
-  final String? area;
+
+  /// Null when the shop is in no site.
+  final String? siteName;
   final String? phone;
 
   /// Signed: Dr (owes) positive.
@@ -124,6 +126,27 @@ enum PaymentStatus {
   };
 }
 
+/// How a shop usually pays, judged by its average days from bill to payment
+/// against the credit period.
+enum PayHabit {
+  onTime('Pays on time'),
+  late('Pays late'),
+  veryLate('Pays very late'),
+  noPayments('No payments yet');
+
+  const PayHabit(this.label);
+  final String label;
+
+  /// Within the period is on time; up to 30 days more is late; beyond that very late.
+  static PayHabit of(double? avgDaysToPay, int creditDays) {
+    if (avgDaysToPay == null) return noPayments;
+    final d = avgDaysToPay.round();
+    if (d <= creditDays) return onTime;
+    if (d <= creditDays + 30) return late;
+    return veryLate;
+  }
+}
+
 class ShopPaymentProfile {
   ShopPaymentProfile({
     required this.shop,
@@ -187,6 +210,8 @@ class ShopPaymentProfile {
   double? get onTimeRate => paidBills.isEmpty ? null : onTimeCount / paidBills.length;
 
   PaymentStatus get status => PaymentStatus.of(maxDaysOverdue);
+
+  PayHabit habit(int creditDays) => PayHabit.of(avgDaysToPay, creditDays);
 
   /// Open bills minus advance; equals the synced balance when the data is complete.
   Money get computedBalance => openAmount - advance;
@@ -394,4 +419,23 @@ BusinessPaymentSummary analyseBusiness({
     onTimeRate: paid == 0 ? null : onTime / paid,
     avgDaysToPay: total == 0 ? null : weighted / total,
   );
+}
+
+/// Overdue as it stood [daysAgo] days before [today], from the vouchers dated
+/// up to then. Null when the synced books do not reach back that far.
+Money? overdueDaysAgo({
+  required List<ShopOpening> shops,
+  required List<PaymentTxn> txns,
+  required int creditDays,
+  required DateTime booksFrom,
+  required DateTime today,
+  int daysAgo = 30,
+}) {
+  final then = _day(today).subtract(Duration(days: daysAgo));
+  if (then.isBefore(_day(booksFrom))) return null;
+  final earlier = [
+    for (final t in txns)
+      if (!_day(t.date).isAfter(then)) t,
+  ];
+  return analyseBusiness(shops: shops, txns: earlier, creditDays: creditDays, booksFrom: booksFrom, today: then).overdue;
 }

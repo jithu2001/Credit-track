@@ -7,31 +7,49 @@ import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
 import '../../company/presentation/company_providers.dart';
-import '../../company/presentation/company_switcher.dart';
-import '../../home/account_button.dart';
+import '../../shops/presentation/shop_list_controller.dart';
+import '../../sites/domain/site.dart';
 import '../domain/payment_analysis.dart';
 import 'analytics_providers.dart';
 import 'analytics_widgets.dart';
 
-class AnalyticsScreen extends ConsumerStatefulWidget {
-  const AnalyticsScreen({super.key});
+/// Which shops the list shows, by payment habit.
+enum HabitFilter {
+  all('All'),
+  late('Pay late'),
+  onTime('Pay on time'),
+  noPayments('No payments');
 
-  @override
-  ConsumerState<AnalyticsScreen> createState() => _AnalyticsScreenState();
+  const HabitFilter(this.label);
+  final String label;
+
+  bool matches(PayHabit h) => switch (this) {
+    all => true,
+    late => h == PayHabit.late || h == PayHabit.veryLate,
+    onTime => h == PayHabit.onTime,
+    noPayments => h == PayHabit.noPayments,
+  };
 }
 
-class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
-  bool _overdueOnly = true;
+/// Owner-only, opened from the Dashboard overdue card: how much is overdue and
+/// whether it is improving, how shops pay in general, and each shop's habit.
+/// Chasing today's dues happens in Shops → Overdue, which this screen links to.
+class PaymentInsightsScreen extends ConsumerStatefulWidget {
+  const PaymentInsightsScreen({super.key});
+
+  @override
+  ConsumerState<PaymentInsightsScreen> createState() => _PaymentInsightsScreenState();
+}
+
+class _PaymentInsightsScreenState extends ConsumerState<PaymentInsightsScreen> {
+  HabitFilter _filter = HabitFilter.all;
 
   @override
   Widget build(BuildContext context) {
     final company = ref.watch(activeCompanyProvider).value;
     final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
     return Scaffold(
-      appBar: AppBar(
-        title: const CompanyTitle(screen: 'Analytics'),
-        actions: const [AccountButton()],
-      ),
+      appBar: AppBar(title: const Text('Payment insights')),
       body: company == null
           ? const SizedBox.shrink()
           : RefreshIndicator(
@@ -39,9 +57,10 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
               child: ContentWidth(
                 child: switch (summary!) {
                   AsyncValue(:final value?) => _Body(
+                    companyId: company.id,
                     summary: value,
-                    overdueOnly: _overdueOnly,
-                    onOverdueOnly: (v) => setState(() => _overdueOnly = v),
+                    filter: _filter,
+                    onFilter: (v) => setState(() => _filter = v),
                   ),
                   AsyncValue(:final error?) => ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
@@ -59,17 +78,19 @@ class _AnalyticsScreenState extends ConsumerState<AnalyticsScreen> {
 }
 
 class _Body extends ConsumerWidget {
-  const _Body({required this.summary, required this.overdueOnly, required this.onOverdueOnly});
+  const _Body({required this.companyId, required this.summary, required this.filter, required this.onFilter});
 
+  final String companyId;
   final BusinessPaymentSummary summary;
-  final bool overdueOnly;
-  final ValueChanged<bool> onOverdueOnly;
+  final HabitFilter filter;
+  final ValueChanged<HabitFilter> onFilter;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sort = ref.watch(analyticsSortControllerProvider);
-    final shown = sortProfiles(overdueOnly ? summary.shops.where((p) => p.overdue.isPositive).toList() : summary.shops, sort);
-    final s = context.semantic;
+    final days = summary.creditDays;
+    final counts = {for (final f in HabitFilter.values) f: summary.shops.where((p) => f.matches(p.habit(days))).length};
+    final shown = sortProfiles(summary.shops.where((p) => filter.matches(p.habit(days))).toList(), sort);
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
@@ -82,55 +103,15 @@ class _Body extends ConsumerWidget {
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(Insets.l, Insets.s, Insets.l, 0),
           sliver: SliverToBoxAdapter(
-            child: Text(
-              'Each payment clears the oldest unpaid bill first. A bill is late after ${plural(summary.creditDays, 'day')}.',
-              style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
-            ),
+            child: _OverviewCard(companyId: companyId, summary: summary),
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.all(Insets.l),
-          sliver: SliverToBoxAdapter(
-            child: LayoutBuilder(
-              builder: (context, c) {
-                final columns = c.maxWidth >= 720 ? 3 : 2;
-                final w = (c.maxWidth - Insets.m * (columns - 1)) / columns;
-                return Wrap(
-                  spacing: Insets.m,
-                  runSpacing: Insets.m,
-                  children: [
-                    SizedBox(
-                      width: columns == 2 ? c.maxWidth : w,
-                      child: MetricTile(
-                        label: 'Overdue',
-                        value: formatInr(summary.overdue),
-                        detail:
-                            '${plural(summary.overdueShops, 'shop')} past ${plural(summary.creditDays, 'day')} · '
-                            'of ${formatInr(summary.openAmount)} unpaid',
-                        background: s.owedContainer,
-                        foreground: s.onOwedContainer,
-                      ),
-                    ),
-                    SizedBox(
-                      width: w,
-                      child: MetricTile(label: 'Paid on time', value: formatPercent(summary.onTimeRate), detail: 'of paid bills'),
-                    ),
-                    SizedBox(
-                      width: w,
-                      child: MetricTile(
-                        label: 'Average to pay',
-                        value: formatDays(summary.avgDaysToPay),
-                        detail: 'from bill date',
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
+          padding: const EdgeInsets.fromLTRB(Insets.l, Insets.l, Insets.l, 0),
+          sliver: SliverToBoxAdapter(child: _HabitsCard(summary: summary)),
         ),
         SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: Insets.l),
+          padding: const EdgeInsets.fromLTRB(Insets.l, Insets.l, Insets.l, 0),
           sliver: SliverToBoxAdapter(
             child: Card.outlined(
               child: Padding(
@@ -138,7 +119,12 @@ class _Body extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Unpaid bills by age', style: context.text.titleMedium),
+                    Text('Unpaid money, by how late it is', style: context.text.titleMedium),
+                    const SizedBox(height: Insets.xs),
+                    Text(
+                      'A bill is late once it is more than ${plural(days, 'day')} old.',
+                      style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+                    ),
                     const SizedBox(height: Insets.s),
                     AgeingBars(ageing: summary.ageing),
                   ],
@@ -152,7 +138,7 @@ class _Body extends ConsumerWidget {
           sliver: SliverToBoxAdapter(
             child: Row(
               children: [
-                Expanded(child: Text('Shops', style: context.text.titleMedium)),
+                Expanded(child: Text('How each shop pays', style: context.text.titleMedium)),
                 PopupMenuButton<AnalyticsSort>(
                   tooltip: 'Sort shops',
                   initialValue: sort,
@@ -174,16 +160,18 @@ class _Body extends ConsumerWidget {
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: Insets.l),
-          sliver: SliverToBoxAdapter(
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: FilterChip(
-                label: Text('Overdue only (${summary.overdueShops})'),
-                selected: overdueOnly,
-                onSelected: onOverdueOnly,
-              ),
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 52,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: Insets.l, vertical: Insets.s),
+              children: [
+                for (final f in HabitFilter.values) ...[
+                  ChoiceChip(label: Text('${f.label} (${counts[f]})'), selected: filter == f, onSelected: (_) => onFilter(f)),
+                  const SizedBox(width: Insets.s),
+                ],
+              ],
             ),
           ),
         ),
@@ -192,9 +180,9 @@ class _Body extends ConsumerWidget {
             child: Padding(
               padding: const EdgeInsets.only(top: Insets.xl),
               child: EmptyState(
-                icon: Icons.verified_outlined,
-                title: overdueOnly ? 'No shop is overdue' : 'No bills yet',
-                message: overdueOnly ? 'Every unpaid bill is within ${plural(summary.creditDays, 'day')}.' : null,
+                icon: Icons.storefront_outlined,
+                title: summary.shops.isEmpty ? 'No bills yet' : 'No shops here',
+                message: summary.shops.isEmpty ? null : 'Try another filter.',
               ),
             ),
           )
@@ -202,7 +190,7 @@ class _Body extends ConsumerWidget {
           SliverList.separated(
             itemCount: shown.length,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
-            itemBuilder: (context, i) => _ShopRow(profile: shown[i]),
+            itemBuilder: (context, i) => _ShopRow(profile: shown[i], creditDays: days),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: Insets.xxl)),
       ],
@@ -210,56 +198,167 @@ class _Body extends ConsumerWidget {
   }
 }
 
+/// "₹10 L is overdue in 87 shops", the change over a month, and the way to
+/// the list of whom to call.
+class _OverviewCard extends ConsumerWidget {
+  const _OverviewCard({required this.companyId, required this.summary});
+
+  final String companyId;
+  final BusinessPaymentSummary summary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = context.semantic;
+    final overdue = summary.overdue.isPositive;
+    final (bg, fg) = overdue ? (s.owedContainer, s.onOwedContainer) : (s.creditContainer, s.onCreditContainer);
+    final monthAgo = ref.watch(overdueMonthAgoProvider(companyId)).value;
+    return Card.filled(
+      color: bg,
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Overdue now', style: context.text.labelLarge?.copyWith(color: fg)),
+            Text(
+              overdue ? formatInr(summary.overdue) : 'Nothing',
+              style: context.text.headlineSmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
+            ),
+            Text(
+              overdue
+                  ? '${plural(summary.overdueShops, 'shop')} with bills older than ${plural(summary.creditDays, 'day')}'
+                  : 'No bill is older than ${plural(summary.creditDays, 'day')}',
+              style: context.text.bodyMedium?.copyWith(color: fg),
+            ),
+            if (monthAgo != null) ...[
+              const SizedBox(height: Insets.m),
+              _TrendLine(now: summary.overdue, monthAgo: monthAgo, color: fg),
+            ],
+            if (overdue) ...[
+              const SizedBox(height: Insets.m),
+              FilledButton.icon(
+                key: const Key('see-who-to-call'),
+                icon: const Icon(Icons.phone_forwarded_outlined),
+                label: const Text('See who to call'),
+                onPressed: () {
+                  ref.read(shopsViewControllerProvider.notifier).set(ShopsView.overdue);
+                  context.go('/shops');
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TrendLine extends StatelessWidget {
+  const _TrendLine({required this.now, required this.monthAgo, required this.color});
+
+  final Money now;
+  final Money monthAgo;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final diff = now - monthAgo;
+    // Within 1% (or ₹100) counts as unchanged.
+    final small = diff.abs().paise <= (monthAgo.abs().paise ~/ 100 > 10000 ? monthAgo.abs().paise ~/ 100 : 10000);
+    final (icon, text) = small
+        ? (Icons.trending_flat_rounded, 'About the same as a month ago (${formatInr(monthAgo)})')
+        : diff.isNegative
+        ? (Icons.trending_down_rounded, '${formatInr(diff.abs())} less than a month ago — getting better')
+        : (Icons.trending_up_rounded, '${formatInr(diff)} more than a month ago — getting worse');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: color),
+        const SizedBox(width: Insets.s),
+        Expanded(
+          child: Text(text, style: context.text.bodyMedium?.copyWith(color: color)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Two plain sentences on how shops pay in general.
+class _HabitsCard extends StatelessWidget {
+  const _HabitsCard({required this.summary});
+
+  final BusinessPaymentSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = summary.creditDays;
+    final rows = [
+      if (summary.avgDaysToPay != null)
+        (Icons.schedule_rounded, 'Shops usually pay ${formatDays(summary.avgDaysToPay)} after the bill.'),
+      if (summary.onTimeRate != null)
+        (Icons.check_circle_outline, 'About ${inTen(summary.onTimeRate!)} bills are paid within ${plural(days, 'day')}.'),
+    ];
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Card.outlined(
+      child: Padding(
+        padding: const EdgeInsets.all(Insets.l),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('How shops pay', style: context.text.titleMedium),
+            for (final (icon, text) in rows) ...[
+              const SizedBox(height: Insets.m),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 20, color: context.colors.onSurfaceVariant),
+                  const SizedBox(width: Insets.m),
+                  Expanded(child: Text(text, style: context.text.bodyMedium)),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ShopRow extends StatelessWidget {
-  const _ShopRow({required this.profile});
+  const _ShopRow({required this.profile, required this.creditDays});
 
   final ShopPaymentProfile profile;
+  final int creditDays;
 
   @override
   Widget build(BuildContext context) {
     final p = profile;
     final muted = context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant);
-    final overdueText = p.overdue.isPositive
-        ? '${formatInr(p.overdue)} overdue · oldest ${plural(p.maxDaysOverdue, 'day')} late'
-        : (p.openAmount.isPositive ? 'Nothing overdue · ${formatInr(p.openAmount)} not yet due' : 'Nothing unpaid');
     return InkWell(
       onTap: () => context.push('/analytics/shop/${p.shop.id}'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Insets.l, vertical: Insets.m),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(p.shop.name, style: context.text.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: Insets.xs),
-                  Wrap(
-                    spacing: Insets.s,
-                    runSpacing: Insets.xs,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      StatusBadge(status: p.status),
-                      Text(areaLabel(p.shop.area), style: muted),
-                    ],
-                  ),
-                  const SizedBox(height: Insets.xs),
-                  Text(overdueText, style: context.text.bodySmall),
-                ],
-              ),
-            ),
-            const SizedBox(width: Insets.m),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            Text(p.shop.name, style: context.text.titleSmall, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: Insets.xs),
+            Wrap(
+              spacing: Insets.s,
+              runSpacing: Insets.xs,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Text(formatPercent(p.onTimeRate), style: context.text.titleSmall),
-                Text('on time', style: muted),
-                const SizedBox(height: Insets.xs),
-                Text(formatDays(p.avgDaysToPay), style: context.text.titleSmall),
-                Text('avg to pay', style: muted),
+                HabitBadge(habit: p.habit(creditDays)),
+                Text(siteLabel(p.shop.siteName), style: muted),
               ],
             ),
+            const SizedBox(height: Insets.xs),
+            Text(usuallyPays(p), style: context.text.bodySmall),
+            if (p.overdue.isPositive)
+              Text(
+                '${formatInr(p.overdue)} overdue now',
+                style: context.text.bodySmall?.copyWith(color: context.semantic.owed, fontWeight: FontWeight.w600),
+              ),
           ],
         ),
       ),

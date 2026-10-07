@@ -17,7 +17,7 @@ class ShopRepository {
 
   static const pageSize = 50;
 
-  /// One page of the shop list. RLS limits staff to their assigned areas.
+  /// One page of the shop list. RLS limits staff to their sites.
   Future<List<ShopSummary>> page(String companyId, ShopFilter filter, int pageIndex) async {
     try {
       var q = _client.from('shops').select(ShopSummary.shopColumns).eq('company_id', companyId).isFilter('deleted_at', null);
@@ -31,7 +31,15 @@ class ShopRepository {
         BalanceFilter.credit => q.lt('receivable', 0),
         BalanceFilter.settled => q.eq('receivable', 0),
       };
-      if (filter.areas.isNotEmpty) q = q.inFilter('area', filter.areas.toList());
+      if (filter.siteIds.isNotEmpty) {
+        final ids = filter.siteIds.where((id) => id != ShopFilter.noSite).toList();
+        final noSite = filter.siteIds.contains(ShopFilter.noSite);
+        q = switch ((ids.isEmpty, noSite)) {
+          (true, _) => q.isFilter('site_id', null),
+          (false, false) => q.inFilter('site_id', ids),
+          (false, true) => q.or('site_id.in.(${ids.join(',')}),site_id.is.null'),
+        };
+      }
       final sorted = switch (filter.sort) {
         // "High to low" means the biggest amount first; credits are negative,
         // so under the In credit filter that is the most negative first.
@@ -40,7 +48,6 @@ class ShopRepository {
         ShopSort.balanceAsc =>
           q.order('receivable', ascending: filter.balance != BalanceFilter.credit).order('name', ascending: true),
         ShopSort.name => q.order('name', ascending: true),
-        ShopSort.area => q.order('area', ascending: true, nullsFirst: false).order('name', ascending: true),
       };
       final from = pageIndex * pageSize;
       final rows = await sorted.range(from, from + pageSize - 1);
@@ -89,7 +96,6 @@ class ShopRepository {
             .select(ShopSummary.viewColumns)
             .eq('company_id', companyId)
             .gt('receivable', 0)
-            .order('area', ascending: true, nullsFirst: false)
             .order('receivable', ascending: false)
             .order('shop_id', ascending: true)
             .range(from, to),

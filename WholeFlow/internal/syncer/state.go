@@ -20,6 +20,11 @@ const (
 	StatusSyncError    = "SYNC_ERROR"
 	StatusDisabled     = "DISABLED"
 	StatusNotOpen      = "COMPANY_NOT_OPEN"
+	// The server refuses on purpose (see RunPaused / RunRevoked).
+	StatusSubscriptionEnded = "SUBSCRIPTION_ENDED"
+	StatusDeviceRevoked     = "DEVICE_REVOKED"
+	// StatusOverLimit: ticked, but beyond the plan's company limit, so not synced.
+	StatusOverLimit = "OVER_PLAN_LIMIT"
 )
 
 // State is what the service remembers between runs and restarts. It lives in

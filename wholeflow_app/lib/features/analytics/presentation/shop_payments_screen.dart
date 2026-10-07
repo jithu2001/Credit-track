@@ -27,23 +27,38 @@ class ShopPaymentsScreen extends ConsumerWidget {
         title: Text(profile?.shop.name ?? 'Payments', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
-            tooltip: 'Open statement',
-            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Open shop',
+            icon: const Icon(Icons.storefront_outlined),
             onPressed: () => context.push('/shop/$shopId'),
           ),
         ],
       ),
-      body: switch (summary) {
-        null => const SizedBox.shrink(),
-        AsyncValue(hasValue: true) when profile == null => const EmptyState(
-          icon: Icons.receipt_long_outlined,
-          title: 'No bills for this shop',
-        ),
-        AsyncValue(hasValue: true) => _Body(profile: profile!, creditDays: summary.value!.creditDays),
-        AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company!.id))),
-        _ => const SkeletonList(),
-      },
+      body: ShopPaymentsView(shopId: shopId),
     );
+  }
+}
+
+/// The body of [ShopPaymentsScreen]; also the shop screen's Payments tab (owners).
+class ShopPaymentsView extends ConsumerWidget {
+  const ShopPaymentsView({super.key, required this.shopId});
+
+  final String shopId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final company = ref.watch(activeCompanyProvider).value;
+    final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
+    final profile = summary?.value?.shops.where((p) => p.shop.id == shopId).firstOrNull;
+    return switch (summary) {
+      null => const SizedBox.shrink(),
+      AsyncValue(hasValue: true) when profile == null => const EmptyState(
+        icon: Icons.receipt_long_outlined,
+        title: 'No bills for this shop',
+      ),
+      AsyncValue(hasValue: true) => _Body(profile: profile!, creditDays: summary.value!.creditDays),
+      AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company!.id))),
+      _ => const SkeletonList(),
+    };
   }
 }
 
@@ -74,7 +89,7 @@ class _Body extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    StatusBadge(status: p.status),
+                    HabitBadge(habit: p.habit(creditDays)),
                     const Spacer(),
                     if (p.lastPaymentDate != null)
                       Text(
@@ -88,9 +103,11 @@ class _Body extends StatelessWidget {
                   children: [
                     Expanded(
                       child: MetricTile(
-                        label: 'Overdue',
+                        label: 'Overdue now',
                         value: formatInr(p.overdue),
-                        detail: p.overdue.isPositive ? 'oldest ${plural(p.maxDaysOverdue, 'day')} late' : 'nothing late',
+                        detail: p.overdue.isPositive
+                            ? 'oldest bill ${plural(p.maxDaysOverdue, 'day')} past the limit'
+                            : 'nothing past the limit',
                         background: p.overdue.isPositive ? s.owedContainer : null,
                         foreground: p.overdue.isPositive ? s.onOwedContainer : null,
                       ),
@@ -106,25 +123,12 @@ class _Body extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: Insets.m),
-                Row(
-                  children: [
-                    Expanded(
-                      child: MetricTile(
-                        label: 'Paid on time',
-                        value: formatPercent(p.onTimeRate),
-                        detail: '${p.onTimeCount} of ${plural(p.paidBills.length, 'bill')}',
-                      ),
-                    ),
-                    const SizedBox(width: Insets.m),
-                    Expanded(
-                      child: MetricTile(
-                        label: 'Average to pay',
-                        value: formatDays(p.avgDaysToPay),
-                        detail: p.avgDaysLate == null ? null : '${formatDays(p.avgDaysLate)} after due',
-                      ),
-                    ),
-                  ],
-                ),
+                Text(usuallyPays(p), style: context.text.bodyMedium),
+                if (p.paidBills.isNotEmpty)
+                  Text(
+                    '${p.onTimeCount} of ${plural(p.paidBills.length, 'paid bill')} were paid within ${plural(creditDays, 'day')}.',
+                    style: context.text.bodyMedium,
+                  ),
                 if (!p.reconciled) ...[
                   const SizedBox(height: Insets.m),
                   Text(

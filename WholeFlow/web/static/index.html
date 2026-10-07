@@ -3,32 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WholeFlow · Tally Dashboard</title>
+<title>WholeFlow · Tally PC</title>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">WholeFlow <span class="muted">from TallyPrime</span></div>
-  <nav>
-    <a href="#/dashboard" data-nav="dashboard">Dashboard</a>
-    <a href="#/shops" data-nav="shops">Shops</a>
-    <a href="#/outstanding" data-nav="outstanding">Outstanding</a>
-    <a href="#/suppliers" data-nav="suppliers">Suppliers</a>
-    <a href="#/purchases" data-nav="purchases">Purchases</a>
-    <a href="#/inventory" data-nav="inventory">Inventory</a>
-    <a href="#/status" data-nav="status">Tally Status</a>
-    <a href="#/sync" data-nav="sync">Cloud Sync</a>
-  </nav>
-  <div class="tools">
-    <span id="conn" class="pill">Checking…</span>
-    <a id="syncpill" class="pill" href="#/sync" hidden></a>
-    <select id="company" title="Company" hidden></select>
-    <button id="refresh" class="primary" title="Pull the latest data from TallyPrime">Refresh from Tally</button>
-    <button id="logout" title="Log out" hidden>Log out</button>
+<div class="shell">
+  <aside class="rail">
+    <div class="logo" title="WholeFlow"><svg viewBox="0 0 24 24"><path d="M3 6l3.4 12h2.2L11 9.6 13.4 18h2.2L19 6h-2.4l-2.2 8.3L12.1 6h-2.2l-2.3 8.3L5.4 6z"/></svg></div>
+    <nav aria-label="Main">
+      <a href="#/dashboard" data-nav="dashboard"><span class="ind"><svg viewBox="0 0 24 24"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></span>Dashboard</a>
+      <a href="#/shops" data-nav="shops"><span class="ind"><svg viewBox="0 0 24 24"><path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/></svg></span>Shops</a>
+      <a href="#/outstanding" data-nav="outstanding"><span class="ind"><svg viewBox="0 0 24 24"><path d="M18 17H6v-2h12v2zm0-4H6v-2h12v2zm0-4H6V7h12v2zM3 22l1.5-1.5L6 22l1.5-1.5L9 22l1.5-1.5L12 22l1.5-1.5L15 22l1.5-1.5L18 22l1.5-1.5L21 22V2l-1.5 1.5L18 2l-1.5 1.5L15 2l-1.5 1.5L12 2l-1.5 1.5L9 2 7.5 3.5 6 2 4.5 3.5 3 2v20z"/></svg></span>Outstanding</a>
+      <a href="#/suppliers" data-nav="suppliers"><span class="ind"><svg viewBox="0 0 24 24"><path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></span>Suppliers</a>
+      <a href="#/purchases" data-nav="purchases"><span class="ind"><svg viewBox="0 0 24 24"><path d="M7 18c-1.1 0-1.99.9-1.99 2S5.9 22 7 22s2-.9 2-2-.9-2-2-2zM1 2v2h2l3.6 7.59-1.35 2.45c-.16.28-.25.61-.25.96 0 1.1.9 2 2 2h12v-2H7.42c-.14 0-.25-.11-.25-.25l.03-.12.9-1.63h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49A1.003 1.003 0 0 0 20 4H5.21l-.94-2H1zm16 16c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2z"/></svg></span>Purchases</a>
+      <a href="#/inventory" data-nav="inventory"><span class="ind"><svg viewBox="0 0 24 24"><path d="M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4h16v3z"/></svg></span>Inventory</a>
+      <a href="#/status" data-nav="status"><span class="ind"><svg viewBox="0 0 24 24"><path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/></svg></span>Tally status</a>
+      <a href="#/sync" data-nav="sync"><span class="ind"><svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg></span>Cloud sync</a>
+    </nav>
+    <div class="spacer"></div>
+    <button id="logout" class="rail-btn" title="Log out" hidden><span class="ind"><svg viewBox="0 0 24 24"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg></span>Log out</button>
+  </aside>
+
+  <div class="content">
+    <header class="topbar">
+      <div class="brand">WholeFlow <span class="muted">· Tally PC</span></div>
+      <div class="tools">
+        <span id="conn" class="pill">Checking…</span>
+        <a id="syncpill" class="pill" href="#/sync" hidden></a>
+        <select id="company" title="Company" hidden></select>
+        <button id="refresh" class="primary" title="Pull the latest data from TallyPrime"><svg viewBox="0 0 24 24" class="icon"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>Refresh from Tally</button>
+      </div>
+    </header>
+    <div id="asof" class="asof"></div>
+    <main id="view"></main>
   </div>
-</header>
-<div id="asof" class="asof"></div>
-<main id="view"></main>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

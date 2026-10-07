@@ -9,7 +9,9 @@ import '../domain/payment_analysis.dart';
 import 'analytics_providers.dart';
 
 String formatDays(double? d) => d == null ? '—' : plural(d.round(), 'day');
-String formatPercent(double? r) => r == null ? '—' : '${(r * 100).round()}%';
+
+/// A share as "8 in 10", which reads more easily than a percentage.
+String inTen(double r) => '${(r * 10).round()} in 10';
 
 /// "Credit period: 15 · 30 · 45 · 60 · 90 · Custom" filter chips.
 class CreditDaysFilter extends ConsumerWidget {
@@ -78,20 +80,20 @@ class CreditDaysFilter extends ConsumerWidget {
   }
 }
 
-/// Status with icon + label (never colour alone).
-class StatusBadge extends StatelessWidget {
-  const StatusBadge({super.key, required this.status});
+/// Payment habit with icon + label (never colour alone).
+class HabitBadge extends StatelessWidget {
+  const HabitBadge({super.key, required this.habit});
 
-  final PaymentStatus status;
+  final PayHabit habit;
 
   @override
   Widget build(BuildContext context) {
     final s = context.semantic;
-    final (icon, bg, fg) = switch (status) {
-      PaymentStatus.onTrack => (Icons.check_circle_outline, s.creditContainer, s.onCreditContainer),
-      PaymentStatus.slightlyLate => (Icons.schedule, s.warningContainer, s.onWarningContainer),
-      PaymentStatus.late => (Icons.warning_amber_rounded, s.warningContainer, s.onWarningContainer),
-      PaymentStatus.veryLate => (Icons.error_outline, s.owedContainer, s.onOwedContainer),
+    final (icon, bg, fg) = switch (habit) {
+      PayHabit.onTime => (Icons.check_circle_outline, s.creditContainer, s.onCreditContainer),
+      PayHabit.late => (Icons.schedule, s.warningContainer, s.onWarningContainer),
+      PayHabit.veryLate => (Icons.error_outline, s.owedContainer, s.onOwedContainer),
+      PayHabit.noPayments => (Icons.help_outline, context.colors.surfaceContainerHighest, context.colors.onSurfaceVariant),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: Insets.s, vertical: 2),
@@ -101,12 +103,17 @@ class StatusBadge extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: fg),
           const SizedBox(width: Insets.xs),
-          Text(status.label, style: context.text.labelSmall?.copyWith(color: fg)),
+          Text(habit.label, style: context.text.labelSmall?.copyWith(color: fg)),
         ],
       ),
     );
   }
 }
+
+/// "Usually pays 42 days after the bill", or why there is no figure.
+String usuallyPays(ShopPaymentProfile p) => p.avgDaysToPay == null
+    ? (p.openAmount.isPositive ? 'Has not paid any bill yet' : 'No bills paid yet')
+    : 'Usually pays ${formatDays(p.avgDaysToPay)} after the bill';
 
 /// Open dues by age: one row per bucket, bar length ∝ amount, amount as text.
 /// "Not due" is neutral; late buckets use one hue that darkens with age.
@@ -130,46 +137,47 @@ class AgeingBars extends StatelessWidget {
     return Column(
       children: [
         for (final b in AgeBucket.values)
-          Semantics(
-            label: '${b.label}: ${formatInr(ageing[b]!)}',
-            excludeSemantics: true,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: Insets.s),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(child: Text(b.label, style: context.text.bodyMedium)),
-                      Text(
-                        formatInr(ageing[b]!),
-                        style: context.text.bodyMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: Insets.xs),
-                  LayoutBuilder(
-                    builder: (context, c) {
-                      final v = ageing[b]!.paise;
-                      final w = maxPaise == 0 ? 0.0 : c.maxWidth * v / maxPaise;
-                      return Container(
-                        height: 10,
-                        decoration: BoxDecoration(
-                          color: context.colors.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(4),
+          if (b == AgeBucket.notDue || ageing[b]!.isPositive)
+            Semantics(
+              label: '${b.label}: ${formatInr(ageing[b]!)}',
+              excludeSemantics: true,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: Insets.s),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Text(b.label, style: context.text.bodyMedium)),
+                        Text(
+                          formatInr(ageing[b]!),
+                          style: context.text.bodyMedium?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
                         ),
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          width: v > 0 && w < 4 ? 4 : w,
-                          decoration: BoxDecoration(color: colorFor(b), borderRadius: BorderRadius.circular(4)),
-                        ),
-                      );
-                    },
-                  ),
-                ],
+                      ],
+                    ),
+                    const SizedBox(height: Insets.xs),
+                    LayoutBuilder(
+                      builder: (context, c) {
+                        final v = ageing[b]!.paise;
+                        final w = maxPaise == 0 ? 0.0 : c.maxWidth * v / maxPaise;
+                        return Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: context.colors.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            width: v > 0 && w < 4 ? 4 : w,
+                            decoration: BoxDecoration(color: colorFor(b), borderRadius: BorderRadius.circular(4)),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
       ],
     );
   }

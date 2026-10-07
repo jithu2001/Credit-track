@@ -1,0 +1,18 @@
+[Unit]
+Description=WholeFlow control service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/opt/wholeflow/control.env
+ExecStart=/opt/wholeflow/bin/wholeflow-control serve
+WorkingDirectory=/opt/wholeflow
+Restart=on-failure
+RestartSec=3
+# Runs as root: creating a business starts containers and writes nginx routes.
+# It only listens on 127.0.0.1 (nginx forwards /control/).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

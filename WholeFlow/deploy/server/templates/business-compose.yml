@@ -1,0 +1,49 @@
+# One business's login (GoTrue) and data API (PostgREST). Values come from
+# businesses/<slug>/env (made by scripts/new-business.sh).
+services:
+  auth:
+    image: supabase/gotrue:v2.177.0
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: "9999"
+      API_EXTERNAL_URL: ${BASE_URL}
+      GOTRUE_SITE_URL: ${BASE_URL}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: ${AUTH_DB_URL}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_LOG_LEVEL: warn
+    ports:
+      - "127.0.0.1:${AUTH_PORT}:9999"
+    networks: [wf]
+    mem_limit: 128m
+
+  rest:
+    image: postgrest/postgrest:v12.2.12
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: ${API_DB_URL}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      # 0007: refuses revoked PC keys and every request once the subscription has ended.
+      PGRST_DB_PRE_REQUEST: public.check_request
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_POOL: "5"
+      PGRST_OPENAPI_MODE: disabled
+      PGRST_LOG_LEVEL: warn
+    ports:
+      - "127.0.0.1:${REST_PORT}:3000"
+    networks: [wf]
+    mem_limit: 128m
+
+networks:
+  wf:
+    external: true

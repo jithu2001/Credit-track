@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
-import '../../../core/phone.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/balance_text.dart';
+import '../../../core/widgets/phone_tile.dart';
 import '../../../core/widgets/states.dart';
+import '../../analytics/presentation/shop_payments_screen.dart';
+import '../../auth/presentation/session_controller.dart';
 import '../../company/presentation/company_providers.dart';
 import '../../shops/domain/shop.dart';
+import '../../sites/domain/site.dart';
+import '../../visits/presentation/shop_location_card.dart';
+import 'share_statement.dart';
 import 'shop_detail_providers.dart';
 import 'statement_view.dart';
 
@@ -41,6 +45,8 @@ class _Loaded extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final showStatement = ref.watch(canViewTransactionsProvider(shop.companyId));
+    // How this shop pays (habit, unpaid and paid bills): owners only, like the rest of payment insights.
+    final showPayments = showStatement && (ref.watch(currentUserProvider)?.isOwner ?? false);
     final title = Text(shop.name, maxLines: 1, overflow: TextOverflow.ellipsis);
     Future<void> refresh() async {
       ref.invalidate(shopDetailProvider(shop.id));
@@ -59,14 +65,23 @@ class _Loaded extends ConsumerWidget {
       );
     }
     return DefaultTabController(
-      length: 2,
+      length: showPayments ? 3 : 2,
       child: Scaffold(
         appBar: AppBar(
           title: title,
-          bottom: const TabBar(
+          actions: [
+            IconButton(
+              key: const Key('share-statement'),
+              tooltip: 'Share statement',
+              icon: const Icon(Icons.ios_share_rounded),
+              onPressed: () => showShareStatement(context, shop),
+            ),
+          ],
+          bottom: TabBar(
             tabs: [
-              Tab(text: 'Details'),
-              Tab(text: 'Statement'),
+              const Tab(text: 'Details'),
+              const Tab(text: 'Statement'),
+              if (showPayments) const Tab(text: 'Payments'),
             ],
           ),
         ),
@@ -74,6 +89,7 @@ class _Loaded extends ConsumerWidget {
           children: [
             details,
             StatementView(shop: shop),
+            if (showPayments) ShopPaymentsView(shopId: shop.id),
           ],
         ),
       ),
@@ -98,6 +114,16 @@ class _DetailsTab extends StatelessWidget {
           _BalanceCard(shop: shop),
           const SizedBox(height: Insets.l),
           Card.outlined(
+            child: ListTile(
+              leading: const Icon(Icons.location_city_outlined),
+              title: Text(siteLabel(shop.siteName)),
+              subtitle: const Text('Site'),
+            ),
+          ),
+          const SizedBox(height: Insets.l),
+          ShopLocationCard(shopId: shop.id),
+          const SizedBox(height: Insets.l),
+          Card.outlined(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -107,17 +133,12 @@ class _DetailsTab extends StatelessWidget {
                 ),
                 if (phones.isEmpty)
                   const ListTile(leading: Icon(Icons.phone_disabled_outlined), title: Text('No phone number in Tally')),
-                for (final p in phones) _PhoneTile(phone: p, fromAddress: shop.phoneSource == 'address' && p == shop.phone),
+                for (final p in phones) PhoneTile(phone: p, fromAddress: shop.phoneSource == 'address' && p == shop.phone),
                 if (shop.contactPerson?.trim().isNotEmpty ?? false)
                   ListTile(leading: const Icon(Icons.person_outline), title: Text(shop.contactPerson!.trim())),
                 if (shop.email?.trim().isNotEmpty ?? false)
                   ListTile(leading: const Icon(Icons.email_outlined), title: Text(shop.email!.trim())),
-                if (address != null)
-                  ListTile(
-                    leading: const Icon(Icons.location_on_outlined),
-                    title: Text(address),
-                    subtitle: Text(areaLabel(shop.area)),
-                  ),
+                if (address != null) ListTile(leading: const Icon(Icons.location_on_outlined), title: Text(address)),
                 if (shop.gstin?.trim().isNotEmpty ?? false)
                   ListTile(
                     leading: const Icon(Icons.receipt_long_outlined),
@@ -175,40 +196,6 @@ class _BalanceCard extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _PhoneTile extends StatelessWidget {
-  const _PhoneTile({required this.phone, required this.fromAddress});
-
-  final String phone;
-  final bool fromAddress;
-
-  Future<void> _open(BuildContext context, Uri uri) async {
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && context.mounted) showMessage(context, "Couldn't open ${uri.scheme == 'tel' ? 'the dialer' : 'WhatsApp'}.");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final wa = whatsAppUri(phone);
-    return ListTile(
-      leading: const Icon(Icons.phone_outlined),
-      title: Text(phone),
-      subtitle: fromAddress ? const Text('Found in address') : null,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            tooltip: 'Call $phone',
-            icon: const Icon(Icons.call_rounded),
-            onPressed: () => _open(context, telUri(phone)),
-          ),
-          if (wa != null)
-            IconButton(tooltip: 'WhatsApp $phone', icon: const Icon(Icons.chat_rounded), onPressed: () => _open(context, wa)),
-        ],
       ),
     );
   }

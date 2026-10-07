@@ -1,7 +1,7 @@
 // Package cloud defines the provider-neutral contract between the sync engine
 // and whatever stores the synchronised data. The engine only ever imports this
-// package; concrete backends (Supabase today, others later) live in
-// sub-packages and must not leak their types upward.
+// package; concrete backends (rest: the WholeFlow server's data API; memory:
+// tests and dry runs) live in sub-packages and must not leak their types upward.
 package cloud
 
 import (
@@ -15,7 +15,7 @@ import (
 // call repeatedly with the same data: the sync engine relies on upserts keyed
 // by Tally identifiers, never on "insert once".
 type Provider interface {
-	// Name identifies the backend for logs and status ("supabase", "memory").
+	// Name identifies the backend for logs and status ("wholeflow", "memory").
 	Name() string
 	// Authenticate verifies credentials and that the configured business exists.
 	Authenticate(ctx context.Context) error
@@ -232,6 +232,13 @@ const (
 	KindNotFound    ErrorKind = "CLOUD_NOT_FOUND"
 	KindError       ErrorKind = "CLOUD_ERROR"
 	KindConfig      ErrorKind = "CLOUD_NOT_CONFIGURED"
+	// KindSubscriptionEnded: the business's subscription has ended and the
+	// server refuses its data requests (HTTP 402) until a payment is recorded.
+	// Not an outage: the sync pauses and resumes by itself.
+	KindSubscriptionEnded ErrorKind = "CLOUD_SUBSCRIPTION_ENDED"
+	// KindDeviceRevoked: this PC's key was revoked in the admin app (HTTP 403
+	// device_revoked). Only a new activation code helps.
+	KindDeviceRevoked ErrorKind = "CLOUD_DEVICE_REVOKED"
 )
 
 type Error struct {

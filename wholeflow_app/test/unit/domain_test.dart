@@ -5,9 +5,11 @@ import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/phone.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
 import 'package:wholeflow_app/features/outstanding/domain/outstanding_report.dart';
+import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
 import 'package:wholeflow_app/features/shops/data/shop_repository.dart';
 import 'package:wholeflow_app/features/shops/domain/shop.dart';
+import 'package:wholeflow_app/features/sites/domain/site.dart';
 import 'package:wholeflow_app/features/staff/domain/staff.dart';
 
 ShopTransaction txn(String id, String date, int amountPaise, {TxnCategory c = TxnCategory.sales}) => ShopTransaction(
@@ -78,24 +80,90 @@ void main() {
   });
 
   group('outstanding report', () {
-    test('groups by area A–Z with No area last, highest dues first', () {
+    test('groups by site A–Z with No site last, highest dues first', () {
       final r = buildOutstandingReport(
         companyName: 'JMJ',
         generatedAt: DateTime(2026, 9, 28),
         shops: const [
-          ShopSummary(id: '1', name: 'A', area: 'Pala', receivable: Money(100)),
-          ShopSummary(id: '2', name: 'B', area: 'Pala', receivable: Money(300)),
-          ShopSummary(id: '3', name: 'C', receivable: Money(50)),
-          ShopSummary(id: '4', name: 'D', area: 'Kply', receivable: Money(70)),
-          ShopSummary(id: '5', name: 'E', area: 'Kply', receivable: Money(-70)),
+          ShopSummary(id: '1', name: 'A', area: 'Kply', siteId: 'p', siteName: 'Pala', receivable: Money(100)),
+          ShopSummary(id: '2', name: 'B', siteId: 'p', siteName: 'Pala', receivable: Money(300)),
+          ShopSummary(id: '3', name: 'C', area: 'Pala', receivable: Money(50)),
+          ShopSummary(id: '4', name: 'D', siteId: 'k', siteName: 'Kply', receivable: Money(70)),
+          ShopSummary(id: '5', name: 'E', siteId: 'k', siteName: 'Kply', receivable: Money(-70)),
         ],
       );
-      expect(r.groups.map((g) => g.area), ['Kply', 'Pala', 'No area']);
+      expect(r.groups.map((g) => g.site), ['Kply', 'Pala', 'No site']);
+      expect(r.groups.last.siteId, isNull);
       expect(r.groups[1].shops.map((s) => s.id), ['2', '1']);
       expect(r.groups[1].subtotal, const Money(400));
       expect(r.total, const Money(520));
       expect(r.shopCount, 4);
       expect(outstandingReportText(r), contains('Pala — ₹4.00'));
+    });
+  });
+
+  group('overdue report', () {
+    Map<String, dynamic> row(String id, String? site, num overdue, int days, {bool bills = true}) => {
+      'shop_id': id,
+      'name': 'Shop $id',
+      'area': null,
+      'site_id': site == null ? null : 'id-$site',
+      'site_name': site,
+      'phone': null,
+      'receivable': '1000.50',
+      'overdue': overdue,
+      'max_days_overdue': days,
+      'overdue_bills': 1,
+      'bills_visible': bills,
+      'bills': bills
+          ? [
+              {'date': '2026-08-10', 'voucher': 'Sales · $id', 'amount': 500, 'remaining': overdue, 'days_overdue': days},
+            ]
+          : null,
+    };
+
+    test('parses the function row, with and without bills', () {
+      final s = OverdueShop.fromJson(row('1', 'Pala', 300, 20));
+      expect(s.receivable, const Money(100050));
+      expect(s.overdue, const Money(30000));
+      expect(s.maxDaysOverdue, 20);
+      expect(s.bills!.single.voucher, 'Sales · 1');
+      expect(s.bills!.single.date, DateTime(2026, 8, 10));
+      expect(OverdueShop.fromJson(row('2', 'Pala', 300, 20, bills: false)).bills, isNull);
+    });
+
+    test('groups by site, most overdue first, and lists bills in the text', () {
+      final r = buildOverdueReport(
+        companyName: 'JMJ',
+        creditDays: 30,
+        generatedAt: DateTime(2026, 9, 29),
+        shops: [
+          OverdueShop.fromJson(row('1', 'Pala', 100, 5)),
+          OverdueShop.fromJson(row('2', 'Pala', 300, 40)),
+          OverdueShop.fromJson(row('3', null, 50, 10)),
+          OverdueShop.fromJson(row('4', 'Kply', 0, 0)),
+        ],
+      );
+      expect(r.groups.map((g) => g.site), ['Pala', 'No site']);
+      expect(r.groups.first.shops.map((s) => s.id), ['2', '1']);
+      expect(r.total, const Money(45000));
+      expect(r.showsBills, isTrue);
+      final text = overdueReportText(r);
+      expect(text, contains('Past 30 days credit — JMJ'));
+      expect(text, contains('Shop 2: ₹300.00 · 40 days past limit'));
+      expect(text, contains('Sales · 2 (10 Aug 2026): ₹300.00 due · 40 days past limit'));
+    });
+
+    test('text has no bills when they are hidden', () {
+      final r = buildOverdueReport(
+        companyName: 'JMJ',
+        creditDays: 1,
+        generatedAt: DateTime(2026, 9, 29),
+        shops: [OverdueShop.fromJson(row('1', 'Pala', 100, 1, bills: false))],
+      );
+      expect(r.showsBills, isFalse);
+      expect(overdueReportText(r), contains('Past 1 day credit'));
+      expect(overdueReportText(r), isNot(contains('Sales')));
     });
   });
 
@@ -140,22 +208,52 @@ void main() {
 
   group('staff', () {
     const names = {'a': 'JMJ Marketing', 'b': 'JK Tyres'};
+    const sites = {'s1': 'Rajakkad', 's2': 'Pala'};
 
     test('access summary', () {
-      final text = accessSummary('Ravi', const [
-        CompanyGrant(companyId: 'a'),
-        CompanyGrant(companyId: 'b', areas: {'Rajakkad', 'Pala'}, canViewTransactions: false),
-      ], names);
-      expect(text, 'Ravi will see: JMJ Marketing (all areas), JK Tyres (Pala, Rajakkad; no transactions)');
-      expect(accessSummary('Ravi', const [], names), "Ravi won't see any company's data.");
+      final text = accessSummary(
+        'Ravi',
+        const [
+          CompanyGrant(companyId: 'a'),
+          CompanyGrant(companyId: 'b', fullCompany: false, siteIds: {'s1', 's2'}, canViewTransactions: false),
+        ],
+        names,
+        sites,
+      );
+      expect(text, 'Ravi will see: JMJ Marketing (full company), JK Tyres (Pala, Rajakkad; no transactions)');
+      expect(accessSummary('Ravi', const [], names, sites), "Ravi won't see any company's data.");
     });
 
     test('grant request body', () {
-      expect(const CompanyGrant(companyId: 'a', areas: {'Z', 'A'}).toRequest(), {
+      expect(const CompanyGrant(companyId: 'a', fullCompany: false, siteIds: {'z', 'a'}).toRequest(), {
         'company_id': 'a',
-        'areas': ['A', 'Z'],
+        'full_company': false,
+        'site_ids': ['a', 'z'],
         'can_view_transactions': true,
       });
+      // Full company never sends sites, and is never missing sites.
+      const full = CompanyGrant(companyId: 'a', siteIds: {'z'});
+      expect(full.toRequest()['site_ids'], isEmpty);
+      expect(full.needsSites, isFalse);
+      expect(const CompanyGrant(companyId: 'a', fullCompany: false).needsSites, isTrue);
+    });
+
+    test('site report periods', () {
+      final today = DateTime(2026, 2, 14);
+      expect(ReportPeriod.thisMonth.range(today), (DateTime(2026, 2), DateTime(2026, 2, 14)));
+      expect(ReportPeriod.lastMonth.range(today), (DateTime(2026, 1), DateTime(2026, 1, 31)));
+      expect(ReportPeriod.last3Months.range(today), (DateTime(2025, 12), DateTime(2026, 2, 14)));
+      expect(ReportPeriod.thisYear.range(today), (DateTime(2025, 4), DateTime(2026, 2, 14)));
+      expect(ReportPeriod.thisYear.range(DateTime(2026, 4, 2)).$1, DateTime(2026, 4));
+    });
+
+    test('a site called "No site" stays apart from shops in no site', () {
+      final groups = groupBySite<(String?, String?)>(
+        const [('x', 'No site'), (null, null), ('y', 'Alpha')],
+        (s) => s.$1,
+        (s) => s.$2,
+      );
+      expect(groups.map((g) => (g.$1, g.$2)), [('y', 'Alpha'), ('x', 'No site'), (null, 'No site')]);
     });
 
     test('generated passwords are long enough and mixed', () {

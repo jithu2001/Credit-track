@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"log/slog"
+	"strings"
 	gosync "sync"
 	"time"
 )
@@ -20,6 +21,9 @@ type Scheduler struct {
 	Settings *SettingsStore
 	Log      *slog.Logger
 	Backoff  Backoff
+	// Heartbeat, when set, runs at start and after each run (it limits itself
+	// to once per few minutes and to the reference-key connection).
+	Heartbeat *Heartbeat
 	// Sleep lets tests replace the wait; default is a timer.
 	Sleep func(ctx context.Context, d time.Duration, wake <-chan struct{}) bool
 
@@ -54,11 +58,13 @@ func (s *Scheduler) Run(ctx context.Context) {
 		s.mu.Unlock()
 	}()
 
+	s.beat(ctx)
 	first := true
 	for ctx.Err() == nil {
 		set := s.Settings.Get()
 		if !set.Sync.Enabled && !s.pendingTrigger() {
 			// Idle: re-check every few seconds or when kicked.
+			s.beat(ctx)
 			s.setNext(time.Time{})
 			if !s.sleep(ctx, 5*time.Second) {
 				return
@@ -79,6 +85,10 @@ func (s *Scheduler) Run(ctx context.Context) {
 		if first && res.Status != "skipped" {
 			first = false
 		}
+		if s.beat(ctx) && res.Status == RunPaused {
+			s.Log.Info("subscription active again; syncing now")
+			delay = 0
+		}
 		s.setNext(time.Now().Add(delay))
 		s.Log.Info("next sync scheduled", "in", delay.String(), "consecutive_failures", s.failureCount())
 		if !s.sleep(ctx, delay) {
@@ -97,7 +107,7 @@ func (s *Scheduler) runOnce(ctx context.Context) *RunResult {
 	s.lastRun = res
 	if res.Failed() {
 		s.failures++
-	} else if res.Status == "success" {
+	} else if res.Status == "success" || res.Status == RunPaused || res.Status == RunRevoked {
 		s.failures = 0
 	}
 	s.history = append(s.history, *res)
@@ -137,6 +147,14 @@ func (s *Scheduler) TriggerNow() {
 	}
 }
 
+// beat sends a heartbeat if one is due; true means the subscription just came back.
+func (s *Scheduler) beat(ctx context.Context) bool {
+	if s.Heartbeat == nil {
+		return false
+	}
+	return s.Heartbeat.Beat(ctx)
+}
+
 func (s *Scheduler) pendingTrigger() bool { return len(s.trigger) > 0 }
 
 func (s *Scheduler) drainTrigger() {
@@ -173,6 +191,13 @@ type Status struct {
 	ConfigMessage       string          `json:"configMessage,omitempty"`
 	Provider            string          `json:"provider"`
 	Version             string          `json:"version"`
+	// Message is the plain-English reason when the state needs attention:
+	// subscription ended, PC revoked, or companies over the plan's limit.
+	Message string `json:"message,omitempty"`
+	// Reference-key connection only.
+	BusinessName      string `json:"businessName,omitempty"`
+	SubscriptionState string `json:"subscriptionState,omitempty"`
+	MaxCompanies      int    `json:"maxCompanies,omitempty"`
 }
 
 type CompanyStatus struct {
@@ -187,12 +212,25 @@ func (s *Scheduler) Status() Status {
 	s.mu.Lock()
 	running, failures, next, last := s.running, s.failures, s.nextAt, s.lastRun
 	s.mu.Unlock()
+	// A run started outside the scheduler ("sync" from the CLI) is only in the state file.
+	if st.LastRun != nil && (last == nil || st.LastRun.StartedAt.After(last.StartedAt)) {
+		last = st.LastRun
+	}
 
 	out := Status{Enabled: set.Sync.Enabled, Running: running, IntervalSeconds: set.Sync.IntervalSeconds,
 		ConsecutiveFailures: failures, LastRun: last, Provider: set.Cloud.Provider, Version: Version, Companies: []CompanyStatus{}}
 	out.Configured, out.ConfigMessage = set.Configured()
 	if !next.IsZero() && set.Sync.Enabled {
 		out.NextRunAt = &next
+	}
+	if set.Linked() {
+		out.BusinessName, out.SubscriptionState, out.MaxCompanies = set.Business.Name, set.Cloud.Link.SubscriptionState, set.Cloud.Link.MaxCompanies
+	}
+	var msgs []string
+	limit, ticked := set.CompanyLimit(), 0
+	_, over := set.SyncCompanies()
+	if over > 0 {
+		msgs = append(msgs, CompanyLimitWarning(limit, limit+over))
 	}
 	for _, cs := range set.Companies {
 		c := st.Companies[cs.TallyID]
@@ -207,10 +245,25 @@ func (s *Scheduler) Status() Status {
 		}
 		if !cs.Enabled {
 			cst.Status = StatusDisabled
+		} else if cs.TallyID != "" {
+			ticked++
+			if limit > 0 && ticked > limit {
+				cst.Status = StatusOverLimit
+			}
 		}
 		out.Companies = append(out.Companies, CompanyStatus{CompanyState: cst, Enabled: cs.Enabled})
 	}
 	out.State = overallState(out, last)
+	if set.Linked() && set.Cloud.Link.Revoked {
+		out.State = StatusDeviceRevoked
+	}
+	switch out.State {
+	case StatusDeviceRevoked:
+		msgs = append([]string{MsgDeviceRevoked}, msgs...)
+	case StatusSubscriptionEnded:
+		msgs = append([]string{MsgSubscriptionEnded}, msgs...)
+	}
+	out.Message = strings.Join(msgs, " ")
 	return out
 }
 
@@ -233,6 +286,9 @@ func overallState(st Status, last *RunResult) string {
 	}
 	if last.Status == "skipped" {
 		return StateNotConfigured
+	}
+	if last.Status == RunPaused {
+		return StatusSubscriptionEnded
 	}
 	// Failed or partial: report the most specific cause.
 	code := last.ErrorCode

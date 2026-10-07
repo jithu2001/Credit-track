@@ -3,11 +3,8 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 )
 
 var errNoService = errors.New("Windows service management is only available on Windows; use 'run' (e.g. under systemd)")
@@ -23,14 +20,5 @@ func spawnHidden(string, []string, ...string) error              { return errNoS
 func installLogonTask(string, []string) error                    { return errNoService }
 func removeLogonTask() error                                     { return errNoService }
 func logonTaskStatus() (string, error)                           { return "not registered", nil }
-
-func readPassword(in *bufio.Reader, prompt string) (string, error) {
-	fmt.Print(prompt)
-	line, err := in.ReadString('\n')
-	if err != nil && line == "" {
-		return "", err
-	}
-	return strings.TrimRight(line, "\r\n"), nil
-}
 
 func secureDataDir(string) error { return nil } // 0o700 from MkdirAll already applies

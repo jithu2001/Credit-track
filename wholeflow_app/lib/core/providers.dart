@@ -4,7 +4,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 part 'providers.g.dart';
 
-/// The Supabase client. Overridden in main() after Supabase.initialize and in tests.
+/// The client for the business's login and data API on the WholeFlow server
+/// (GoTrue + PostgREST, through the supabase_flutter package). Overridden in
+/// bootstrap once a business is connected, and in tests.
 @Riverpod(keepAlive: true)
 SupabaseClient supabase(Ref ref) => throw UnimplementedError('supabaseProvider must be overridden');
 
