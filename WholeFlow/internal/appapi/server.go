@@ -59,6 +59,7 @@ type TenantInfo struct {
 	DBURL      string // its data API role (<slug>_api) on biz_<slug>
 	AuthURL    string // its login service, e.g. http://127.0.0.1:9101 (admin API)
 	ServiceKey string // service_role key for the login service's admin API
+	BusinessID string // the business's row id inside its database (businesses.id)
 }
 
 const tenantTTL = 5 * time.Minute
@@ -115,6 +116,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.deletePlan))
 	mux.HandleFunc("GET /b/{slug}/api/v1/visits/{id}", s.handle(s.visitDetail))
 	mux.HandleFunc("POST /b/{slug}/api/v1/visits/{id}/note", s.handleWrite(s.addVisitNote))
+	s.pcRoutes(mux)
 	mux.HandleFunc("GET /b/{slug}/api/v1/staff", s.handle(s.staffList))
 	mux.HandleFunc("POST /b/{slug}/api/v1/staff", s.handleWrite(s.createStaff))
 	mux.HandleFunc("PATCH /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.renameStaff))
@@ -177,6 +179,8 @@ func toAPIError(err error) *apiError {
 			return fail(http.StatusForbidden, "FORBIDDEN", "You don't have access to this.")
 		case "22P02":
 			return fail(http.StatusBadRequest, "INVALID_INPUT", "Invalid id.")
+		case "23502", "23503", "23514": // not null, foreign key, check: the data sent breaks a rule
+			return fail(http.StatusBadRequest, "INVALID_INPUT", pg.Message)
 		case "22023": // invalid input raised by our SQL functions: "fn_name: message"
 			msg := pg.Message
 			if _, after, ok := strings.Cut(msg, ": "); ok {
@@ -342,14 +346,14 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 func (s *Server) fromControl(ctx context.Context, slug string) (TenantInfo, error) {
 	var sealedSecret, sealedKey, status string
 	var authPort int
-	err := s.Control.QueryRow(ctx, `select jwt_secret_sealed, service_key_sealed, auth_port, status from businesses where slug = $1`, slug).
-		Scan(&sealedSecret, &sealedKey, &authPort, &status)
+	var info TenantInfo
+	err := s.Control.QueryRow(ctx, `select jwt_secret_sealed, service_key_sealed, auth_port, status, coalesce(tenant_business_id::text, '')
+		from businesses where slug = $1`, slug).Scan(&sealedSecret, &sealedKey, &authPort, &status, &info.BusinessID)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status == "closed") {
 		return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
 	} else if err != nil {
 		return TenantInfo{}, err
 	}
-	var info TenantInfo
 	if info.Secret, err = s.Sealer.Open(sealedSecret); err != nil {
 		return TenantInfo{}, err
 	}

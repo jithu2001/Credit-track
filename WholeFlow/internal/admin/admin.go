@@ -12,7 +12,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -84,10 +83,6 @@ func (s *Server) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/sync/disconnect", g(s.auth(s.disconnect)))
 	mux.HandleFunc("POST /api/sync/run", g(s.auth(s.sync)))
 	mux.HandleFunc("GET /api/sync/logs", g(s.auth(s.logs)))
-	mux.HandleFunc("GET /api/sync/users", g(s.auth(s.listUsers)))
-	mux.HandleFunc("POST /api/sync/users", g(s.auth(s.createUser)))
-	mux.HandleFunc("POST /api/sync/users/{id}/password", g(s.auth(s.userPassword)))
-	mux.HandleFunc("POST /api/sync/users/{id}/active", g(s.auth(s.userActive)))
 	mux.HandleFunc("POST /api/sync/quit", g(s.quit))
 	mux.HandleFunc("/api/sync/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "NOT_FOUND", "Unknown endpoint.")
@@ -543,28 +538,6 @@ func (s *Server) disconnect(w http.ResponseWriter, r *http.Request) {
 
 const minUserPassword = 8
 
-// userManager builds the provider from the saved settings and requires the
-// optional UserManager capability.
-func (s *Server) userManager(w http.ResponseWriter) (cloud.UserManager, bool) {
-	set := s.Settings.Get()
-	if set.Business.ID == "" {
-		writeErr(w, http.StatusBadRequest, "NOT_CONFIGURED", "Connect this PC with the reference key and activation code first.")
-		return nil, false
-	}
-	prov, err := s.Provider(set)
-	if err != nil {
-		code, msg := classifyForUI(err)
-		writeErr(w, http.StatusBadRequest, code, msg)
-		return nil, false
-	}
-	um, ok := prov.(cloud.UserManager)
-	if !ok {
-		writeErr(w, http.StatusBadRequest, "NOT_SUPPORTED", "This cloud provider cannot manage accounts.")
-		return nil, false
-	}
-	return um, true
-}
-
 func (s *Server) cloudFail(w http.ResponseWriter, err error) {
 	code, msg := classifyForUI(err)
 	status := http.StatusBadGateway
@@ -577,125 +550,6 @@ func (s *Server) cloudFail(w http.ResponseWriter, err error) {
 		status = http.StatusBadRequest
 	}
 	writeErr(w, status, code, msg)
-}
-
-type userDTO struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      string    `json:"role"`
-	IsActive  bool      `json:"isActive"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-func toUserDTO(u cloud.User) userDTO {
-	return userDTO{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, IsActive: u.IsActive, CreatedAt: u.CreatedAt}
-}
-
-func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
-	um, ok := s.userManager(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	users, err := um.ListUsers(ctx)
-	if err != nil {
-		s.cloudFail(w, err)
-		return
-	}
-	out := make([]userDTO, 0, len(users))
-	for _, u := range users {
-		out = append(out, toUserDTO(u))
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": out, "businessId": s.Settings.Get().Business.ID})
-}
-
-func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Email    string `json:"email"`
-		Name     string `json:"name"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
-		return
-	}
-	email := strings.ToLower(strings.TrimSpace(body.Email))
-	if !strings.Contains(email, "@") || strings.ContainsAny(email, " \t") {
-		writeErr(w, http.StatusBadRequest, "BAD_EMAIL", "Enter a valid email address.")
-		return
-	}
-	if len(body.Password) < minUserPassword {
-		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", fmt.Sprintf("Password must be at least %d characters.", minUserPassword))
-		return
-	}
-	role := strings.ToUpper(strings.TrimSpace(body.Role))
-	if role == "" {
-		role = cloud.RoleOwner
-	}
-	if role != cloud.RoleOwner && role != cloud.RoleStaff {
-		writeErr(w, http.StatusBadRequest, "BAD_ROLE", "Role must be OWNER or STAFF.")
-		return
-	}
-	um, ok := s.userManager(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	u, err := um.CreateUser(ctx, cloud.NewUser{Email: email, Password: body.Password, Name: strings.TrimSpace(body.Name), Role: role})
-	if err != nil {
-		s.cloudFail(w, err)
-		return
-	}
-	s.Log.Info("cloud user created", "email", email, "role", role, "id", u.ID)
-	writeJSON(w, http.StatusOK, map[string]any{"user": toUserDTO(u)})
-}
-
-func (s *Server) userPassword(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Password string `json:"password"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil || len(body.Password) < minUserPassword {
-		writeErr(w, http.StatusBadRequest, "WEAK_PASSWORD", fmt.Sprintf("Password must be at least %d characters.", minUserPassword))
-		return
-	}
-	um, ok := s.userManager(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := um.SetUserPassword(ctx, r.PathValue("id"), body.Password); err != nil {
-		s.cloudFail(w, err)
-		return
-	}
-	s.Log.Info("cloud user password reset", "id", r.PathValue("id"))
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (s *Server) userActive(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Active bool `json:"active"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid request.")
-		return
-	}
-	um, ok := s.userManager(w)
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-	if err := um.SetUserActive(ctx, r.PathValue("id"), body.Active); err != nil {
-		s.cloudFail(w, err)
-		return
-	}
-	s.Log.Info("cloud user active flag changed", "id", r.PathValue("id"), "active", body.Active)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // sync triggers a run. With ?wait=1 it runs synchronously (used by the CLI)

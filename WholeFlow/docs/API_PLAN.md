@@ -176,8 +176,14 @@ test. Regenerate the fixtures whenever an endpoint's answer changes.
    the 8 GB server. Once the phones use only the app API, the API (or one
    shared login service) handles logins for every business. Each business
    keeps only its own database, so adding a business costs almost no memory.
-2. **Tally PC through the API.** Move the PC's uploads from PostgREST to app
-   API endpoints (same PC keys and revocation), so PostgREST can be retired.
+2. **Tally PC through the API.** Done (2026-10-08): `/api/v1/pc/…` endpoints
+   (PC keys only: role service_role + device_id, still checked by
+   `check_request()` for revocation and the subscription pause; every row must
+   be for the business the key belongs to), and the PC's new client
+   `internal/cloud/hosted` with the shared row format `internal/cloud/wire`.
+   Purchase bills and their lines are written in one transaction. The PC no
+   longer manages mobile logins. Tally PC 0.6.0 needs the API on the server;
+   PostgREST can be stopped once every PC runs 0.6.0.
 3. **Monitoring before going live.** A health check on the API (and the
    control service) with an alert when it is down or returns errors, and a
    short daily error summary from `journalctl`.

@@ -34,16 +34,10 @@ type Store struct {
 	transactions map[string]*txnRow          // by id
 	states       map[string]cloud.SyncState  // by companyID|entity
 	Logs         []cloud.SyncLog
-	users        map[string]*userRow
 	suppliers    table[cloud.Supplier]
 	stockItems   table[cloud.StockItem]
 	purchases    table[cloud.Purchase]
 	seq          int
-}
-
-type userRow struct {
-	cloud.User
-	Password string
 }
 
 type shopRow struct {
@@ -68,68 +62,7 @@ func New(businessID string) *Store {
 		shops:        map[string]*shopRow{},
 		transactions: map[string]*txnRow{},
 		states:       map[string]cloud.SyncState{},
-		users:        map[string]*userRow{},
 	}
-}
-
-// ---------------------------------------------------------------- users (cloud.UserManager)
-
-func (s *Store) ListUsers(ctx context.Context) ([]cloud.User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.enter(ctx, "ListUsers"); err != nil {
-		return nil, err
-	}
-	out := make([]cloud.User, 0, len(s.users))
-	for _, u := range s.users {
-		out = append(out, u.User)
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
-	return out, nil
-}
-
-func (s *Store) CreateUser(ctx context.Context, n cloud.NewUser) (cloud.User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.enter(ctx, "CreateUser"); err != nil {
-		return cloud.User{}, err
-	}
-	for _, u := range s.users {
-		if strings.EqualFold(u.Email, n.Email) {
-			return cloud.User{}, &cloud.Error{Kind: cloud.KindError, Op: "create-user", Msg: "a user with this email already exists"}
-		}
-	}
-	u := &userRow{User: cloud.User{ID: s.newID("user"), Email: n.Email, Name: n.Name, Role: n.Role, IsActive: true, CreatedAt: time.Now()}, Password: n.Password}
-	s.users[u.ID] = u
-	return u.User, nil
-}
-
-func (s *Store) SetUserPassword(ctx context.Context, id, password string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.enter(ctx, "SetUserPassword"); err != nil {
-		return err
-	}
-	u := s.users[id]
-	if u == nil {
-		return &cloud.Error{Kind: cloud.KindNotFound, Op: "set-password", Msg: "no such user"}
-	}
-	u.Password = password
-	return nil
-}
-
-func (s *Store) SetUserActive(ctx context.Context, id string, active bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.enter(ctx, "SetUserActive"); err != nil {
-		return err
-	}
-	u := s.users[id]
-	if u == nil {
-		return &cloud.Error{Kind: cloud.KindNotFound, Op: "set-active", Msg: "no such user"}
-	}
-	u.IsActive = active
-	return nil
 }
 
 func (s *Store) Name() string { return "memory" }

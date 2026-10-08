@@ -197,6 +197,7 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    | 0.4.1 | none | local account and offline login removed: `set-password` is gone, every sign-in is checked by the server, and logins stored by older versions are deleted from `config.json` at start |
    | 0.5.0 | none | Supabase connection removed; only the WholeFlow server. A PC still set up with a cloud URL and service key counts as not connected until it connects with a reference key (see Case 2) |
    | 0.5.1 | none | new look for the PC's pages, matching the admin and phone apps (Material 3, side navigation) |
+   | 0.6.0 | none (needs the WholeFlow app API on the server) | uploads go through the WholeFlow app API instead of the data API (PostgREST); purchase bills and their lines are saved in one step; the PC no longer manages mobile app logins (the owner's login comes from WholeFlow, staff are added in the Owner app) |
 
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 
@@ -316,7 +317,7 @@ internal/config        .env + tally.ini port detection (shared)
 internal/tally         TallyService: XML/TDL requests, parsing, balances, transactions, vouchers (ONLY place that knows Tally XML)
 internal/api           web app REST API, snapshot, filters, exports
 internal/export        CSV and .xlsx writers
-internal/cloud         provider-neutral cloud contract + models;  cloud/rest (the server's PostgREST + GoTrue API), cloud/memory (tests, dry run)
+internal/cloud         provider-neutral cloud contract + models;  cloud/hosted (uploads through the WholeFlow app API), cloud/wire (the upload format, shared with the server), cloud/memory (tests, dry run)
 internal/syncer        settings, local state, transformer, engine, backoff, scheduler
 internal/auth          login: PBKDF2 hashes, sessions, lockout
 internal/secrets       DPAPI encryption of the PC key

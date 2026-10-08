@@ -17,6 +17,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"wholeflow/internal/cloud"
+	"wholeflow/internal/cloud/hosted"
 	"wholeflow/internal/control"
 )
 
@@ -143,7 +145,7 @@ func TestIntegration(t *testing.T) {
 			if slug != "apitest" {
 				return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
 			}
-			return TenantInfo{Secret: secret, DBURL: u.String(), AuthURL: gotrue.URL, ServiceKey: "service-key"}, nil
+			return TenantInfo{Secret: secret, DBURL: u.String(), AuthURL: gotrue.URL, ServiceKey: "service-key", BusinessID: bizA}, nil
 		},
 	}
 	defer srv.Close()
@@ -817,6 +819,141 @@ func TestIntegration(t *testing.T) {
 		var name string
 		_ = db.QueryRow(context.Background(), `select name from public.users where id = $1`, newID).Scan(&name)
 		eqv(t, name, "Renamed", "renamed in the database")
+	})
+
+	t.Run("Tally PC uploads through the API", func(t *testing.T) {
+		ctx := context.Background()
+		const device = "aaaaaaaa-0000-0000-0000-0000000000c1"
+		pcKey, _ := control.SignJWT(secret, map[string]any{"iss": "wholeflow", "ref": "apitest", "role": "service_role", "device_id": device})
+		pc, err := hosted.New(hosted.Config{URL: ts.URL + "/b/apitest", Key: pcKey, BusinessID: bizA}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer mustExec(t, db, `delete from public.tally_companies where tally_company_id = 'pc-co'`)
+		if err := pc.Authenticate(ctx); err != nil {
+			t.Fatalf("authenticate: %v", err)
+		}
+		connID, err := pc.UpsertConnection(ctx, cloud.Connection{BusinessID: bizA, MachineIdentifier: "pc-test", Hostname: "TEST-PC",
+			Status: "online", AppVersion: "0.6.0", LastSeenAt: time.Now()})
+		if err != nil || connID == "" {
+			t.Fatalf("connection: %q %v", connID, err)
+		}
+		again, _ := pc.UpsertConnection(ctx, cloud.Connection{BusinessID: bizA, MachineIdentifier: "pc-test", Status: "online", LastSeenAt: time.Now()})
+		eqv(t, again, connID, "same PC, same row")
+		company, err := pc.UpsertCompany(ctx, cloud.Company{BusinessID: bizA, ConnectionID: connID, TallyCompanyID: "pc-co",
+			Name: "PC Co", Enabled: true, SyncEnabled: true, SyncStatus: "SYNCING", BooksFrom: "2025-04-01"})
+		if err != nil {
+			t.Fatalf("company: %v", err)
+		}
+
+		shopIDs, err := pc.UpsertShops(ctx, []cloud.Shop{
+			{BusinessID: bizA, CompanyID: company, TallyLedgerID: "L1", Name: "PC Shop 1", Phones: []string{"9800000009"},
+				Address: []string{"Line 1", "Line 2"}, Receivable: 150.5, SyncedAt: time.Now()},
+			{BusinessID: bizA, CompanyID: company, TallyLedgerID: "L2", Name: "PC Shop 2", SyncedAt: time.Now()},
+		})
+		if err != nil || len(shopIDs) != 2 {
+			t.Fatalf("shops: %v %v", shopIDs, err)
+		}
+		var addr string
+		_ = db.QueryRow(ctx, `select address from public.shops where id = $1`, shopIDs["L1"]).Scan(&addr)
+		eqv(t, addr, "Line 1\nLine 2", "address joined")
+
+		err = pc.UpsertTransactions(ctx, []cloud.Transaction{
+			{BusinessID: bizA, CompanyID: company, ShopID: shopIDs["L1"], TallyVoucherID: "V1", TallyLedgerID: "L1", Date: "2026-07-01",
+				VoucherType: "Sales", Category: "sales", Debit: 200, Amount: 200, SyncedAt: time.Now()},
+			{BusinessID: bizA, CompanyID: company, ShopID: shopIDs["L1"], TallyVoucherID: "V2", TallyLedgerID: "L1", Date: "2026-07-05",
+				VoucherType: "Receipt", Category: "receipts", Credit: 49.5, Amount: -49.5, SyncedAt: time.Now()},
+		})
+		if err != nil {
+			t.Fatalf("transactions: %v", err)
+		}
+		all, err := pc.ListTransactions(ctx, company, nil)
+		eqv(t, len(all), 2, "all lines")
+		one, _ := pc.ListTransactions(ctx, company, []string{"V2"})
+		eqv(t, len(one), 1, "by voucher")
+		if err := pc.SoftDeleteTransactions(ctx, []string{one[0].ID}); err != nil {
+			t.Fatal(err)
+		}
+		all, _ = pc.ListTransactions(ctx, company, nil)
+		eqv(t, len(all), 1, "deleted line hidden")
+
+		if err := pc.SoftDeleteShops(ctx, []string{shopIDs["L2"]}); err != nil {
+			t.Fatal(err)
+		}
+		refs, _ := pc.ListShops(ctx, company)
+		eqv(t, len(refs), 1, "deleted shop hidden")
+		_, _ = pc.UpsertShops(ctx, []cloud.Shop{{BusinessID: bizA, CompanyID: company, TallyLedgerID: "L2", Name: "PC Shop 2", SyncedAt: time.Now()}})
+		refs, _ = pc.ListShops(ctx, company)
+		eqv(t, len(refs), 2, "a shop seen again is undeleted")
+
+		now := time.Now().UTC()
+		if err := pc.UpdateSyncState(ctx, cloud.SyncState{BusinessID: bizA, CompanyID: company, EntityType: cloud.EntityCompany,
+			LastSuccessfulSyncAt: &now, LastAttemptAt: now, Status: "ok", RecordsProcessed: 3}); err != nil {
+			t.Fatalf("sync state: %v", err)
+		}
+		st, err := pc.GetSyncState(ctx, company, cloud.EntityCompany)
+		if err != nil || st == nil || st.RecordsProcessed != 3 {
+			t.Fatalf("get sync state: %+v %v", st, err)
+		}
+		none, err := pc.GetSyncState(ctx, company, cloud.EntityShops)
+		eqv(t, none == nil && err == nil, true, "no state yet")
+		if err := pc.CreateSyncLog(ctx, cloud.SyncLog{BusinessID: bizA, CompanyID: company, StartedAt: now, CompletedAt: now,
+			Status: "success", Mode: "full", ShopsProcessed: 2}); err != nil {
+			t.Fatalf("sync log: %v", err)
+		}
+
+		supIDs, err := pc.UpsertSuppliers(ctx, []cloud.Supplier{{BusinessID: bizA, CompanyID: company, TallyLedgerID: "S1", Name: "PC Supplier", Payable: 900, SyncedAt: time.Now()}})
+		if err != nil || supIDs["S1"] == "" {
+			t.Fatalf("suppliers: %v %v", supIDs, err)
+		}
+		itemIDs, err := pc.UpsertStockItems(ctx, []cloud.StockItem{{BusinessID: bizA, CompanyID: company, TallyItemID: "I1", Name: "PC Item", ClosingQty: 4, Status: "in_stock", SyncedAt: time.Now()}})
+		if err != nil || itemIDs["I1"] == "" {
+			t.Fatalf("stock: %v %v", itemIDs, err)
+		}
+		_, err = pc.UpsertStockItems(ctx, []cloud.StockItem{{BusinessID: bizA, CompanyID: company, TallyItemID: "I2", Name: "Bad", Status: "plenty", SyncedAt: time.Now()}})
+		eqv(t, cloud.KindOf(err), cloud.KindError, "a row breaking a rule is an error, not an outage")
+		bill := func(lines ...cloud.PurchaseLine) cloud.Purchase {
+			return cloud.Purchase{BusinessID: bizA, CompanyID: company, TallyVoucherID: "P1", SupplierID: supIDs["S1"], SupplierName: "PC Supplier",
+				Date: "2026-07-02", VoucherNumber: "PB/9", Total: 500, Lines: lines, SyncedAt: time.Now()}
+		}
+		line := func(no int, qty float64) cloud.PurchaseLine {
+			return cloud.PurchaseLine{LineNo: no, StockItemID: itemIDs["I1"], ItemName: "PC Item", Qty: qty, Rate: 100, Amount: qty * 100}
+		}
+		if err := pc.UpsertPurchases(ctx, []cloud.Purchase{bill(line(1, 2), line(2, 3))}); err != nil {
+			t.Fatalf("purchases: %v", err)
+		}
+		if err := pc.UpsertPurchases(ctx, []cloud.Purchase{bill(line(1, 5))}); err != nil {
+			t.Fatalf("purchases again: %v", err)
+		}
+		var lines int
+		var qty float64
+		_ = db.QueryRow(ctx, `select count(*), sum(l.qty)::float8 from public.purchase_lines l join public.purchases p on p.id = l.purchase_id
+			where p.company_id = $1`, company).Scan(&lines, &qty)
+		eqv(t, lines, 1, "lines replaced")
+		eqv(t, qty, 5.0, "new line kept")
+		prefs, _ := pc.ListPurchases(ctx, company)
+		eqv(t, len(prefs), 1, "one bill")
+		_ = pc.SoftDeletePurchases(ctx, []string{prefs[0].ID})
+		prefs, _ = pc.ListPurchases(ctx, company)
+		eqv(t, len(prefs), 0, "bill deleted")
+
+		// Rows for another business are refused.
+		_, err = pc.UpsertShops(ctx, []cloud.Shop{{BusinessID: bizB, CompanyID: company, TallyLedgerID: "X", Name: "X", SyncedAt: time.Now()}})
+		eqv(t, cloud.KindOf(err), cloud.KindError, "foreign business refused")
+
+		otherBiz, _ := hosted.New(hosted.Config{URL: ts.URL + "/b/apitest", Key: pcKey, BusinessID: bizB}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		eqv(t, cloud.KindOf(otherBiz.Authenticate(ctx)), cloud.KindNotFound, "another business's id")
+
+		// A phone user's token can't upload; a revoked PC is told so.
+		owner, _ := hosted.New(hosted.Config{URL: ts.URL + "/b/apitest", Key: token(ownerA), BusinessID: bizA}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		eqv(t, cloud.KindOf(owner.Authenticate(ctx)), cloud.KindAuth, "user token refused")
+		mustExec(t, db, `insert into public.revoked_devices (device_id) values ($1)`, device)
+		defer mustExec(t, db, `delete from public.revoked_devices where device_id = $1`, device)
+		eqv(t, cloud.KindOf(pc.Authenticate(ctx)), cloud.KindDeviceRevoked, "revoked PC")
+		mustExec(t, db, `delete from public.revoked_devices where device_id = $1`, device)
+		mustExec(t, db, `insert into public.service_status (status) values ('suspended')`)
+		eqv(t, cloud.KindOf(pc.Authenticate(ctx)), cloud.KindSubscriptionEnded, "paused business")
+		mustExec(t, db, `delete from public.service_status`)
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

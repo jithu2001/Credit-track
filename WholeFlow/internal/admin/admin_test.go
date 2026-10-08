@@ -256,43 +256,6 @@ func TestTallyTestReportsOffline(t *testing.T) {
 	}
 }
 
-func TestOwnerAccounts(t *testing.T) {
-	ts, _ := newTestServer(t, true)
-	c := &client{t: t, base: ts.URL, bearer: "ctl-token"}
-	if resp, body := c.do("GET", "/api/sync/users", "", false); resp.StatusCode != http.StatusOK || !strings.Contains(body, `"users":[]`) {
-		t.Fatalf("list = %d %s", resp.StatusCode, body)
-	}
-	if resp, _ := c.do("POST", "/api/sync/users", `{"email":"not-an-email","password":"owner-pass-1"}`, true); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("bad email accepted: %d", resp.StatusCode)
-	}
-	if resp, _ := c.do("POST", "/api/sync/users", `{"email":"o@x.com","password":"short"}`, true); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("weak password accepted: %d", resp.StatusCode)
-	}
-	resp, body := c.do("POST", "/api/sync/users", `{"email":"Owner@Example.com","name":"Owner","password":"owner-pass-1"}`, true)
-	if resp.StatusCode != http.StatusOK || !strings.Contains(body, `"email":"owner@example.com"`) || !strings.Contains(body, `"role":"OWNER"`) {
-		t.Fatalf("create = %d %s", resp.StatusCode, body)
-	}
-	var created struct {
-		User userDTO `json:"user"`
-	}
-	json.Unmarshal([]byte(body), &created)
-	if resp, _ := c.do("POST", "/api/sync/users", `{"email":"owner@example.com","password":"owner-pass-2"}`, true); resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("duplicate email accepted: %d", resp.StatusCode)
-	}
-	if resp, _ := c.do("POST", "/api/sync/users/"+created.User.ID+"/password", `{"password":"new-owner-pass"}`, true); resp.StatusCode != http.StatusOK {
-		t.Fatalf("reset = %d", resp.StatusCode)
-	}
-	if resp, _ := c.do("POST", "/api/sync/users/"+created.User.ID+"/active", `{"active":false}`, true); resp.StatusCode != http.StatusOK {
-		t.Fatalf("disable = %d", resp.StatusCode)
-	}
-	if _, body := c.do("GET", "/api/sync/users", "", false); !strings.Contains(body, `"isActive":false`) {
-		t.Fatalf("not disabled: %s", body)
-	}
-	if resp, _ := c.do("POST", "/api/sync/users/nope/password", `{"password":"new-owner-pass"}`, true); resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("unknown user = %d", resp.StatusCode)
-	}
-}
-
 func TestManualSyncRunsAndReportsResult(t *testing.T) {
 	ts, _ := newTestServer(t, true)
 	c := &client{t: t, base: ts.URL, bearer: "ctl-token"}
