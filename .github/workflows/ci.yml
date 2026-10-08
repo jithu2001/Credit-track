@@ -13,6 +13,10 @@ permissions:
 jobs:
   server:
     runs-on: ubuntu-24.04
+    env:
+      # Build and test with the toolchain go.mod pins (security fixes), even if
+      # the Go that setup-go installs is older.
+      GOTOOLCHAIN: auto
     defaults:
       run:
         working-directory: WholeFlow
