@@ -524,17 +524,6 @@ func (s *Service) Heartbeat(ctx context.Context, deviceKey, appVersion string) (
 		MaxCompanies: maxCompanies, Revoked: revokedAt != nil, LatestPCVersion: s.Store.Setting(ctx, "latest_pc_version")}, nil
 }
 
-// TenantForStaff gives the staff service a business's address and service key.
-func (s *Service) TenantForStaff(ctx context.Context, slug string) (baseURL, serviceKey string, err error) {
-	var sealed string
-	if err := s.Store.DB.QueryRow(ctx, `select base_url, service_key_sealed from businesses where slug = $1 and status <> 'closed'`, slug).
-		Scan(&baseURL, &sealed); err != nil {
-		return "", "", userErr(404, "NOT_FOUND", "No such business.")
-	}
-	serviceKey, err = s.Sealer.Open(sealed)
-	return baseURL, serviceKey, err
-}
-
 // MigrateAll applies new migrations to every business database.
 func (s *Service) MigrateAll(ctx context.Context, adminID string) (string, error) {
 	out, err := s.runScript(ctx, 30*time.Minute, "scripts/migrate.sh", "--all")

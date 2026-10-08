@@ -2,7 +2,6 @@ package control
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -22,10 +21,9 @@ import (
 // Server is the control service's HTTP API. nginx forwards /control/ to it
 // on 127.0.0.1; it never listens on a public address.
 type Server struct {
-	Svc           *Service
-	Log           *slog.Logger
-	InternalToken string // shared with the LEGACY staff service; empty = no /control/internal/
-	MonitorDir    string // scripts/monitor.sh's logs; empty = MonitorDir
+	Svc        *Service
+	Log        *slog.Logger
+	MonitorDir string // scripts/monitor.sh's logs; empty = MonitorDir
 
 	limiter      *auth.Limiter // wrong passwords/codes per email and address
 	emailLimiter *auth.Limiter // per email from anywhere
@@ -34,8 +32,8 @@ type Server struct {
 	minAppBuild  settingCache
 }
 
-func NewServer(svc *Service, log *slog.Logger, internalToken string) *Server {
-	s := &Server{Svc: svc, Log: log, InternalToken: internalToken,
+func NewServer(svc *Service, log *slog.Logger) *Server {
+	s := &Server{Svc: svc, Log: log,
 		limiter:      auth.NewLimiter(8, 15*time.Minute, 15*time.Minute),
 		emailLimiter: auth.NewLimiter(30, 15*time.Minute, 15*time.Minute),
 		ipHits:       map[string][]time.Time{}}
@@ -58,11 +56,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /control/activate", s.activate)
 	mux.HandleFunc("POST /control/heartbeat", s.heartbeat)
 	mux.HandleFunc("POST /control/pc/login", s.pcLogin)
-
-	// Staff service (same machine, shared token).
-	if s.InternalToken != "" { // LEGACY: only the old Deno staff service calls it
-		mux.HandleFunc("GET /control/internal/tenant/{slug}", s.internalTenant)
-	}
 
 	// Admin app.
 	mux.HandleFunc("POST /control/admin/login", s.adminLogin)
@@ -258,19 +251,6 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, out)
-}
-
-func (s *Server) internalTenant(w http.ResponseWriter, r *http.Request) {
-	if s.InternalToken == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Internal-Token")), []byte(s.InternalToken)) != 1 {
-		writeErr(w, userErr(403, "FORBIDDEN", "Forbidden."))
-		return
-	}
-	base, key, err := s.Svc.TenantForStaff(r.Context(), r.PathValue("slug"))
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	writeJSON(w, 200, map[string]string{"base_url": base, "service_key": key})
 }
 
 // ---------------------------------------------------------------- admin: businesses

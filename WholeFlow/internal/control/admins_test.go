@@ -50,7 +50,7 @@ func TestAdminSecurity(t *testing.T) {
 	}
 	sealer, _ := NewSealer(strings.Repeat("cd", 32))
 	svc := &Service{Store: store, Sealer: sealer, Now: time.Now}
-	srv := NewServer(svc, slog.New(slog.NewTextHandler(io.Discard, nil)), strings.Repeat("x", 32))
+	srv := NewServer(svc, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ts := httptest.NewServer(srv.Routes())
 	defer ts.Close()
 
@@ -196,7 +196,7 @@ func TestAdminSecurity(t *testing.T) {
 	want(code, 200, "this session kept")
 
 	// Sessions survive a restart (they live in control_db) but not their age.
-	srv2 := NewServer(svc, srv.Log, strings.Repeat("x", 32))
+	srv2 := NewServer(svc, srv.Log)
 	if _, _, ok := srv2.session(ctx, boss); !ok {
 		t.Fatal("session lost on restart")
 	}

@@ -46,7 +46,7 @@ write the database directly.** They use the app API for data and the login
 service only to sign in and change passwords.
 
 What is left after deploying (see "After the move"): retire the Deno staff
-service (its container and the `functions/v1` nginx rule) once every phone has
+service (its container and the `functions/v1` nginx rule; done in the hardened kit) once every phone has
 the new app; PostgREST stays for the Tally PC until it moves to the API too.
 
 ## 1. Goal
@@ -176,9 +176,9 @@ Each step can be undone on its own (in brackets).
 **Retire the old containers** (`scripts/retire-containers.sh`, each reversible with `start`)
 9. `stop gotrue` once step 7 works (sign-in no longer uses them).
 10. `stop postgrest` once every Tally PC runs 0.6.0.
-11. `stop staff` once every phone has the new apps.
-12. After a week without problems in Server health: `remove --yes`, then delete the
-    `functions/v1` location from `nginx/wholeflow.conf` and reload nginx.
+11. (The Deno staff service is already gone: the hardened kit removes its
+    container at the server-kit step, since no phone runs the old apps.)
+12. After a week without problems in Server health: `remove --yes`.
 
 New businesses created after step 3 get no containers at all.
 
@@ -186,7 +186,10 @@ New businesses created after step 3 get no containers at all.
 - Server kit (backups, users, read-only control_db role, units, PostgreSQL
   settings, nginx): `deploy/server/README.md` "Deploying the hardening", done
   at steps 3-5. Its nginx file blocks `/control/admin/` and `/control/internal/`
-  on the api host and keeps the LEGACY `functions/v1` route until step 12.
+  on the api host. The old Deno staff service, its `functions/v1` route and
+  the control service's internal endpoint are removed outright (only internal
+  copies of the old apps ever existed); delete `INTERNAL_TOKEN` from
+  `control.env` and `.env`.
 - Control: its migration `0003_admin_security` applies itself at start. Every
   admin must sign in again and set up two-step sign-in (keep the backup codes;
   lost phone: `wholeflow-control reset-2fa EMAIL`). Create **installer**
@@ -204,10 +207,6 @@ New businesses created after step 3 get no containers at all.
 - After the new apps are on every phone: admin app → Settings → minimum app
   build = the new build number (older builds that send their version are then
   asked to update), and latest PC version = 0.6.0 (outdated PCs are flagged).
-- Step 12 also: remove the `staff` service and `deno-cache` volume from
-  `docker-compose.yml`, the `functions/v1` location from `nginx/wholeflow.conf`,
-  and `INTERNAL_TOKEN` from `control.env` and `.env` (the internal route then
-  no longer exists).
 - Existing phone sessions get their 30-day limit from their next refresh.
 
 Tests: `go test ./...`; with the throwaway database from `db/tests/run_local.sh`,

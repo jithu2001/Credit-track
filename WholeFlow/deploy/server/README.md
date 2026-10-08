@@ -8,10 +8,8 @@ database per business, behind nginx at `https://api.<domain>/b/<slug>/`. See
 **Changing (branch `api-layer`, not deployed yet):** the WholeFlow app API
 (`wholeflow-api`) serves every business's sign-in and data; the per-business
 GoTrue and PostgREST containers are retired step by step
-(`scripts/retire-containers.sh`), and so is the Deno staff service (staff
-management is `/b/<slug>/api/v1/staff`; the old service and its `functions/v1`
-route stay, marked LEGACY, until every phone runs the new apps: API_PLAN.md §5
-steps 11-12). New businesses get no containers.
+(`scripts/retire-containers.sh`), and the Deno staff service is gone (staff
+management is `/b/<slug>/api/v1/staff`). New businesses get no containers.
 Deploy order: API_PLAN.md section 5 plus **"Deploying the hardening"** below.
 
 Live server: `75.119.130.27` (Contabo, Germany, 4 vCPU / 8 GB RAM, Ubuntu 24.04),
@@ -36,7 +34,7 @@ PostgreSQL 15 (docker compose, 127.0.0.1:5432): control_db + biz_<slug> per busi
 | Path | What | Owner / mode |
 |---|---|---|
 | `docker-compose.yml`, `.env` | Shared PostgreSQL 15 (localhost only). `.env`: `POSTGRES_PASSWORD`, `PUBLIC_URL` | root 600 |
-| `control.env` | Control service: superuser URLs, `MASTER_KEY`, `INTERNAL_TOKEN` | root 600 |
+| `control.env` | Control service: superuser URLs, `MASTER_KEY` | root 600 |
 | `api.env` | App API: `CONTROL_DB_URL` as read-only `wholeflow_api_ro`, `MASTER_KEY` (systemd reads it as root) | root 600 |
 | `backup/` | Nightly backups (download them yourself) | root 700, files 600 |
 | `backup.env`, `backup.recipients` | Optional: off-site remote; age **public** key(s) to encrypt backups | root 600 / 644 |
@@ -269,10 +267,12 @@ backups (they expire on their own within those periods).
    Then create and delete a test business in the admin app (checks the
    control service's sandbox and `delete-business.sh`).
 7. PostgreSQL: check `docker compose exec db postgres --version` matches the
-   pinned tag (see compose comment), then `docker compose up -d db`
-   (restarts the database: a few seconds; the LEGACY staff container keeps running);
-   `docker compose exec db psql -U postgres -c 'show max_connections'` → 300.
-   The staff container and `wholeflow_deno-cache` volume go at API_PLAN.md §5 step 12.
+   pinned tag (see compose comment), then `docker compose up -d --remove-orphans db`
+   (restarts the database: a few seconds; also removes the old Deno staff
+   container, which is no longer in the file);
+   `docker compose exec db psql -U postgres -c 'show max_connections'` → 300;
+   `docker volume rm wholeflow_deno-cache`. Remove `INTERNAL_TOKEN` from
+   `control.env` and `.env` (nothing uses it any more).
 8. nginx: `nginx -t && systemctl reload nginx`; then
    `curl -s -o /dev/null -w '%{http_code}' https://api.jitsuji.xyz/control/admin/me` → 404,
    the admin app still signs in, a phone signs in, a Tally PC syncs.

@@ -3,8 +3,7 @@
 # (wholeflow-api, systemd) serves every business's sign-in and data; the
 # control service (wholeflow-control, systemd) runs the admin app. Neither
 # runs in Docker. Staff management is in the app API under
-# /b/<slug>/api/v1/staff; the old Deno staff service below stays only until
-# every phone runs the new apps (docs/API_PLAN.md §5, steps 11-12).
+# /b/<slug>/api/v1/staff (the old Deno staff service is gone).
 name: wholeflow
 
 services:
@@ -66,29 +65,8 @@ services:
       interval: 5s
       retries: 20
 
-  # LEGACY: the old Deno staff service, for app versions from before the app
-  # API. Defined only so the running container is not an orphan; it is not
-  # started by `docker compose up -d` (profile). Delete this service, its
-  # deno-cache volume and the functions/v1 nginx location at §5 step 12.
-  staff:
-    profiles: [legacy-staff]
-    image: denoland/deno:2.1.4
-    restart: unless-stopped
-    network_mode: host  # reaches the control service and nginx on 127.0.0.1
-    working_dir: /app
-    volumes:
-      - ./staff:/app:ro
-      - deno-cache:/deno-dir
-    environment:
-      CONTROL_URL: http://127.0.0.1:8100
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
-      PORT: "8200"
-    command: ["run", "--no-lock", "--allow-net", "--allow-env", "multi.ts"]
-    mem_limit: 192m
-
 volumes:
   pgdata:
-  deno-cache:
 
 networks:
   wf:

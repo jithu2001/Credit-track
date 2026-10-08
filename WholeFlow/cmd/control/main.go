@@ -9,7 +9,7 @@
 //
 // Configuration comes from the environment (systemd EnvironmentFile
 // /opt/wholeflow/control.env): CONTROL_DB_URL, PG_ADMIN_URL, MASTER_KEY,
-// PUBLIC_URL, KIT_DIR, INTERNAL_TOKEN, LISTEN.
+// PUBLIC_URL, KIT_DIR, LISTEN.
 package main
 
 import (
@@ -79,12 +79,6 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	// Only the LEGACY Deno staff service uses INTERNAL_TOKEN (/control/internal/);
-	// leave it unset once that service is retired and the route is gone.
-	token := os.Getenv("INTERNAL_TOKEN")
-	if token != "" && len(token) < 32 {
-		return errors.New("INTERNAL_TOKEN must be at least 32 characters")
-	}
 	store, err := openStore(ctx)
 	if err != nil {
 		return err
@@ -94,7 +88,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		PublicURL: env("PUBLIC_URL", ""), HTTP: &http.Client{Timeout: 30 * time.Second}, Now: time.Now}
 	srv := &http.Server{
 		Addr:              env("LISTEN", "127.0.0.1:8100"),
-		Handler:           control.NewServer(svc, log, token).Routes(),
+		Handler:           control.NewServer(svc, log).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// Public endpoints answer within a minute; the admin requests that run

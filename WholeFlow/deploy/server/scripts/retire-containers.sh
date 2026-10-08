@@ -12,9 +12,9 @@
 #   postgrest  each business's data API: only Tally PCs older than 0.6.0 use it;
 #              stop it once every PC runs 0.6.0
 #   staff      the Deno staff service (container wholeflow-staff-1): obsolete, the
-#              app manages staff through the app API. In docker-compose.yml it
-#              sits under the legacy-staff profile; it is handled by
-#              container name here.
+#              app manages staff through the app API. It is no longer in
+#              docker-compose.yml, so it is handled by container name here
+#              (docker compose up -d --remove-orphans also removes it).
 #
 # "stop" keeps the containers (restart policy unless-stopped leaves them stopped
 # after a reboot). "remove" is for when everything has run without them for a while.
