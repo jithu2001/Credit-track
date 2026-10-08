@@ -1,9 +1,15 @@
 # WholeFlow server kit (Contabo)
 
 Runs WholeFlow for many businesses on one Ubuntu server: one PostgreSQL with a
-database per business, and per business a GoTrue (login) and PostgREST (data
-API) container behind nginx at `https://api.<domain>/b/<slug>/`. See
+database per business, behind nginx at `https://api.<domain>/b/<slug>/`. See
 [../../docs/MULTI_TENANT_PLAN.md](../../docs/MULTI_TENANT_PLAN.md).
+
+**Changing (branch `api-layer`, not deployed yet):** the WholeFlow app API
+(`wholeflow-api`) serves every business's sign-in and data, and the per-business
+GoTrue and PostgREST containers (and the Deno staff service) are retired. New
+businesses get no containers. The deploy order is in
+[../../docs/API_PLAN.md](../../docs/API_PLAN.md) section 5. Until then, the
+setup below describes the server as it runs today.
 
 Live server: `75.119.130.27`, `api.jitsuji.xyz`, `admin.jitsuji.xyz`, files in `/opt/wholeflow`.
 SSH: `ssh wholeflow` (key `~/.ssh/wholeflow_vps`; password login is off).

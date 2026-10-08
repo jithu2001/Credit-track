@@ -1,7 +1,8 @@
 # WholeFlow app API plan (moving the apps' work to the server)
 
-Status (2026-10-08), branch `api-layer`: phases 1–6 built and tested locally,
-not deployed yet (to be deployed once, after all features; see section 7). That covers the `wholeflow-api` service and payment insights (`GET /payments`,
+Status (2026-10-08), branch `api-layer`: everything built and tested locally,
+not deployed yet: phases 1–6, the Tally PC through the API, monitoring, sign-in
+by the API, and provisioning without containers. Deploy once (section 5). That covers the `wholeflow-api` service and payment insights (`GET /payments`,
 `GET /payments/shops/{id}`). The app's insights screen, shop Payments tab and
 dashboard overdue card now use it, and the phone no longer downloads every voucher.
 Parity check on the demo business's real data (2 companies, 462 shops, 5,170 vouchers):
@@ -129,37 +130,59 @@ the phone; then deploy.
 
 Phase 1 delivers the API service itself plus feature 1, as the proof.
 
-## 5. Deploying phase 1
+## 5. Deploying (once, when everything is finished)
 
-```bash
-cd WholeFlow
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o wholeflow-api ./cmd/api
-scp wholeflow-api wholeflow:/opt/wholeflow/bin/
-scp deploy/server/systemd/wholeflow-api.service wholeflow:/etc/systemd/system/
-# on the server (prints no secret):
-cd /opt/wholeflow && grep -E '^(CONTROL_DB_URL|MASTER_KEY)=' control.env > api.env \
-  && printf 'KIT_DIR=/opt/wholeflow\nPG_HOST=127.0.0.1:5432\nLISTEN=127.0.0.1:8300\n' >> api.env && chmod 600 api.env
-cp nginx/wholeflow.conf nginx/wholeflow.conf.prev   # before copying the new one over
-systemctl daemon-reload && systemctl enable --now wholeflow-api
-nginx -t && systemctl reload nginx
-scp deploy/server/nginx/wholeflow.conf wholeflow:/opt/wholeflow/nginx/wholeflow.conf   # then nginx -t && reload
-curl -s https://api.<domain>/b/<slug>/api/v1/payments   # → 401 UNAUTHENTICATED
-```
+Everything below is built and tested locally; nothing is on the server yet.
+Each step can be undone on its own (in brackets).
 
-The business database is first reached on the first signed-in request, so a
-wrong setting shows up then as a 500. `journalctl -u wholeflow-api -n 20` shows why.
+**Before**
+1. Merge `api-layer`. Build: `wholeflow-api` and `wholeflow-control`
+   (`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o <name> ./cmd/api|./cmd/control`),
+   the Tally PC zip 0.6.0 (`deploy/build-release.sh`), and the hosted Owner and Staff apps.
+2. With the **current** app on the phone, note the dashboard's overdue total and shop count
+   (to compare with the new app).
 
-Deploy the server **before** installing the new app: the new app's payment
-insights need it. Old app versions keep working (PostgREST is unchanged).
+**Server** (`ssh wholeflow`; copy files with scp first)
+3. Copy: `bin/wholeflow-api`; `bin/wholeflow-control` (keep the old one as `wholeflow-control.prev`);
+   `db/auth/auth_schema.sql` → `/opt/wholeflow/auth/`; `scripts/new-business.sh`, `monitor.sh`,
+   `retire-containers.sh`; the `systemd/wholeflow-api.service` and four `wholeflow-monitor*` units
+   → `/etc/systemd/system/`; `nginx/wholeflow.conf` (keep `wholeflow.conf.prev`).
+4. Settings for the API, printing no secret:
+   ```bash
+   cd /opt/wholeflow && grep -E '^(CONTROL_DB_URL|MASTER_KEY)=' control.env > api.env \
+     && printf 'KIT_DIR=/opt/wholeflow\nPG_HOST=127.0.0.1:5432\nLISTEN=127.0.0.1:8300\n' >> api.env && chmod 600 api.env
+   systemctl daemon-reload && systemctl enable --now wholeflow-api && systemctl restart wholeflow-control
+   curl -s 127.0.0.1:8300/health        # {"ok":true}
+   ```
+   [undo: `systemctl stop wholeflow-api`; old control from `.prev`]
+5. `nginx -t && systemctl reload nginx`. **From here sign-in and the app API are live** for every
+   business: `/b/<slug>/auth/v1/` and `/api/v1/` go to the API. Phones already signed in stay signed
+   in (same tokens and sessions). Old app versions keep working (PostgREST is untouched).
+   [undo: `wholeflow.conf.prev` + reload]
+6. `systemctl enable --now wholeflow-monitor.timer wholeflow-monitor-daily.timer`; after 5 minutes,
+   admin app → Server health shows the first check.
 
-Tests: `go test ./internal/appapi` (FIFO cases); with the throwaway database
-from `db/tests/run_local.sh`, `WF_TEST_PG=postgres://postgres:pw@127.0.0.1:55432/wf
-go test ./internal/appapi` also runs the endpoints against every migration
-(numbers, owner only, other business, paused business → 402, bad tokens).
-With `WF_WRITE_FIXTURES=1` it also saves each endpoint's real answer to
-`wholeflow_app/test/fixtures/api/`; the app's `test/unit/api_contract_test.dart`
-feeds them through every repository, so a field renamed on either side fails a
-test. Regenerate the fixtures whenever an endpoint's answer changes.
+**Phones and the Tally PC**
+7. Install the new Owner app: sign out and in once, compare the dashboard with step 2, then check
+   payments, a statement (and sharing), stock, sites, visits and staff. Then the Staff app.
+8. Install Tally PC 0.6.0 (README "Updating a PC") and run a sync; the Cloud Sync page and the
+   admin app should show it.
+
+**Retire the old containers** (`scripts/retire-containers.sh`, each reversible with `start`)
+9. `stop gotrue` once step 7 works (sign-in no longer uses them).
+10. `stop postgrest` once every Tally PC runs 0.6.0.
+11. `stop staff` once every phone has the new apps.
+12. After a week without problems in Server health: `remove --yes`, then delete the
+    `functions/v1` location from `nginx/wholeflow.conf` and reload nginx.
+
+New businesses created after step 3 get no containers at all.
+
+Tests: `go test ./...`; with the throwaway database from `db/tests/run_local.sh`,
+`WF_TEST_PG=postgres://postgres:pw@127.0.0.1:55432/wf go test ./internal/appapi ./internal/authn`
+(every endpoint, sign-in, the Tally PC client end to end). With `WF_WRITE_FIXTURES=1` the
+integration test also saves each endpoint's real answer to `wholeflow_app/test/fixtures/api/`,
+read by the app's `api_contract_test.dart` and `auth_contract_test.dart`. Regenerate them
+whenever an answer changes.
 
 ## 6. Later
 
@@ -171,7 +194,7 @@ test. Regenerate the fixtures whenever an endpoint's answer changes.
 
 ### After the move (agreed 2026-10-08)
 
-1. **Fewer containers per business.** Logins: done (2026-10-08). The app API
+1. **Fewer containers per business.** Done (2026-10-08). Logins: The app API
    signs people in itself (`internal/authn`, endpoints at the same
    `/b/<slug>/auth/v1/…` in GoTrue's format, so the apps don't change), on
    GoTrue's own tables (`db/auth/auth_schema.sql`): existing logins, password
@@ -180,8 +203,9 @@ test. Regenerate the fixtures whenever an endpoint's answer changes.
    minutes after 10 tries (and an address after 60). Staff management and the
    admin app's owner creation and password reset use it too. The app's own
    login library is tested against the server's real answers
-   (`test/unit/auth_contract_test.dart`). Still to do: provisioning new
-   businesses without containers, and the steps to stop the existing ones.
+   (`test/unit/auth_contract_test.dart`). New businesses get the login tables
+   and no containers (`scripts/new-business.sh`); existing ones are retired
+   step by step with `scripts/retire-containers.sh` (section 5).
 2. **Tally PC through the API.** Done (2026-10-08): `/api/v1/pc/…` endpoints
    (PC keys only: role service_role + device_id, still checked by
    `check_request()` for revocation and the subscription pause; every row must

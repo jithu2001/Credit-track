@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Creates one business: database biz_<slug>, its own login roles and signing
-# secret, a GoTrue (login) and PostgREST (data API) container, the nginx route
-# /b/<slug>/, and applies every migration. Prints the base URL and keys.
+# Creates one business: database biz_<slug> with its own roles, signing secret
+# and login tables, and applies every migration. Prints the base URL and keys.
+# No containers: the WholeFlow app API (wholeflow-api) serves its logins and
+# data at /b/<slug>/auth/v1/ and /b/<slug>/api/v1/ (one nginx rule for every
+# business). The control service runs this when the admin app creates a business.
 #
 #   scripts/new-business.sh <slug> "<Business name>"
-#
-# Phase 1 tool; the control service (phase 2) does the same steps.
 set -euo pipefail
 cd /opt/wholeflow
 SLUG=${1:?usage: new-business.sh <slug> "<name>"}
@@ -19,9 +19,8 @@ DB=biz_$SLUG
 
 psql_admin() { docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 
-# Ports: next free slot (10000+n login, 11000+n data API), bound to localhost only.
-N=1; while ls businesses/*/env >/dev/null 2>&1 && grep -qx "SLOT=$N" businesses/*/env; do N=$((N+1)); done
-AUTH_PORT=$((10000+N)); REST_PORT=$((11000+N))
+# No containers, so no ports (0 = none; kept in env for older tools).
+AUTH_PORT=0; REST_PORT=0
 
 AUTH_PW=$(openssl rand -hex 24); API_PW=$(openssl rand -hex 24); JWT_SECRET=$(openssl rand -hex 32)
 jwt() { python3 - "$JWT_SECRET" "$1" "$SLUG" <<'PY'
@@ -63,12 +62,16 @@ create table public.schema_migrations (name text primary key, applied_at timesta
 revoke all on public.schema_migrations from anon, authenticated;
 SQL
 
-echo "== containers"
+echo "== login tables"
+# GoTrue's tables (db/auth/auth_schema.sql, copied to auth/ on the server),
+# owned by the business's login role, which the app API signs people in as.
+{ echo "set role ${SLUG}_auth;"; cat auth/auth_schema.sql; } | psql_admin -d "$DB" >/dev/null
+
+echo "== settings"
 umask 077
 mkdir -p "$DIR"
 cat > "$DIR/env" <<ENV
 SLUG=$SLUG
-SLOT=$N
 NAME=$NAME
 AUTH_PORT=$AUTH_PORT
 REST_PORT=$REST_PORT
@@ -79,20 +82,9 @@ AUTH_DB_URL=postgres://${SLUG}_auth:$AUTH_PW@db:5432/$DB?search_path=auth
 API_DB_URL=postgres://${SLUG}_api:$API_PW@db:5432/$DB
 BASE_URL=$PUBLIC_URL/b/$SLUG
 ENV
-sed "s/__SLUG__/$SLUG/g" templates/business-compose.yml > "$DIR/compose.yml"
-docker compose -p "biz-$SLUG" -f "$DIR/compose.yml" --env-file "$DIR/env" up -d 2>&1 | tail -2
-
-echo "== waiting for the login service to create its tables"
-for i in $(seq 1 60); do curl -fs "http://127.0.0.1:$AUTH_PORT/health" >/dev/null && break; sleep 2; done
-curl -fs "http://127.0.0.1:$AUTH_PORT/health" >/dev/null || { echo "login service did not start; see: docker compose -p biz-$SLUG logs" >&2; exit 1; }
 
 echo "== migrations"
 scripts/migrate.sh "$SLUG"
-
-echo "== nginx route"
-sed -e "s/__SLUG__/$SLUG/g" -e "s/__AUTH_PORT__/$AUTH_PORT/g" -e "s/__REST_PORT__/$REST_PORT/g" \
-  templates/business-nginx.conf > "/etc/nginx/wholeflow-businesses/$SLUG.conf"
-nginx -t 2>/dev/null && systemctl reload nginx
 
 cat <<OUT
 
