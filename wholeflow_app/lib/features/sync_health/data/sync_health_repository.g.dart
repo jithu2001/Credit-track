@@ -119,7 +119,7 @@ final class SyncHealthRepositoryProvider
 }
 
 String _$syncHealthRepositoryHash() =>
-    r'7da7d6cdc087ecdcfd861f9c862a8df50d66269f';
+    r'2d705c3174015811dc30e6a456360bdccbc35d91';
 
 @ProviderFor(tallyConnections)
 final tallyConnectionsProvider = TallyConnectionsProvider._();

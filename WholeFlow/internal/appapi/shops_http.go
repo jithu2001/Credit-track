@@ -353,3 +353,8 @@ func (s *Server) overdueReport(r *request) (any, error) {
 		"groups": groupsJSON(groups),
 	}, nil
 }
+
+// sortFold sorts strings A–Z ignoring case.
+func sortFold(list []string) {
+	sort.SliceStable(list, func(i, j int) bool { return strings.ToLower(list[i]) < strings.ToLower(list[j]) })
+}

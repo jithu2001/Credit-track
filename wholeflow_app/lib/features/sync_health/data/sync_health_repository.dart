@@ -1,9 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/errors/app_failure.dart';
-import '../../../core/providers.dart';
 
 part 'sync_health_repository.freezed.dart';
 part 'sync_health_repository.g.dart';
@@ -21,7 +20,6 @@ abstract class TallyConnection with _$TallyConnection {
 
   factory TallyConnection.fromJson(Map<String, dynamic> json) => _$TallyConnectionFromJson(json);
 
-  static const columns = 'machine_identifier,hostname,status,app_version,last_seen_at';
 }
 
 @freezed
@@ -46,23 +44,17 @@ abstract class SyncLogEntry with _$SyncLogEntry {
 
   factory SyncLogEntry.fromJson(Map<String, dynamic> json) => _$SyncLogEntryFromJson(json);
 
-  static const columns =
-      'id,company_id,started_at,completed_at,status,mode,records_processed,records_created,'
-      'records_updated,records_deleted,records_failed,shops_processed,transactions_fetched,error_code,error_message';
 }
 
 class SyncHealthRepository {
-  SyncHealthRepository(this._client);
+  SyncHealthRepository(this._api);
 
-  final SupabaseClient _client;
+  final ApiClient _api;
 
   Future<List<TallyConnection>> connections() async {
     try {
-      final rows = await _client
-          .from('tally_connections')
-          .select(TallyConnection.columns)
-          .order('last_seen_at', ascending: false);
-      return rows.map(TallyConnection.fromJson).toList();
+      final body = await _api.get('sync/connections');
+      return [for (final r in (body['connections'] as List).cast<Map<String, dynamic>>()) TallyConnection.fromJson(r)];
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -70,12 +62,8 @@ class SyncHealthRepository {
 
   Future<List<SyncLogEntry>> recentLogs({int limit = 20}) async {
     try {
-      final rows = await _client
-          .from('sync_logs')
-          .select(SyncLogEntry.columns)
-          .order('started_at', ascending: false)
-          .limit(limit);
-      return rows.map(SyncLogEntry.fromJson).toList();
+      final body = await _api.get('sync/logs', {'limit': '$limit'});
+      return [for (final r in (body['logs'] as List).cast<Map<String, dynamic>>()) SyncLogEntry.fromJson(r)];
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -83,7 +71,7 @@ class SyncHealthRepository {
 }
 
 @Riverpod(keepAlive: true)
-SyncHealthRepository syncHealthRepository(Ref ref) => SyncHealthRepository(ref.watch(supabaseProvider));
+SyncHealthRepository syncHealthRepository(Ref ref) => SyncHealthRepository(ref.watch(apiClientProvider));
 
 @riverpod
 Future<List<TallyConnection>> tallyConnections(Ref ref) => ref.watch(syncHealthRepositoryProvider).connections();

@@ -22,7 +22,12 @@ final serviceStatusProvider = ServiceStatusProvider._();
 /// this read too, and the session switches to the paused screen instead.
 
 final class ServiceStatusProvider
-    extends $FunctionalProvider<AsyncValue<ServiceStatus?>, ServiceStatus?, FutureOr<ServiceStatus?>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<ServiceStatus?>,
+          ServiceStatus?,
+          FutureOr<ServiceStatus?>
+        >
     with $FutureModifier<ServiceStatus?>, $FutureProvider<ServiceStatus?> {
   /// The business's subscription row; null when there is none (a business not
   /// hosted by the WholeFlow server) or it can't be read right now. Reloaded on
@@ -44,7 +49,9 @@ final class ServiceStatusProvider
 
   @$internal
   @override
-  $FutureProviderElement<ServiceStatus?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<ServiceStatus?> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<ServiceStatus?> create(Ref ref) {
@@ -52,4 +59,4 @@ final class ServiceStatusProvider
   }
 }
 
-String _$serviceStatusHash() => r'16ff4d050c80de135282594ec9be2c7c844974e4';
+String _$serviceStatusHash() => r'130916a09be77e744e749de3a18fc1fffa58bede';

@@ -485,6 +485,35 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 404, "other business")
 	})
 
+	t.Run("me, companies, access, areas, service status, sync", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/me", token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["user"].(map[string]any)["role"], "OWNER", "role")
+		eqv(t, body["business_name"], "API Biz", "business")
+		_, body = get("/b/apitest/api/v1/companies", token(ownerA))
+		eqv(t, len(body["companies"].([]any)), 1, "owner companies")
+		_, body = get("/b/apitest/api/v1/companies", token(ownerB))
+		eqv(t, len(body["companies"].([]any)), 0, "other business sees none of ours")
+		_, body = get("/b/apitest/api/v1/me/access", token(staffA))
+		access := body["access"].([]any)
+		eqv(t, len(access), 1, "staff access")
+		eqv(t, access[0].(map[string]any)["can_view_transactions"], false, "as set above")
+		code, body = get("/b/apitest/api/v1/companies/"+companA+"/areas", token(ownerA))
+		eqv(t, code, 200, "areas")
+		eqv(t, len(body["areas"].([]any)), 0, "no areas in test shops")
+		code, body = get("/b/apitest/api/v1/service-status", token(ownerA))
+		eqv(t, code, 200, "service status")
+		eqv(t, body["service_status"], nil, "none set")
+		_, body = get("/b/apitest/api/v1/sync/logs", token(ownerA))
+		eqv(t, len(body["logs"].([]any)), 0, "no logs")
+		_, body = get("/b/apitest/api/v1/sync/connections", token(ownerA))
+		eqv(t, len(body["connections"].([]any)), 0, "no PCs")
+		code, _ = get("/b/apitest/api/v1/sync/logs?limit=0", token(ownerA))
+		eqv(t, code, 400, "bad limit")
+	})
+
 	t.Run("a paused business gets 402", func(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
 		defer mustExec(t, db, `delete from public.service_status`)

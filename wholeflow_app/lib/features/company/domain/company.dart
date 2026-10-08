@@ -15,8 +15,6 @@ abstract class Company with _$Company {
   }) = _Company;
 
   factory Company.fromJson(Map<String, dynamic> json) => _$CompanyFromJson(json);
-
-  static const columns = 'id,company_name,sync_status,last_sync_at';
 }
 
 /// A row of `staff_company_access`: one company a staff member works for,
