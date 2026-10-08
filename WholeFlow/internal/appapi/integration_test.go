@@ -585,6 +585,64 @@ func TestIntegration(t *testing.T) {
 		eqv(t, len(body["suggestions"].([]any)), 0, "no suggestions")
 	})
 
+	t.Run("visits: plans, tasks, check-in, notes", func(t *testing.T) {
+		var today string
+		if err := db.QueryRow(context.Background(), `select public.business_today()::text`).Scan(&today); err != nil {
+			t.Fatal(err)
+		}
+		plan := `{"site":"` + siteA + `","staff":"` + staffA + `","date":"` + today + `"}`
+		code, body := send("POST", "/b/apitest/api/v1/visits/plans", token(ownerA), plan)
+		eqv(t, code, 400, "check-in off")
+		eqv(t, strings.Contains(body["error"].(map[string]any)["message"].(string), "Must check in"), true, "explains why")
+		mustExec(t, db, `update public.users set requires_check_in = true where id = $1`, staffA)
+		code, body = send("POST", "/b/apitest/api/v1/visits/plans", token(ownerA), plan)
+		if code != 200 {
+			t.Fatalf("plan: %d %v", code, body)
+		}
+		code, _ = send("POST", "/b/apitest/api/v1/visits/plans", token(staffA), plan)
+		eqv(t, code, 403, "staff can't plan")
+		_, body = get("/b/apitest/api/v1/visits/plans?company="+companA, token(ownerA))
+		plans := body["plans"].([]any)
+		eqv(t, len(plans), 1, "plans")
+		planID := plans[0].(map[string]any)["id"].(string)
+		eqv(t, plans[0].(map[string]any)["sites"].(map[string]any)["name"], "Town", "site name")
+
+		code, body = get("/b/apitest/api/v1/visits/tasks?from="+today+"&to="+today, token(staffA))
+		if code != 200 {
+			t.Fatalf("tasks: %d %v", code, body)
+		}
+		tasks := body["tasks"].([]any)
+		eqv(t, len(tasks), 1, "today's task: Alpha Stores in Town")
+		taskID := tasks[0].(map[string]any)["task_id"].(string)
+
+		code, body = send("POST", "/b/apitest/api/v1/visits/tasks/"+taskID+"/check-in", token(staffA),
+			`{"latitude":9.85,"longitude":76.97,"accuracy_m":8,"is_mocked":false,"developer_mode":false}`)
+		if code != 200 {
+			t.Fatalf("check-in: %d %v", code, body)
+		}
+		id, _ := body["visit_id"].(string)
+		eqv(t, id != "", true, "check-in made a visit")
+		{
+			code, _ = send("POST", "/b/apitest/api/v1/visits/"+id+"/note", token(staffA), `{"note":"Paid next week"}`)
+			eqv(t, code, 200, "add note")
+			code, _ = send("POST", "/b/apitest/api/v1/visits/"+id+"/note", token(staffA), `{"note":"again"}`)
+			eqv(t, code, 403, "one note per visit")
+			code, body = get("/b/apitest/api/v1/visits/"+id, token(ownerA))
+			eqv(t, code, 200, "visit detail")
+			eqv(t, body["visit"] != nil, true, "visit found")
+		}
+		_, body = get("/b/apitest/api/v1/visits/tasks/"+taskID+"/failed-attempts", token(ownerA))
+		_, isList := body["attempts"].([]any)
+		eqv(t, isList, true, "attempts list")
+
+		code, _ = send("PATCH", "/b/apitest/api/v1/visits/plans/"+planID, token(ownerA), `{"active":false}`)
+		eqv(t, code, 200, "pause plan")
+		code, _ = send("DELETE", "/b/apitest/api/v1/visits/plans/"+planID, token(ownerA), ``)
+		eqv(t, code, 200, "delete plan")
+		code, _ = get("/b/apitest/api/v1/visits/tasks?from="+today, token(staffA))
+		eqv(t, code, 400, "to is required")
+	})
+
 	t.Run("a paused business gets 402", func(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
 		defer mustExec(t, db, `delete from public.service_status`)

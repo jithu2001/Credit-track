@@ -255,8 +255,6 @@ class FakeVisitRepository implements VisitRepository {
   final List<Map<String, Object?>> created = [];
 
   @override
-  Future<void> ensureTasks(DateTime from, DateTime to) async {}
-  @override
   Future<List<VisitTask>> tasks(DateTime from, DateTime to, {String? companyId, String? staffId}) async => taskList;
   @override
   Future<List<VisitPlan>> plans(String companyId) async => const [];

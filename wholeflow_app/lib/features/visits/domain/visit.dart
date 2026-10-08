@@ -61,10 +61,6 @@ class VisitTask {
     note: json['note'] as String?,
   );
 
-  static const columns =
-      'task_id,company_id,staff_id,staff_name,shop_id,shop_name,site_id,site_name,visit_date,state,'
-      'visit_id,checked_in_at,distance_m,radius_m,accuracy_m,note';
-
   final String taskId;
   final String companyId;
   final String staffId;
@@ -127,8 +123,6 @@ class VisitPlan {
     );
   }
 
-  static const columns = 'id,site_id,staff_id,active,plan_date,weekday,starts_on,ends_on,sites(name),users!staff_id(name)';
-
   final String id;
   final String siteId;
   final String staffId;
@@ -177,8 +171,6 @@ class ShopVisit {
     note: json['note'] as String?,
   );
 
-  static const columns = 'id,checked_in_at,device_lat,device_lng,accuracy_m,status,shop_lat,shop_lng,radius_m,distance_m,note';
-
   final String id;
   final DateTime checkedInAt;
   final double deviceLat;
@@ -203,8 +195,6 @@ class FailedAttempt {
     radiusM: (json['radius_m'] as num?)?.toInt(),
     accuracyM: (json['accuracy_m'] as num?)?.toDouble(),
   );
-
-  static const columns = 'attempted_at,reason,distance_m,radius_m,accuracy_m';
 
   final DateTime at;
   final String reason;

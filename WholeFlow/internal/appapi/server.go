@@ -97,6 +97,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /b/{slug}/api/v1/shops/{id}/location", s.handleWrite(s.clearShopLocation))
 	mux.HandleFunc("GET /b/{slug}/api/v1/location-suggestions", s.handle(s.locationSuggestions))
 	mux.HandleFunc("POST /b/{slug}/api/v1/location-suggestions/{id}/review", s.handleWrite(s.reviewSuggestion))
+	// Listing tasks first makes the days' tasks from the plans (idempotent), so it writes.
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/tasks", s.handleWrite(s.visitTasks))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/tasks/{id}/failed-attempts", s.handle(s.failedAttempts))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/tasks/{id}/check-in", s.handleWrite(s.checkIn))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/plans", s.handle(s.visitPlans))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/plans", s.handleWrite(s.createPlans))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.setPlanActive))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.deletePlan))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/{id}", s.handle(s.visitDetail))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/{id}/note", s.handleWrite(s.addVisitNote))
 	return mux
 }
 
