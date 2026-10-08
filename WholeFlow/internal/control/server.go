@@ -23,6 +23,7 @@ type Server struct {
 	Svc           *Service
 	Log           *slog.Logger
 	InternalToken string // shared with the staff service on this machine
+	MonitorDir    string // scripts/monitor.sh's logs; empty = MonitorDir
 
 	sessions *auth.Sessions
 	limiter  *auth.Limiter
@@ -80,6 +81,7 @@ func (s *Server) Routes() http.Handler {
 	s.deleteRoutes(mux)
 	s.leadRoutes(mux)
 	s.ownerRoutes(mux)
+	s.monitorRoutes(mux)
 	return s.recoverer(mux)
 }
 

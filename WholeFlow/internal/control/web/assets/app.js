@@ -24,6 +24,7 @@ function h(tag, attrs, ...kids) {
 
 // Material icons (Apache 2.0), inline so the page needs nothing from outside.
 const ICONS = {
+  health: 'M20 3H4c-1.1 0-2 .9-2 2v4h2V5h16v4h2V5c0-1.1-.9-2-2-2zm0 16H4v-4H2v4c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2v-4h-2v4zm-5.12-11.5L13.32 11h-3.06L8.73 8.7 7.38 11H2v2h6.62l1.85-2.78L12.02 13h3.06l1.68 3.36L19.62 13H22v-2h-3.38l-1.86 3.72z',
   store: 'M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z',
   sell: 'M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z',
   settings: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
@@ -163,7 +164,7 @@ async function render() {
     catch { return; }
   }
   const [, page, id] = (location.hash || '#/').split('/');
-  const routes = { '': pageBusinesses, new: pageNew, b: () => pageBusiness(id), plans: pagePlans, leads: pageLeads, settings: pageSettings };
+  const routes = { '': pageBusinesses, new: pageNew, b: () => pageBusiness(id), plans: pagePlans, leads: pageLeads, health: pageHealth, settings: pageSettings };
   const main = h('main', {}, h('p', { class: 'muted' }, 'Loading…'));
   const item = (href, ic, text, on) =>
     h('a', { href, class: 'rail-item' + (on ? ' on' : ''), 'aria-current': on ? 'page' : null }, h('span', { class: 'ind' }, icon(ic)), text);
@@ -175,6 +176,7 @@ async function render() {
           item('#/', 'store', 'Businesses', page === '' || page === 'b' || page === 'new'),
           item('#/plans', 'sell', 'Plans', page === 'plans'),
           leadsItem(page === 'leads'),
+          item('#/health', 'health', 'Server health', page === 'health'),
           item('#/settings', 'settings', 'Settings', page === 'settings'),
           h('button', { class: 'rail-item', onclick: logout, title: 'Sign out ' + me.email }, h('span', { class: 'ind' }, icon('logout')), 'Sign out')),
         h('div', { class: 'spacer' }),
@@ -794,6 +796,46 @@ async function pageLeads() {
     h('h1', {}, 'Enquiries'),
     h('p', { class: 'muted' }, 'From the contact form on wholeflow.jitsuji.xyz. Everything here was typed by the visitor.'),
     counts, tabs, body,
+  ].map(wrapGap);
+}
+
+// ------------------------------------------------------------ server health
+
+// What scripts/monitor.sh logged on the server every 5 minutes (no alerts are sent).
+async function pageHealth() {
+  const r = await api('GET', '/monitor');
+  const split = line => {
+    const [when, state, ...rest] = line.split(' ');
+    const text = rest.join(' ');
+    const [problems, notes] = state === 'PROBLEM' ? text.split(' | ') : ['', text];
+    return { when, ok: state === 'OK', problems, notes: notes || '' };
+  };
+  const latest = r.recent.length ? split(r.recent[0]) : null;
+  const row = l => {
+    const x = split(l);
+    return h('tr', {},
+      h('td', { class: 'small' }, when(x.when)),
+      h('td', {}, x.ok ? badge('active', 'OK') : badge('ended', 'Problem')),
+      h('td', {}, x.problems ? h('div', {}, x.problems) : null, h('div', { class: 'muted small' }, x.notes)));
+  };
+  const table = lines => h('div', { class: 'scroll' }, h('table', {}, h('tbody', {}, ...lines.map(row))));
+  return [
+    h('h1', {}, 'Server health'),
+    h('p', { class: 'muted' }, 'The server checks itself every 5 minutes: the API, the admin service, the database, every business through HTTPS, disk, memory, the certificate and the nightly backup. Nothing is sent to you; it is all kept here for 30 days (on the server in /var/log/wholeflow).'),
+    r.missing
+      ? h('div', { class: 'notice warn' }, 'No checks yet. The monitor writes its first line a few minutes after it is installed (deploy/server/README.md).')
+      : h('div', { class: 'card' },
+        h('h2', {}, 'Now'),
+        latest.ok
+          ? h('p', {}, badge('active', 'All good'), ' ', h('span', { class: 'muted small' }, 'checked ', when(latest.when), ' · ', latest.notes))
+          : h('div', {}, h('p', {}, badge('ended', 'Problem'), ' ', h('span', { class: 'muted small' }, 'checked ', when(latest.when))),
+            h('div', { class: 'notice bad' }, latest.problems))),
+    h('div', { class: 'card' }, h('h2', {}, 'Problems in the last 7 days'),
+      r.problems.length ? table(r.problems) : h('p', { class: 'muted' }, 'None.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Recent checks'),
+      r.recent.length ? table(r.recent) : h('p', { class: 'muted' }, 'None yet.')),
+    h('div', { class: 'card' }, h('h2', {}, 'Daily summary', r.daily_day ? h('span', { class: 'muted small' }, ' ', date(r.daily_day)) : null),
+      r.daily ? h('pre', { class: 'log' }, r.daily) : h('p', { class: 'muted' }, 'Written every evening at 23:50.')),
   ].map(wrapGap);
 }
 

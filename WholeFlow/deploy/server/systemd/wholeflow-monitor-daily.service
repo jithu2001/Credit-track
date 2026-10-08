@@ -1,0 +1,6 @@
+[Unit]
+Description=WholeFlow daily summary (writes /var/log/wholeflow/daily-*.log)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wholeflow/scripts/monitor.sh --daily

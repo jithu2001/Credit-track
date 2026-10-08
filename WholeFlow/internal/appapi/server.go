@@ -66,7 +66,16 @@ const tenantTTL = 5 * time.Minute
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+	// Up and able to reach control_db (the monitor checks this every 5 minutes).
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		if s.Control != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			if err := s.Control.Ping(ctx); err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "control_db unreachable"})
+				return
+			}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /b/{slug}/api/v1/payments", s.handle(s.paymentSummary))

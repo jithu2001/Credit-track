@@ -184,9 +184,17 @@ test. Regenerate the fixtures whenever an endpoint's answer changes.
    Purchase bills and their lines are written in one transaction. The PC no
    longer manages mobile logins. Tally PC 0.6.0 needs the API on the server;
    PostgREST can be stopped once every PC runs 0.6.0.
-3. **Monitoring before going live.** A health check on the API (and the
-   control service) with an alert when it is down or returns errors, and a
-   short daily error summary from `journalctl`.
+3. **Monitoring.** Done (2026-10-08), as a log on the server, with no alerts
+   (your choice): `deploy/server/scripts/monitor.sh` runs every 5 minutes
+   (`wholeflow-monitor.timer`). It checks the API (incl. control_db), the
+   control service, every business through HTTPS, the database, the services,
+   disk, memory, the certificate and the newest backup, and writes one line to
+   `/var/log/wholeflow/monitor-YYYY-MM-DD.log`. `wholeflow-monitor-daily.timer`
+   writes `daily-YYYY-MM-DD.log` at 23:50 with the day's problems and the
+   services' warnings. Logs are kept 30 days. The admin app shows them under
+   **Server health**. Install: copy `scripts/monitor.sh` and the four
+   `systemd/wholeflow-monitor*` units, `systemctl daemon-reload`, then
+   `systemctl enable --now wholeflow-monitor.timer wholeflow-monitor-daily.timer`.
 
 ## 7. Decisions (made 2026-10-08)
 
