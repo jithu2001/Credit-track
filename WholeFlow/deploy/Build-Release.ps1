@@ -19,9 +19,19 @@
 
 .PARAMETER SkipTests
     Build without running go vet / go test (not recommended).
+
+.PARAMETER Unsigned
+    Allow a release without an Authenticode signature (testing only). Without
+    a signature Windows SmartScreen and antivirus programs warn customers.
+
+    Signing uses signtool (Windows SDK) with the code-signing certificate in
+    the current user's certificate store, chosen by its SHA-1 thumbprint:
+
+        $env:WF_SIGN_THUMBPRINT = '<thumbprint>'
+        $env:WF_SIGN_TIMESTAMP  = 'http://timestamp.digicert.com'   # optional
 #>
 [CmdletBinding()]
-param([switch]$SkipTests)
+param([switch]$SkipTests, [switch]$Unsigned)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot          # the WholeFlow folder
@@ -48,6 +58,19 @@ try {
     Write-Host 'go build'
     go build -trimpath -o $exe ./cmd/server
     if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+
+    if ($env:WF_SIGN_THUMBPRINT) {
+        $ts = if ($env:WF_SIGN_TIMESTAMP) { $env:WF_SIGN_TIMESTAMP } else { 'http://timestamp.digicert.com' }
+        Write-Host 'signtool sign'
+        signtool sign /sha1 $env:WF_SIGN_THUMBPRINT /fd sha256 /tr $ts /td sha256 /d 'WholeFlow' $exe
+        if ($LASTEXITCODE -ne 0) { throw 'signing failed' }
+        signtool verify /pa $exe
+        if ($LASTEXITCODE -ne 0) { throw 'signature does not verify' }
+    } elseif ($Unsigned) {
+        Write-Host 'WARNING: wholeflow.exe is NOT signed (-Unsigned).' -ForegroundColor Yellow
+    } else {
+        throw 'no code-signing certificate: set WF_SIGN_THUMBPRINT (or pass -Unsigned for a test build)'
+    }
 
     $version = ((& $exe version) -split '\s+')[1]
     if (-not $version) { throw 'could not read the version from the built exe' }
