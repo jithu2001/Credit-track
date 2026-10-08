@@ -51,6 +51,7 @@ import 'package:wholeflow_app/features/visits/data/visit_repository.dart';
 import 'package:wholeflow_app/features/visits/domain/visit.dart';
 import 'package:wholeflow_app/features/visits/presentation/staff_visits_screen.dart';
 
+import '../stock_like_server.dart';
 import '../widget/helpers.dart';
 
 final _skip = Platform.environment['WF_SCREENSHOTS'] == null;
@@ -257,57 +258,26 @@ final _statement = [
 
 class _Inventory implements InventoryRepository {
   @override
-  Future<List<StockItem>> items(String companyId, {required bool withCosts}) async => [
-    StockItem(
-      id: 'i1',
-      name: 'TYRE 145/80 R12 TL',
-      group: 'Tyres',
-      unit: 'Nos',
-      closingQty: 1250,
-      closingValue: withCosts ? const Money(287500000) : null,
-    ),
-    StockItem(
-      id: 'i2',
-      name: 'TYRE 90/100-10 TL',
-      group: 'Tyres',
-      unit: 'Nos',
-      closingQty: 642,
-      closingValue: withCosts ? const Money(96300000) : null,
-    ),
-    StockItem(
-      id: 'i3',
-      name: 'ENGINE OIL 20W40 1 L',
-      group: 'Lubricants',
-      unit: 'Ltr',
-      closingQty: 388,
-      closingValue: withCosts ? const Money(15132000) : null,
-    ),
-    StockItem(
-      id: 'i4',
-      name: 'TUBE 3.00-17',
-      group: 'Tubes',
-      unit: 'Nos',
-      closingQty: 14,
-      reorderLevel: 50,
-      closingValue: withCosts ? const Money(2940000) : null,
-    ),
-    StockItem(
+  Future<StockList> items(String companyId) async => stockListOf([
+    stockItem(id: 'i1', name: 'TYRE 145/80 R12 TL', group: 'Tyres', unit: 'Nos', qty: 1250, value: const Money(287500000)),
+    stockItem(id: 'i2', name: 'TYRE 90/100-10 TL', group: 'Tyres', unit: 'Nos', qty: 642, value: const Money(96300000)),
+    stockItem(id: 'i3', name: 'ENGINE OIL 20W40 1 L', group: 'Lubricants', unit: 'Ltr', qty: 388, value: const Money(15132000)),
+    stockItem(id: 'i4', name: 'TUBE 3.00-17', group: 'Tubes', unit: 'Nos', qty: 14, reorder: 50, value: const Money(2940000)),
+    stockItem(
       id: 'i5',
       name: 'BRAKE SHOE SET (2W)',
       group: 'Spares',
       unit: 'Set',
-      closingQty: 9,
-      reorderLevel: 40,
-      closingValue: withCosts ? const Money(1782000) : null,
+      qty: 9,
+      reorder: 40,
+      value: const Money(1782000),
     ),
-    const StockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', closingQty: 0),
-  ];
+    stockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', qty: 0),
+  ]);
   @override
-  Future<StockItem> item(String itemId, {required bool withCosts}) async => throw UnimplementedError();
+  Future<StockItem> item(String itemId) async => throw UnimplementedError();
   @override
-  Future<List<ItemPurchase>> purchasesOf(String itemId, {int limit = 20}) async => const [];
-  @override
-  Future<Map<String, double>> minimums(String companyId) async => const {};
+  Future<List<ItemPurchase>> purchasesOf(String itemId) async => const [];
   @override
   Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {}
 }

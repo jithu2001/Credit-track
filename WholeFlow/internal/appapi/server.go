@@ -68,6 +68,15 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}", s.handle(s.shopDetail))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/outstanding", s.handle(s.outstandingReport))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/overdue", s.handle(s.overdueReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock", s.handle(s.stockList))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}", s.handle(s.stockItem))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}/purchases", s.handle(s.stockItemPurchases))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/stock/minimum", s.handleWrite(s.setStockMinimum))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases", s.handle(s.purchasesPage))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases/months", s.handle(s.purchaseMonths))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases/{id}", s.handle(s.purchaseDetail))
+	mux.HandleFunc("GET /b/{slug}/api/v1/suppliers", s.handle(s.suppliersList))
+	mux.HandleFunc("GET /b/{slug}/api/v1/suppliers/{id}", s.handle(s.supplierDetail))
 	return mux
 }
 
@@ -123,6 +132,12 @@ func toAPIError(err error) *apiError {
 			return fail(http.StatusForbidden, "FORBIDDEN", "You don't have access to this.")
 		case "22P02":
 			return fail(http.StatusBadRequest, "INVALID_INPUT", "Invalid id.")
+		case "22023": // invalid input raised by our SQL functions: "fn_name: message"
+			msg := pg.Message
+			if _, after, ok := strings.Cut(msg, ": "); ok {
+				msg = strings.ToUpper(after[:1]) + after[1:] + "."
+			}
+			return fail(http.StatusBadRequest, "INVALID_INPUT", msg)
 		}
 	}
 	return nil
@@ -144,8 +159,18 @@ type request struct {
 // in a read-only transaction as the caller (role authenticated + their JWT
 // claims), after public.check_request() — the same checks PostgREST makes.
 func (s *Server) handle(fn func(*request) (any, error)) http.HandlerFunc {
+	return s.handleTx(fn, pgx.ReadOnly)
+}
+
+// handleWrite is handle for requests that change data (read-write transaction,
+// committed when fn succeeds). The database's own functions still decide who may.
+func (s *Server) handleWrite(fn func(*request) (any, error)) http.HandlerFunc {
+	return s.handleTx(fn, pgx.ReadWrite)
+}
+
+func (s *Server) handleTx(fn func(*request) (any, error), mode pgx.TxAccessMode) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		out, err := s.serve(r, fn)
+		out, err := s.serve(r, fn, mode)
 		if err != nil {
 			ae := toAPIError(err)
 			if ae == nil {
@@ -159,7 +184,7 @@ func (s *Server) handle(fn func(*request) (any, error)) http.HandlerFunc {
 	}
 }
 
-func (s *Server) serve(r *http.Request, fn func(*request) (any, error)) (any, error) {
+func (s *Server) serve(r *http.Request, fn func(*request) (any, error), mode pgx.TxAccessMode) (any, error) {
 	ctx := r.Context()
 	t, err := s.tenant(ctx, r.PathValue("slug"))
 	if err != nil {
@@ -179,7 +204,7 @@ func (s *Server) serve(r *http.Request, fn func(*request) (any, error)) (any, er
 	}
 	claimsJSON, _ := json.Marshal(claims)
 
-	tx, err := t.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := t.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: mode})
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +218,26 @@ func (s *Server) serve(r *http.Request, fn func(*request) (any, error)) (any, er
 	if _, err := tx.Exec(ctx, `select public.check_request()`); err != nil {
 		return nil, err
 	}
-	return fn(&request{Request: r, tenant: t, claims: claims, tx: tx, today: control.Today(s.Now())})
+	out, err := fn(&request{Request: r, tenant: t, claims: claims, tx: tx, today: control.Today(s.Now())})
+	if err != nil {
+		return nil, err
+	}
+	if mode == pgx.ReadWrite {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// readBody decodes a JSON request body (at most 1 MB) into v.
+func readBody(r *request, v any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fail(http.StatusBadRequest, "INVALID_INPUT", "The request body is not valid JSON.")
+	}
+	return nil
 }
 
 // tenant finds a business by slug (cached for a few minutes).

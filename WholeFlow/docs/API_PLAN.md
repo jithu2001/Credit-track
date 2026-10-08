@@ -26,6 +26,15 @@ sites, sort, pages of 50), `GET /shops/{id}`, `GET /reports/outstanding` and
 "no site" last, with subtotals). The app only narrows a loaded report for the
 on-screen search.
 
+Phase 5 (stock, purchases, suppliers) built: `GET /stock` (items with status,
+effective minimum, shortfall; totals; the stock alert in order), `GET
+/stock/{id}`, `GET /stock/{id}/purchases`, `PUT /stock/minimum` (the API's
+first write: read-write transaction, `set_stock_minimum()` still decides),
+`GET /purchases` (search, supplier, pages of 50), `GET /purchases/{id}`,
+`GET /purchases/months`, `GET /suppliers`, `GET /suppliers/{id}`. Purchases
+and suppliers are owner only (403 for staff). The app still searches and
+filters the loaded stock and supplier lists on screen.
+
 ## 1. Goal
 
 Today the Owner and Staff apps read tables straight from each business's

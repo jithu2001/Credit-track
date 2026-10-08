@@ -1,8 +1,8 @@
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 
-/// An item's stock status, worked out on the phone from its quantity and
-/// minimum (see [StockItem.status]), so the list, the filters and the
+/// An item's stock status, worked out on the server from its quantity and
+/// minimum (internal/appapi/stock.go), so the list, the filters and the
 /// dashboard's stock alert always agree.
 enum StockStatus {
   inStock('in_stock', 'In stock'),
@@ -30,6 +30,10 @@ class StockItem {
     this.closingQty = 0,
     this.reorderLevel = 0,
     this.minQty,
+    this.effectiveMin = 0,
+    this.status = StockStatus.inStock,
+    this.atOrBelowMinimum = false,
+    this.shortfall = 0,
     this.syncedAt,
     this.closingRate,
     this.closingValue,
@@ -37,14 +41,6 @@ class StockItem {
     this.lastPurchaseRate,
     this.lastSupplier,
   });
-
-  /// From `v_stock_items` (owner): includes cost and the latest purchase.
-  static const ownerColumns =
-      'stock_item_id,name,aliases,stock_group,unit,closing_qty,closing_rate,closing_value,reorder_level,'
-      'synced_at,last_purchase_date,last_purchase_rate,last_supplier';
-
-  /// From `stock_items` (staff): quantities only, no purchase prices.
-  static const staffColumns = 'id,name,aliases,stock_group,unit,closing_qty,reorder_level,synced_at';
 
   factory StockItem.fromJson(Map<String, dynamic> json) {
     Money? money(String key) => json[key] == null ? null : Money.parse(json[key]);
@@ -56,6 +52,11 @@ class StockItem {
       unit: json['unit'] as String?,
       closingQty: parseQty(json['closing_qty']),
       reorderLevel: parseQty(json['reorder_level']),
+      minQty: json['min_qty'] == null ? null : parseQty(json['min_qty']),
+      effectiveMin: parseQty(json['effective_min']),
+      status: StockStatus.parse(json['status']),
+      atOrBelowMinimum: json['at_or_below_minimum'] == true,
+      shortfall: parseQty(json['shortfall']),
       syncedAt: json['synced_at'] == null ? null : DateTime.tryParse(json['synced_at'] as String),
       closingRate: money('closing_rate'),
       closingValue: money('closing_value'),
@@ -83,41 +84,17 @@ class StockItem {
 
   /// The level that counts as low: the owner's minimum, else Tally's reorder
   /// level; 0 = no minimum at all.
-  double get effectiveMin => (minQty ?? 0) > 0 ? minQty! : (reorderLevel > 0 ? reorderLevel : 0);
+  final double effectiveMin;
 
   bool get hasMinimum => effectiveMin > 0;
 
+  final StockStatus status;
+
   /// The stock alert: at or below the minimum (includes out of stock).
-  bool get atOrBelowMinimum => hasMinimum && closingQty <= effectiveMin;
+  final bool atOrBelowMinimum;
 
   /// How much is needed to get back to the minimum.
-  double get shortfall => atOrBelowMinimum ? effectiveMin - closingQty : 0;
-
-  StockStatus get status => closingQty < 0
-      ? StockStatus.negative
-      : closingQty == 0
-      ? StockStatus.zero
-      : atOrBelowMinimum
-      ? StockStatus.low
-      : StockStatus.inStock;
-
-  /// The same item with the owner's minimum [min] (null or 0 = removed).
-  StockItem withMinimum(double? min) => StockItem(
-    id: id,
-    name: name,
-    aliases: aliases,
-    group: group,
-    unit: unit,
-    closingQty: closingQty,
-    reorderLevel: reorderLevel,
-    minQty: (min ?? 0) > 0 ? min : null,
-    syncedAt: syncedAt,
-    closingRate: closingRate,
-    closingValue: closingValue,
-    lastPurchaseDate: lastPurchaseDate,
-    lastPurchaseRate: lastPurchaseRate,
-    lastSupplier: lastSupplier,
-  );
+  final double shortfall;
 
   // Owner only.
   final Money? closingRate;
@@ -217,21 +194,18 @@ List<String> stockGroups(List<StockItem> items) {
   return groups;
 }
 
-/// Totals over a list of items.
+/// Totals over a company's items, worked out on the server.
 class StockSummary {
   const StockSummary({required this.items, required this.value, required this.byStatus, this.syncedAt});
 
-  factory StockSummary.of(List<StockItem> items) {
-    var value = Money.zero;
-    final byStatus = {for (final s in StockStatus.values) s: 0};
-    DateTime? synced;
-    for (final i in items) {
-      value += i.closingValue ?? Money.zero;
-      byStatus[i.status] = byStatus[i.status]! + 1;
-      final at = i.syncedAt;
-      if (at != null && (synced == null || at.isAfter(synced))) synced = at;
-    }
-    return StockSummary(items: items.length, value: value, byStatus: byStatus, syncedAt: synced);
+  factory StockSummary.fromJson(Map<String, dynamic> j) {
+    final counts = j['by_status'] is Map ? j['by_status'] as Map : const {};
+    return StockSummary(
+      items: (j['items'] as num?)?.toInt() ?? 0,
+      value: Money.parse(j['value']),
+      byStatus: {for (final s in StockStatus.values) s: (counts[s.code] as num?)?.toInt() ?? 0},
+      syncedAt: j['synced_at'] == null ? null : DateTime.tryParse(j['synced_at'] as String),
+    );
   }
 
   final int items;
@@ -242,6 +216,28 @@ class StockSummary {
 
   /// Most recent sync of any item.
   final DateTime? syncedAt;
+}
+
+/// A company's stock from `GET /api/v1/stock`: the items (by name), their
+/// totals and the stock alert.
+class StockList {
+  const StockList({required this.items, required this.summary, required this.alerts});
+
+  factory StockList.fromJson(Map<String, dynamic> j) {
+    final items = [for (final r in (j['items'] as List? ?? const []).cast<Map<String, dynamic>>()) StockItem.fromJson(r)];
+    final byId = {for (final i in items) i.id: i};
+    return StockList(
+      items: items,
+      summary: StockSummary.fromJson((j['summary'] as Map?)?.cast<String, dynamic>() ?? const {}),
+      alerts: [for (final id in (j['alerts'] as List? ?? const [])) ?byId[id]],
+    );
+  }
+
+  final List<StockItem> items;
+  final StockSummary summary;
+
+  /// Items at or below their minimum, the furthest below first.
+  final List<StockItem> alerts;
 }
 
 /// One purchase bill containing a stock item (owner), the item's lines summed.
@@ -285,16 +281,4 @@ class ItemPurchase {
   final String? unit;
   final Money rate;
   final Money amount;
-}
-
-/// Items at or below their minimum, the furthest below first (by how much of
-/// the minimum is missing), for the dashboard's stock alert.
-List<StockItem> stockAlerts(List<StockItem> items) {
-  final out = items.where((i) => i.atOrBelowMinimum).toList();
-  double missing(StockItem i) => i.shortfall / i.effectiveMin;
-  out.sort((a, b) {
-    final c = missing(b).compareTo(missing(a));
-    return c != 0 ? c : a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
-  return out;
 }

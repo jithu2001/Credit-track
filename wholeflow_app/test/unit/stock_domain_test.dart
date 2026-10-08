@@ -5,70 +5,62 @@ import 'package:wholeflow_app/features/inventory/domain/stock_item.dart';
 import 'package:wholeflow_app/features/purchases/domain/purchase.dart';
 import 'package:wholeflow_app/features/suppliers/domain/supplier.dart';
 
-StockItem item(String name, {double qty = 0, double? min, double reorder = 0, String? group, String? value}) => StockItem(
-  id: name,
-  name: name,
-  closingQty: qty,
-  minQty: min,
-  reorderLevel: reorder,
-  group: group,
-  closingValue: value == null ? null : Money.parse(value),
-);
+import '../stock_like_server.dart';
+
+StockItem item(String name, {double qty = 0, double? min, double reorder = 0, String? group, String? value}) =>
+    stockItem(id: name, qty: qty, min: min, reorder: reorder, group: group, value: value == null ? null : Money.parse(value));
 
 Supplier supplier(String name, String payable, {String? phone}) =>
     Supplier(id: name, companyId: 'c', name: name, payable: Money.parse(payable), phone: phone);
 
 void main() {
-  group('minimum stock and the stock alert', () {
-    test('the below-minimum filter matches the stock alert, out of stock included', () {
+  // Status, minimum and alert rules are the server's (internal/appapi/stock_test.go).
+  group('stock alert filter', () {
+    test('the below-minimum filter shows the items the server flags, out of stock included', () {
       final items = [item('a', qty: 0, min: 4), item('b', qty: 3, min: 8), item('c', qty: 20, min: 8), item('d', qty: 0)];
       final shown = filterStock(items, const StockFilter(belowMinimum: true)).map((i) => i.id).toSet();
-      expect(shown, stockAlerts(items).map((i) => i.id).toSet());
       expect(shown, {'a', 'b'});
       expect(const StockFilter(belowMinimum: true).isFiltered, isTrue);
     });
 
-    test('the owner\'s minimum wins over Tally\'s reorder level', () {
-      expect(item('a', qty: 8, min: 10, reorder: 5).effectiveMin, 10);
-      expect(item('a', qty: 8, reorder: 5).effectiveMin, 5, reason: 'no minimum set: Tally reorder level');
-      expect(item('a', qty: 8).hasMinimum, isFalse);
-    });
-
-    test('alert at or below the minimum, including out of stock and negative', () {
-      expect(item('a', qty: 10, min: 10).atOrBelowMinimum, isTrue, reason: 'at the minimum');
-      expect(item('a', qty: 10.5, min: 10).atOrBelowMinimum, isFalse);
-      expect(item('a', qty: 0, min: 10).atOrBelowMinimum, isTrue);
-      expect(item('a', qty: -2, min: 10).atOrBelowMinimum, isTrue);
-      expect(item('a', qty: 0).atOrBelowMinimum, isFalse, reason: 'no minimum: no alert');
-    });
-
-    test('status follows quantity and minimum', () {
-      expect(item('a', qty: 3, min: 5).status, StockStatus.low);
-      expect(item('a', qty: 30, min: 5).status, StockStatus.inStock);
-      expect(item('a', qty: 0, min: 5).status, StockStatus.zero);
-      expect(item('a', qty: -1).status, StockStatus.negative);
-      expect(item('a', qty: 3).status, StockStatus.inStock, reason: 'no minimum: not low');
-    });
-
-    test('withMinimum sets and clears; 0 counts as cleared', () {
-      final i = item('a', qty: 3, reorder: 2);
-      expect(i.withMinimum(5).minQty, 5);
-      expect(i.withMinimum(5).status, StockStatus.low);
-      expect(i.withMinimum(null).minQty, isNull);
-      expect(i.withMinimum(0).minQty, isNull);
-      expect(i.withMinimum(0).effectiveMin, 2);
-    });
-
-    test('alerts list: furthest below the minimum first', () {
-      final alerts = stockAlerts([
-        item('half', qty: 5, min: 10),
-        item('ok', qty: 50, min: 10),
-        item('empty', qty: 0, min: 4),
-        item('slightly', qty: 9, min: 10),
-        item('none', qty: 0),
-      ]);
-      expect(alerts.map((i) => i.name), ['empty', 'half', 'slightly']);
-      expect(alerts.first.shortfall, 4);
+    test('reads the server list: alerts in its order, summary as sent', () {
+      final list = StockList.fromJson({
+        'items': [
+          {
+            'stock_item_id': 'a',
+            'name': 'A',
+            'closing_qty': 0,
+            'min_qty': 4,
+            'effective_min': 4,
+            'status': 'zero',
+            'at_or_below_minimum': true,
+            'shortfall': 4,
+          },
+          {
+            'stock_item_id': 'b',
+            'name': 'B',
+            'closing_qty': 9,
+            'effective_min': 10,
+            'status': 'low',
+            'at_or_below_minimum': true,
+            'shortfall': 1,
+          },
+          {'stock_item_id': 'c', 'name': 'C', 'closing_qty': 20, 'status': 'in_stock'},
+        ],
+        'summary': {
+          'items': 3,
+          'value': '950.00',
+          'by_status': {'zero': 1, 'low': 1, 'in_stock': 1},
+          'synced_at': '2026-10-08T05:00:00Z',
+        },
+        'alerts': ['b', 'a'],
+      });
+      expect(list.alerts.map((i) => i.id), ['b', 'a']);
+      expect(list.items.first.minQty, 4);
+      expect(list.items[1].minQty, isNull, reason: 'Tally reorder level, no owner minimum');
+      expect(list.items[1].hasMinimum, isTrue);
+      expect(list.summary.value, const Money(95000));
+      expect(list.summary.byStatus[StockStatus.negative], 0);
     });
   });
 
@@ -84,7 +76,7 @@ void main() {
         'closing_rate': '1008.94',
         'closing_value': 6053.63,
         'reorder_level': 10,
-        'stock_status': 'low',
+        'status': 'in_stock',
         'synced_at': '2026-09-28T10:00:00Z',
         'last_purchase_date': '2026-09-01',
         'last_purchase_rate': '990.00',
@@ -95,13 +87,13 @@ void main() {
       expect(i.closingQty, 12.5);
       expect(i.closingRate, const Money(100894));
       expect(i.closingValue, const Money(605363));
-      expect(i.status, StockStatus.inStock, reason: '12.5 is above the reorder level of 10');
+      expect(i.status, StockStatus.inStock, reason: 'as the server sends it');
       expect(i.lastPurchaseDate, DateTime(2026, 9));
       expect(i.lastPurchaseRate, const Money(99000));
     });
 
     test('staff row from stock_items has no costs', () {
-      final i = StockItem.fromJson({'id': 'i2', 'name': 'TUBE', 'closing_qty': -2, 'stock_status': 'negative'});
+      final i = StockItem.fromJson({'id': 'i2', 'name': 'TUBE', 'closing_qty': -2, 'status': 'negative'});
       expect(i.id, 'i2');
       expect(i.closingRate, isNull);
       expect(i.closingValue, isNull);
@@ -141,12 +133,7 @@ void main() {
       expect(f.copyWith(query: 'x').status, StockStatus.low);
     });
 
-    test('summary', () {
-      final s = StockSummary.of(items);
-      expect(s.items, 3);
-      expect(s.value, const Money(95000));
-      expect(s.byStatus[StockStatus.low], 1);
-      expect(s.byStatus[StockStatus.zero], 1);
+    test('groups', () {
       expect(stockGroups(items), ['', 'Hardware', 'Parts']);
     });
   });
@@ -195,15 +182,11 @@ void main() {
       expect(p.rate, const Money(10000));
     });
 
-    test('month totals add up suppliers, newest first', () {
-      final months = monthTotalsOf([
-        {'month': '2026-08-01', 'bills': 2, 'total_amount': '100.50'},
-        {'month': '2026-09-01', 'bills': 1, 'total_amount': 10},
-        {'month': '2026-08-01', 'bills': 3, 'total_amount': '0.50'},
-      ]);
-      expect(months.map((m) => m.month), [DateTime(2026, 9), DateTime(2026, 8)]);
-      expect(months.last.bills, 5);
-      expect(months.last.total, const Money(10100));
+    test('month totals as the server sends them', () {
+      final m = MonthPurchases.fromJson({'month': '2026-08-01', 'bills': 5, 'total_amount': 101});
+      expect(m.month, DateTime(2026, 8));
+      expect(m.bills, 5);
+      expect(m.total, const Money(10100));
     });
   });
 

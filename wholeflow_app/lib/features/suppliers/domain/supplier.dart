@@ -26,10 +26,6 @@ class Supplier {
     this.syncedAt,
   });
 
-  static const columns =
-      'id,company_id,name,aliases,ledger_group,phone,phones,contact_person,email,gstin,address,address_lines,state,pincode,'
-      'opening_balance_amount,opening_balance_type,payable,synced_at';
-
   factory Supplier.fromJson(Map<String, dynamic> json) => Supplier(
     id: json['id'] as String,
     companyId: json['company_id'] as String,

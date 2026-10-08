@@ -14,9 +14,6 @@ SupabaseClient supabase(Ref ref) => throw UnimplementedError('supabaseProvider m
 @Riverpod(keepAlive: true)
 SharedPreferences sharedPreferences(Ref ref) => throw UnimplementedError('sharedPreferencesProvider must be overridden');
 
-/// Removes characters that would break a PostgREST `or=(...)` filter.
-String sanitizeSearch(String raw) => raw.replaceAll(RegExp(r'[,()*%\\"]'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
-
 /// Fetches every row of a PostgREST query in pages of [pageSize].
 Future<List<Map<String, dynamic>>> fetchAll(
   PostgrestTransformBuilder<List<Map<String, dynamic>>> Function(int from, int to) page, {

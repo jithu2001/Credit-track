@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/format.dart';
-import '../../inventory/domain/stock_item.dart';
 import '../../inventory/presentation/inventory_providers.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
@@ -233,9 +232,9 @@ class StockAlertCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(stockItemsProvider(companyId)).value;
-    if (items == null || !items.any((i) => i.hasMinimum)) return const SizedBox.shrink();
-    final alerts = stockAlerts(items);
+    final stock = ref.watch(stockListProvider(companyId)).value;
+    if (stock == null || !stock.items.any((i) => i.hasMinimum)) return const SizedBox.shrink();
+    final alerts = stock.alerts;
     final s = context.semantic;
     final (bg, fg) = alerts.isEmpty
         ? (context.colors.surfaceContainerHigh, context.colors.onSurface)

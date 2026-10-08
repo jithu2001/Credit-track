@@ -16,10 +16,6 @@ class PurchaseSummary {
     this.lineCount = 0,
   });
 
-  static const columns =
-      'id,purchase_date,supplier_id,supplier_name,voucher_number,voucher_type,supplier_bill_number,'
-      'taxable_amount,total_amount,line_count';
-
   factory PurchaseSummary.fromJson(Map<String, dynamic> json) => PurchaseSummary(
     id: json['id'] as String,
     date: parseDate(json['purchase_date'])!,
@@ -67,8 +63,6 @@ class PurchaseLine {
     this.discountPercent = 0,
     this.amount = Money.zero,
   });
-
-  static const columns = 'line_no,stock_item_id,item_name,godown,qty,actual_qty,unit,rate,discount_percent,amount';
 
   factory PurchaseLine.fromJson(Map<String, dynamic> json) => PurchaseLine(
     lineNo: (json['line_no'] as num?)?.toInt() ?? 0,
@@ -124,10 +118,6 @@ class PurchaseDetail {
     this.syncedAt,
   });
 
-  static const columns =
-      '${PurchaseSummary.columns},narration,tax_and_other_amount,total_qty,ledger_entries,synced_at,'
-      'purchase_lines(${PurchaseLine.columns})';
-
   factory PurchaseDetail.fromJson(Map<String, dynamic> json) {
     final lines = [
       for (final l in (json['purchase_lines'] as List? ?? const [])) PurchaseLine.fromJson(l as Map<String, dynamic>),
@@ -158,24 +148,16 @@ class PurchaseDetail {
 class MonthPurchases {
   const MonthPurchases({required this.month, required this.bills, required this.total});
 
+  /// A row of `GET /api/v1/purchases/months` (summed per month on the server).
+  factory MonthPurchases.fromJson(Map<String, dynamic> j) => MonthPurchases(
+    month: parseDate(j['month'])!,
+    bills: (j['bills'] as num?)?.toInt() ?? 0,
+    total: Money.parse(j['total_amount']),
+  );
+
   final DateTime month;
   final int bills;
   final Money total;
-}
-
-/// Sums `v_purchases_by_supplier_month` rows (one per supplier and month)
-/// into one total per month, newest first.
-List<MonthPurchases> monthTotalsOf(List<Map<String, dynamic>> rows) {
-  final bills = <DateTime, int>{};
-  final totals = <DateTime, Money>{};
-  for (final r in rows) {
-    final month = parseDate(r['month']);
-    if (month == null) continue;
-    bills[month] = (bills[month] ?? 0) + ((r['bills'] as num?)?.toInt() ?? 0);
-    totals[month] = (totals[month] ?? Money.zero) + Money.parse(r['total_amount']);
-  }
-  final months = bills.keys.toList()..sort((a, b) => b.compareTo(a));
-  return [for (final m in months) MonthPurchases(month: m, bills: bills[m]!, total: totals[m]!)];
 }
 
 /// Which bills a purchase list shows. A record, so equal queries share a provider.

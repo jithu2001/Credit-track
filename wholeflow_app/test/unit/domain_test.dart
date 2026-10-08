@@ -1,7 +1,6 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wholeflow_app/core/providers.dart';
 import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/core/phone.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
@@ -309,10 +308,5 @@ void main() {
     expect(toInternationalIndian('4862'), isNull);
     expect(whatsAppUri('9847012345').toString(), 'https://wa.me/919847012345');
     expect(telUri('9847012345').toString(), 'tel:+919847012345');
-  });
-
-  test('search is made safe for PostgREST or-filters', () {
-    expect(sanitizeSearch(' prince, (tyres)* '), 'prince tyres');
-    expect(sanitizeSearch('98%47'), '98 47');
   });
 }

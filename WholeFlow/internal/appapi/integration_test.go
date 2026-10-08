@@ -363,6 +363,128 @@ func TestIntegration(t *testing.T) {
 		eqv(t, shop["bills"], nil, "no bills sent")
 	})
 
+	const (
+		item1 = "f0000000-0000-0000-0000-00000000a001"
+		item2 = "f0000000-0000-0000-0000-00000000a002"
+		supA  = "f0000000-0000-0000-0000-00000000b001"
+		purA  = "f0000000-0000-0000-0000-00000000c001"
+	)
+	mustExec(t, db, `insert into public.stock_items (id, business_id, company_id, tally_item_id, name, unit, closing_qty, closing_value,
+			reorder_level, synced_at) values
+		($1, $3, $4, 'i1', 'TYRE', 'Nos', 3, 300, 0, now()), ($2, $3, $4, 'i2', 'TUBE', 'Nos', 0, 0, 5, now())`, item1, item2, bizA, companA)
+	mustExec(t, db, `insert into public.suppliers (id, business_id, company_id, tally_ledger_id, name, payable, synced_at)
+		values ($1, $2, $3, 's1', 'Supplier One', 2500, now())`, supA, bizA, companA)
+	mustExec(t, db, `insert into public.purchases (id, business_id, company_id, tally_voucher_id, purchase_date, supplier_id, supplier_name,
+			voucher_number, total_amount, line_count, synced_at)
+		values ($1, $2, $3, 'p1', '2026-07-05', $4, 'Supplier One', 'PB/1', 1180, 1, now())`, purA, bizA, companA, supA)
+	mustExec(t, db, `insert into public.purchase_lines (business_id, company_id, purchase_id, line_no, stock_item_id, item_name, qty, unit, rate, amount)
+		values ($1, $2, $3, 1, $4, 'TYRE', 10, 'Nos', 100, 1000)`, bizA, companA, purA, item1)
+	put := func(path, tok, body string) (int, map[string]any) {
+		req, _ := http.NewRequest(http.MethodPut, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+
+	t.Run("stock with minimums, status and the alert", func(t *testing.T) {
+		code, body := put("/b/apitest/api/v1/stock/minimum", token(ownerA), `{"company":"`+companA+`","items":["`+item1+`"],"min":4}`)
+		if code != 200 {
+			t.Fatalf("set minimum: %d %v", code, body)
+		}
+		eqv(t, body["changed"], 1.0, "changed")
+		code, body = get("/b/apitest/api/v1/stock?company="+companA, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		items := body["items"].([]any)
+		eqv(t, len(items), 2, "items")
+		tube, tyre := items[0].(map[string]any), items[1].(map[string]any) // by name
+		eqv(t, tyre["min_qty"], 4.0, "owner's minimum")
+		eqv(t, tyre["status"], "low", "3 of 4 is low")
+		eqv(t, tyre["closing_value"], "300.00", "owner sees value")
+		eqv(t, tube["effective_min"], 5.0, "Tally reorder level")
+		eqv(t, tube["status"], "zero", "out of stock")
+		alerts := body["alerts"].([]any)
+		eqv(t, len(alerts), 2, "alerts")
+		eqv(t, alerts[0], item2, "furthest below first")
+		sum := body["summary"].(map[string]any)
+		eqv(t, sum["value"], "300.00", "stock value")
+		eqv(t, sum["by_status"].(map[string]any)["low"], 1.0, "low count")
+
+		code, body = get("/b/apitest/api/v1/stock/"+item1, token(ownerA))
+		eqv(t, code, 200, "one item")
+		eqv(t, body["status"], "low", "item status")
+		code, body = get("/b/apitest/api/v1/stock/"+item1+"/purchases", token(ownerA))
+		eqv(t, code, 200, "item purchases")
+		bills := body["purchases"].([]any)
+		eqv(t, len(bills), 1, "item bills")
+		eqv(t, len(bills[0].(map[string]any)["purchase_lines"].([]any)), 1, "item lines")
+
+		// Staff (assigned above): quantities and alerts, no costs, can't set minimums or see purchases.
+		code, body = get("/b/apitest/api/v1/stock?company="+companA, token(staffA))
+		eqv(t, code, 200, "staff stock")
+		staffTyre := body["items"].([]any)[1].(map[string]any)
+		eqv(t, staffTyre["status"], "low", "staff see the alert status")
+		_, hasValue := staffTyre["closing_value"]
+		eqv(t, hasValue, false, "no value for staff")
+		code, body = put("/b/apitest/api/v1/stock/minimum", token(staffA), `{"company":"`+companA+`","items":["`+item1+`"],"min":9}`)
+		eqv(t, code, 403, "staff can't set minimum")
+		eqv(t, body["error"].(map[string]any)["code"], "NOT_OWNER", "code")
+		code, _ = get("/b/apitest/api/v1/stock/"+item1+"/purchases", token(staffA))
+		eqv(t, code, 403, "staff can't see purchases")
+		code, body = put("/b/apitest/api/v1/stock/minimum", token(ownerA), `{"company":"`+companA+`","items":["`+item1+`"],"min":-1}`)
+		eqv(t, code, 400, "negative minimum")
+		code, _ = put("/b/apitest/api/v1/stock/minimum", token(ownerA), `{"company":"`+companA+`","items":[]}`)
+		eqv(t, code, 400, "no items")
+		code, _ = put("/b/apitest/api/v1/stock/minimum", token(ownerA), `not json`)
+		eqv(t, code, 400, "bad body")
+		code, _ = put("/b/apitest/api/v1/stock/minimum", token(ownerA), `{"company":"`+companA+`","items":["`+item1+`"],"min":null}`)
+		eqv(t, code, 200, "remove minimum")
+		_, body = get("/b/apitest/api/v1/stock/"+item1, token(ownerA))
+		eqv(t, body["min_qty"], nil, "removed")
+		eqv(t, body["status"], "in_stock", "no minimum, in stock")
+	})
+
+	t.Run("purchases and suppliers", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/purchases?company="+companA, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		bills := body["purchases"].([]any)
+		eqv(t, len(bills), 1, "bills")
+		eqv(t, bills[0].(map[string]any)["voucher_number"], "PB/1", "voucher")
+		_, body = get("/b/apitest/api/v1/purchases?company="+companA+"&q=pb/1", token(ownerA))
+		eqv(t, len(body["purchases"].([]any)), 1, "search")
+		_, body = get("/b/apitest/api/v1/purchases?company="+companA+"&q=nothing", token(ownerA))
+		eqv(t, len(body["purchases"].([]any)), 0, "search miss")
+		code, body = get("/b/apitest/api/v1/purchases/"+purA, token(ownerA))
+		eqv(t, code, 200, "bill detail")
+		eqv(t, len(body["purchase_lines"].([]any)), 1, "lines")
+		_, body = get("/b/apitest/api/v1/purchases/months?company="+companA+"&from=2026-01-01", token(ownerA))
+		months := body["months"].([]any)
+		eqv(t, len(months), 1, "months")
+		eqv(t, months[0].(map[string]any)["month"], "2026-07-01", "month")
+		eqv(t, months[0].(map[string]any)["bills"], 1.0, "bills in month")
+		code, body = get("/b/apitest/api/v1/suppliers?company="+companA, token(ownerA))
+		eqv(t, code, 200, "suppliers")
+		eqv(t, len(body["suppliers"].([]any)), 1, "supplier count")
+		code, body = get("/b/apitest/api/v1/suppliers/"+supA, token(ownerA))
+		eqv(t, code, 200, "supplier")
+		eqv(t, body["payable"], 2500.0, "payable")
+		for _, path := range []string{"/purchases?company=" + companA, "/purchases/" + purA, "/suppliers?company=" + companA} {
+			code, _ = get("/b/apitest/api/v1"+path, token(staffA))
+			eqv(t, code, 403, "staff: "+path)
+		}
+		code, _ = get("/b/apitest/api/v1/purchases/"+purA, token(ownerB))
+		eqv(t, code, 404, "other business")
+	})
+
 	t.Run("a paused business gets 402", func(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
 		defer mustExec(t, db, `delete from public.service_status`)

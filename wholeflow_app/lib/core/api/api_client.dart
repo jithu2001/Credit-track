@@ -37,7 +37,12 @@ class ApiClient {
 
   static const timeout = Duration(seconds: 30);
 
-  Future<Map<String, dynamic>> get(String path, [Map<String, String>? query]) async {
+  Future<Map<String, dynamic>> get(String path, [Map<String, String>? query]) => _send('GET', path, query: query);
+
+  /// Changes data; [body] is sent as JSON.
+  Future<Map<String, dynamic>> put(String path, Object body) => _send('PUT', path, body: body);
+
+  Future<Map<String, dynamic>> _send(String method, String path, {Map<String, String>? query, Object? body}) async {
     final base = Uri.parse(baseUrl);
     final uri = base.replace(
       path: '${base.path.replaceAll(RegExp(r'/+$'), '')}/api/v1/$path',
@@ -45,15 +50,20 @@ class ApiClient {
     );
     final t = await token();
     if (t == null) throw const ApiException(401, 'UNAUTHENTICATED', 'Sign in again.');
-    final res = await _http.get(uri, headers: {'Authorization': 'Bearer $t', 'Accept': 'application/json'}).timeout(timeout);
-    Object? body;
-    try {
-      body = jsonDecode(utf8.decode(res.bodyBytes));
-    } catch (_) {
-      body = null;
+    final req = http.Request(method, uri)..headers.addAll({'Authorization': 'Bearer $t', 'Accept': 'application/json'});
+    if (body != null) {
+      req.headers['Content-Type'] = 'application/json';
+      req.body = jsonEncode(body);
     }
-    if (res.statusCode == 200 && body is Map<String, dynamic>) return body;
-    final e = body is Map && body['error'] is Map ? body['error'] as Map : const {};
+    final res = await http.Response.fromStream(await _http.send(req).timeout(timeout)).timeout(timeout);
+    Object? answer;
+    try {
+      answer = jsonDecode(utf8.decode(res.bodyBytes));
+    } catch (_) {
+      answer = null;
+    }
+    if (res.statusCode == 200 && answer is Map<String, dynamic>) return answer;
+    final e = answer is Map && answer['error'] is Map ? answer['error'] as Map : const {};
     throw ApiException(
       res.statusCode,
       (e['code'] as String?) ?? 'HTTP_${res.statusCode}',
