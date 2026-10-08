@@ -13,25 +13,16 @@ part of 'outstanding_views.dart';
 final outstandingReportProvider = OutstandingReportFamily._();
 
 final class OutstandingReportProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<OutstandingReport>,
-          OutstandingReport,
-          FutureOr<OutstandingReport>
-        >
-    with
-        $FutureModifier<OutstandingReport>,
-        $FutureProvider<OutstandingReport> {
-  OutstandingReportProvider._({
-    required OutstandingReportFamily super.from,
-    required Company super.argument,
-  }) : super(
-         retry: null,
-         name: r'outstandingReportProvider',
-         isAutoDispose: true,
-         dependencies: null,
-         $allTransitiveDependencies: null,
-       );
+    extends $FunctionalProvider<AsyncValue<OutstandingReport>, OutstandingReport, FutureOr<OutstandingReport>>
+    with $FutureModifier<OutstandingReport>, $FutureProvider<OutstandingReport> {
+  OutstandingReportProvider._({required OutstandingReportFamily super.from, required Company super.argument})
+    : super(
+        retry: null,
+        name: r'outstandingReportProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$outstandingReportHash();
@@ -45,9 +36,7 @@ final class OutstandingReportProvider
 
   @$internal
   @override
-  $FutureProviderElement<OutstandingReport> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
+  $FutureProviderElement<OutstandingReport> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<OutstandingReport> create(Ref ref) {
@@ -66,10 +55,9 @@ final class OutstandingReportProvider
   }
 }
 
-String _$outstandingReportHash() => r'd246a36b7dfc3451cc1cad6c465a0c9062e6abfb';
+String _$outstandingReportHash() => r'f403744f04be1ef02408487c8baa5e559f0be9b0';
 
-final class OutstandingReportFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<OutstandingReport>, Company> {
+final class OutstandingReportFamily extends $Family with $FunctionalFamilyOverride<FutureOr<OutstandingReport>, Company> {
   OutstandingReportFamily._()
     : super(
         retry: null,
@@ -79,39 +67,25 @@ final class OutstandingReportFamily extends $Family
         isAutoDispose: true,
       );
 
-  OutstandingReportProvider call(Company company) =>
-      OutstandingReportProvider._(argument: company, from: this);
+  OutstandingReportProvider call(Company company) => OutstandingReportProvider._(argument: company, from: this);
 
   @override
   String toString() => r'outstandingReportProvider';
 }
 
-/// Shops past the credit period; the period is shared with Analytics.
-
 @ProviderFor(overdueReport)
 final overdueReportProvider = OverdueReportFamily._();
 
-/// Shops past the credit period; the period is shared with Analytics.
-
-final class OverdueReportProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<OverdueReport>,
-          OverdueReport,
-          FutureOr<OverdueReport>
-        >
+final class OverdueReportProvider extends $FunctionalProvider<AsyncValue<OverdueReport>, OverdueReport, FutureOr<OverdueReport>>
     with $FutureModifier<OverdueReport>, $FutureProvider<OverdueReport> {
-  /// Shops past the credit period; the period is shared with Analytics.
-  OverdueReportProvider._({
-    required OverdueReportFamily super.from,
-    required Company super.argument,
-  }) : super(
-         retry: null,
-         name: r'overdueReportProvider',
-         isAutoDispose: true,
-         dependencies: null,
-         $allTransitiveDependencies: null,
-       );
+  OverdueReportProvider._({required OverdueReportFamily super.from, required Company super.argument})
+    : super(
+        retry: null,
+        name: r'overdueReportProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$overdueReportHash();
@@ -125,9 +99,7 @@ final class OverdueReportProvider
 
   @$internal
   @override
-  $FutureProviderElement<OverdueReport> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
+  $FutureProviderElement<OverdueReport> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<OverdueReport> create(Ref ref) {
@@ -146,12 +118,9 @@ final class OverdueReportProvider
   }
 }
 
-String _$overdueReportHash() => r'41c8a58fe216554620a25367c9094493d222119b';
+String _$overdueReportHash() => r'ab7de396bdf197991058464661af9a338fac9c0b';
 
-/// Shops past the credit period; the period is shared with Analytics.
-
-final class OverdueReportFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<OverdueReport>, Company> {
+final class OverdueReportFamily extends $Family with $FunctionalFamilyOverride<FutureOr<OverdueReport>, Company> {
   OverdueReportFamily._()
     : super(
         retry: null,
@@ -161,10 +130,7 @@ final class OverdueReportFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// Shops past the credit period; the period is shared with Analytics.
-
-  OverdueReportProvider call(Company company) =>
-      OverdueReportProvider._(argument: company, from: this);
+  OverdueReportProvider call(Company company) => OverdueReportProvider._(argument: company, from: this);
 
   @override
   String toString() => r'overdueReportProvider';
@@ -176,8 +142,7 @@ final class OverdueReportFamily extends $Family
 final overdueSortControllerProvider = OverdueSortControllerProvider._();
 
 /// How Shops → Overdue orders its shops. A view setting only: kept in memory.
-final class OverdueSortControllerProvider
-    extends $NotifierProvider<OverdueSortController, OverdueSort> {
+final class OverdueSortControllerProvider extends $NotifierProvider<OverdueSortController, OverdueSort> {
   /// How Shops → Overdue orders its shops. A view setting only: kept in memory.
   OverdueSortControllerProvider._()
     : super(
@@ -199,15 +164,11 @@ final class OverdueSortControllerProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(OverdueSort value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<OverdueSort>(value),
-    );
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<OverdueSort>(value));
   }
 }
 
-String _$overdueSortControllerHash() =>
-    r'72eed1e63267063eda85f92143d486031b011ac0';
+String _$overdueSortControllerHash() => r'72eed1e63267063eda85f92143d486031b011ac0';
 
 /// How Shops → Overdue orders its shops. A view setting only: kept in memory.
 
@@ -217,14 +178,7 @@ abstract class _$OverdueSortController extends $Notifier<OverdueSort> {
   @override
   WhenComplete runBuild() {
     final ref = this.ref as $Ref<OverdueSort, OverdueSort>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<OverdueSort, OverdueSort>,
-              OverdueSort,
-              Object?,
-              Object?
-            >;
+    final element = ref.element as $ClassProviderElement<AnyNotifier<OverdueSort, OverdueSort>, OverdueSort, Object?, Object?>;
     return element.handleCreate(ref, build);
   }
 }

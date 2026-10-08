@@ -20,6 +20,12 @@ company totals, sync state, this month's sales (null for staff without
 transaction access) and the top 10 dues in one call, instead of four requests
 plus every sales row of the month.
 
+Phase 4 (shops and reports) built: `GET /shops` (search, balance filter,
+sites, sort, pages of 50), `GET /shops/{id}`, `GET /reports/outstanding` and
+`GET /reports/overdue` (ageing by `overdue_shops()`, grouped by site A–Z,
+"no site" last, with subtotals). The app only narrows a loaded report for the
+on-screen search.
+
 ## 1. Goal
 
 Today the Owner and Staff apps read tables straight from each business's

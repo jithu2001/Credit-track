@@ -3,7 +3,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/errors/app_failure.dart';
 import '../../../core/providers.dart';
-import '../../shops/data/shop_repository.dart' show sanitizeSearch;
 import '../domain/purchase.dart';
 
 /// Purchase bills. RLS returns them to the owner only.

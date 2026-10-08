@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
+import 'package:wholeflow_app/features/outstanding/domain/outstanding_report.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
 import 'package:wholeflow_app/features/analytics/data/analytics_repository.dart';
 import 'package:wholeflow_app/features/analytics/domain/payment_analysis.dart';
@@ -135,9 +136,16 @@ class FakeCompanyRepository implements CompanyRepository {
 
 /// Returns canned pages; [pending] keeps the first page loading forever.
 class FakeShopRepository implements ShopRepository {
-  FakeShopRepository({this.shops = const [], this.error, this.pending = false, this.detailShop});
+  FakeShopRepository({
+    this.shops = const [],
+    this.error,
+    this.pending = false,
+    this.detailShop,
+    this.companyName = 'JMJ Marketing',
+  });
 
   final List<ShopSummary> shops;
+  final String companyName;
   final Object? error;
   final bool pending;
   final ShopDetail? detailShop;
@@ -154,7 +162,33 @@ class FakeShopRepository implements ShopRepository {
   @override
   Future<ShopDetail> detail(String shopId) async => detailShop!;
   @override
-  Future<List<ShopSummary>> outstanding(String companyId) async => shops;
+  Future<OutstandingReport> outstandingReport(String companyId) async {
+    final owing = [...shops.where((s) => s.receivable.isPositive)]..sort((a, b) => b.receivable.compareTo(a.receivable));
+    final groups = [
+      for (final (id, name, list) in groupLikeServer(owing, (s) => s.siteId, (s) => s.siteName))
+        SiteGroup(id, name, list, list.fold(Money.zero, (t, s) => t + s.receivable)),
+    ];
+    return OutstandingReport(
+      companyName: companyName,
+      generatedAt: DateTime.now(),
+      groups: groups,
+      total: groups.fold(Money.zero, (t, g) => t + g.subtotal),
+    );
+  }
+}
+
+/// Groups like the app API's reports: sites A–Z by name, shops in no site last,
+/// keeping the order of [items] inside each site.
+List<(String?, String, List<T>)> groupLikeServer<T>(Iterable<T> items, String? Function(T) siteId, String? Function(T) siteName) {
+  final byId = <String?, List<T>>{};
+  final names = <String?, String>{};
+  for (final item in items) {
+    byId.putIfAbsent(siteId(item), () => []).add(item);
+    names[siteId(item)] = siteLabel(siteId(item) == null ? null : siteName(item));
+  }
+  final ids = byId.keys.toList()
+    ..sort((a, b) => a == null ? 1 : (b == null ? -1 : names[a]!.toLowerCase().compareTo(names[b]!.toLowerCase())));
+  return [for (final id in ids) (id, names[id]!, byId[id]!)];
 }
 
 /// Sites in memory; records what the editor saves.
@@ -279,15 +313,31 @@ class FakeShopLocationRepository implements ShopLocationRepository {
 
 /// Returns [shops] for every credit period and records the periods asked for.
 class FakeOverdueRepository implements OverdueRepository {
-  FakeOverdueRepository([this.shops = const []]);
+  FakeOverdueRepository([this.shops = const [], this.companyName = 'JMJ Marketing']);
 
   final List<OverdueShop> shops;
+  final String companyName;
   final List<int> requestedDays = [];
 
   @override
-  Future<List<OverdueShop>> overdue(String companyId, {required int creditDays, required DateTime today}) async {
+  Future<OverdueReport> report(String companyId, {required int creditDays}) async {
     requestedDays.add(creditDays);
-    return shops;
+    final late = [...shops.where((s) => s.overdue.isPositive)]
+      ..sort((a, b) {
+        final c = b.overdue.compareTo(a.overdue);
+        return c != 0 ? c : b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
+      });
+    final groups = [
+      for (final (id, name, list) in groupLikeServer(late, (s) => s.siteId, (s) => s.siteName))
+        OverdueSiteGroup(id, name, list, list.fold(Money.zero, (t, s) => t + s.overdue)),
+    ];
+    return OverdueReport(
+      companyName: companyName,
+      creditDays: creditDays,
+      generatedAt: DateTime.now(),
+      groups: groups,
+      total: groups.fold(Money.zero, (t, g) => t + g.subtotal),
+    );
   }
 }
 

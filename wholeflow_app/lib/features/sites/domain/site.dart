@@ -18,25 +18,6 @@ class Site {
 /// "Town" for a site name; shops in no site read "No site".
 String siteLabel(String? name) => (name == null || name.trim().isEmpty) ? 'No site' : name.trim();
 
-/// Groups [items] by site id: (site id, label, items) with sites A–Z and the
-/// items in no site last. Keyed by id, so a site called "No site" stays apart.
-List<(String?, String, List<T>)> groupBySite<T>(Iterable<T> items, String? Function(T) siteId, String? Function(T) siteName) {
-  final byId = <String?, List<T>>{};
-  final names = <String?, String>{};
-  for (final item in items) {
-    final id = siteId(item);
-    byId.putIfAbsent(id, () => []).add(item);
-    names[id] = id == null ? siteLabel(null) : siteLabel(siteName(item));
-  }
-  final ids = byId.keys.toList()
-    ..sort((a, b) {
-      if (a == null) return 1;
-      if (b == null) return -1;
-      return names[a]!.toLowerCase().compareTo(names[b]!.toLowerCase());
-    });
-  return [for (final id in ids) (id, names[id]!, byId[id]!)];
-}
-
 /// One row of `site_report()`: a site's shops and money for a period. The
 /// row with a null [siteId] is the shops in no site. Sales, returns and
 /// collections are null when the caller may not see transactions.

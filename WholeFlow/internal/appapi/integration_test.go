@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,6 +280,87 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 404, "another business")
 		code, _ = get("/b/apitest/api/v1/dashboard?company="+companA+"&month=June", token(ownerA))
 		eqv(t, code, 400, "bad month")
+	})
+
+	t.Run("shops list: filters, search, sites, sort", func(t *testing.T) {
+		list := func(query string) []string {
+			t.Helper()
+			code, body := get("/b/apitest/api/v1/shops?company="+companA+query, token(ownerA))
+			if code != 200 {
+				t.Fatalf("%s: status %d: %v", query, code, body)
+			}
+			var names []string
+			for _, s := range body["shops"].([]any) {
+				names = append(names, s.(map[string]any)["name"].(string))
+			}
+			return names
+		}
+		join := func(n []string) string { return strings.Join(n, ",") }
+		eqv(t, join(list("")), "Alpha Stores,Beta Traders", "default: biggest balance first")
+		eqv(t, join(list("&sort=balance_asc")), "Beta Traders,Alpha Stores", "low to high")
+		eqv(t, join(list("&balance=owes")), "Alpha Stores", "owes")
+		eqv(t, join(list("&balance=credit")), "Beta Traders", "credit")
+		eqv(t, join(list("&balance=settled")), "", "settled")
+		eqv(t, join(list("&q=beta")), "Beta Traders", "search by name")
+		eqv(t, join(list("&q=980000")), "Alpha Stores", "search by phone")
+		eqv(t, join(list("&q=%25")), "", "% is matched literally")
+		eqv(t, join(list("&sites="+siteA)), "Alpha Stores", "one site")
+		eqv(t, join(list("&sites=no-site")), "Beta Traders", "no site")
+		eqv(t, join(list("&sites="+siteA+",no-site")), "Alpha Stores,Beta Traders", "site or none")
+		eqv(t, join(list("&page=1")), "", "second page empty")
+		code, _ := get("/b/apitest/api/v1/shops?company="+companA+"&balance=rich", token(ownerA))
+		eqv(t, code, 400, "bad balance filter")
+		code, body := get("/b/apitest/api/v1/shops?company="+companA, token(ownerB))
+		eqv(t, code, 200, "other business")
+		eqv(t, len(body["shops"].([]any)), 0, "other business sees no shops")
+	})
+
+	t.Run("shop detail", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/shops/"+shopA1, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["name"], "Alpha Stores", "name")
+		eqv(t, body["opening_balance_amount"], "1000.00", "opening")
+		eqv(t, body["opening_balance_type"], "DR", "opening side")
+		eqv(t, body["site_name"], "Town", "site")
+		eqv(t, len(body["phones"].([]any)), 0, "phones is a list")
+		code, _ = get("/b/apitest/api/v1/shops/"+shopA1, token(ownerB))
+		eqv(t, code, 404, "other business")
+	})
+
+	t.Run("outstanding report grouped by site", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/reports/outstanding?company="+companA, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["company_name"], "API Co", "company")
+		eqv(t, body["total"], "1100.00", "total")
+		groups := body["groups"].([]any)
+		eqv(t, len(groups), 1, "only sites with dues")
+		eqv(t, groups[0].(map[string]any)["site_name"], "Town", "site")
+		code, _ = get("/b/apitest/api/v1/reports/outstanding?company="+companA, token(ownerB))
+		eqv(t, code, 404, "other business")
+	})
+
+	t.Run("overdue report", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/reports/overdue?company="+companA, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["total"], "1100.00", "overdue at 30 days")
+		shop := body["groups"].([]any)[0].(map[string]any)["shops"].([]any)[0].(map[string]any)
+		eqv(t, shop["max_days_overdue"], 50.0, "days")
+		eqv(t, shop["bills_visible"], true, "owner sees bills")
+		eqv(t, len(shop["bills"].([]any)), 2, "overdue bills")
+		_, body = get("/b/apitest/api/v1/reports/overdue?company="+companA+"&credit_days=60", token(ownerA))
+		eqv(t, body["total"], "300.00", "overdue at 60 days")
+		// Staff without transaction access: amounts yes, bills no.
+		code, body = get("/b/apitest/api/v1/reports/overdue?company="+companA, token(staffA))
+		eqv(t, code, 200, "staff")
+		shop = body["groups"].([]any)[0].(map[string]any)["shops"].([]any)[0].(map[string]any)
+		eqv(t, shop["bills_visible"], false, "staff bills hidden")
+		eqv(t, shop["bills"], nil, "no bills sent")
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

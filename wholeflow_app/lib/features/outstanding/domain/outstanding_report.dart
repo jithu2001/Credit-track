@@ -15,9 +15,22 @@ class SiteGroup {
   final Money subtotal;
 }
 
-/// Shops that owe the business, grouped by site with subtotals.
+/// Shops that owe the business, grouped by site with subtotals
+/// (`GET /api/v1/reports/outstanding`, grouped on the server).
 class OutstandingReport {
   const OutstandingReport({required this.companyName, required this.generatedAt, required this.groups, required this.total});
+
+  factory OutstandingReport.fromJson(Map<String, dynamic> j) => OutstandingReport(
+    companyName: (j['company_name'] as String?) ?? '',
+    generatedAt: DateTime.parse(j['generated_at'] as String).toLocal(),
+    groups: [
+      for (final g in (j['groups'] as List? ?? const []).cast<Map<String, dynamic>>())
+        SiteGroup(g['site_id'] as String?, siteLabel(g['site_name'] as String?), [
+          for (final s in (g['shops'] as List).cast<Map<String, dynamic>>()) ShopSummary.fromJson(s),
+        ], Money.parse(g['subtotal'])),
+    ],
+    total: Money.parse(j['total']),
+  );
 
   final String companyName;
   final DateTime generatedAt;
@@ -27,24 +40,21 @@ class OutstandingReport {
   final Money total;
 
   int get shopCount => groups.fold(0, (n, g) => n + g.shops.length);
-}
 
-OutstandingReport buildOutstandingReport({
-  required String companyName,
-  required List<ShopSummary> shops,
-  required DateTime generatedAt,
-}) {
-  final groups = [
-    for (final (id, name, list) in groupBySite(shops.where((s) => s.receivable.isPositive), (s) => s.siteId, (s) => s.siteName))
-      SiteGroup(
-        id,
-        name,
-        list..sort((a, b) => b.receivable.compareTo(a.receivable)),
-        list.fold(Money.zero, (sum, s) => sum + s.receivable),
-      ),
-  ];
-  final total = groups.fold(Money.zero, (sum, g) => sum + g.subtotal);
-  return OutstandingReport(companyName: companyName, generatedAt: generatedAt, groups: groups, total: total);
+  /// Only the shops passing [keep] (the on-screen search), with totals recomputed.
+  OutstandingReport narrowed(bool Function(ShopSummary) keep) {
+    final kept = [
+      for (final g in groups)
+        if (g.shops.where(keep).toList() case final shops when shops.isNotEmpty)
+          SiteGroup(g.siteId, g.site, shops, shops.fold(Money.zero, (sum, s) => sum + s.receivable)),
+    ];
+    return OutstandingReport(
+      companyName: companyName,
+      generatedAt: generatedAt,
+      groups: kept,
+      total: kept.fold(Money.zero, (sum, g) => sum + g.subtotal),
+    );
+  }
 }
 
 /// Plain-text summary for the share sheet (WhatsApp friendly).

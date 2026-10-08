@@ -27,7 +27,6 @@ abstract class ShopSummary with _$ShopSummary {
   factory ShopSummary.fromJson(Map<String, dynamic> json) => _$ShopSummaryFromJson(json);
 
   static const shopColumns = 'id,name,area,phone,receivable,site_id,sites(name)';
-  static const viewColumns = 'shop_id,name,area,phone,receivable,site_id,site_name';
 }
 
 /// Everything the shop detail screen shows.
@@ -59,10 +58,6 @@ abstract class ShopDetail with _$ShopDetail {
   }) = _ShopDetail;
 
   factory ShopDetail.fromJson(Map<String, dynamic> json) => _$ShopDetailFromJson(json);
-
-  static const columns =
-      'id,company_id,name,area,phone,phones,phone_source,contact_person,email,gstin,address,'
-      'address_lines,state,pincode,opening_balance_amount,opening_balance_type,receivable,synced_at,site_id,sites(name)';
 
   /// Signed like `receivable`: Dr opening balance is positive.
   Money get openingBalance => openingBalanceType == 'CR' ? -openingBalanceAmount.abs() : openingBalanceAmount.abs();

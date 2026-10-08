@@ -12,13 +12,7 @@ part of 'overdue_repository.dart';
 @ProviderFor(overdueRepository)
 final overdueRepositoryProvider = OverdueRepositoryProvider._();
 
-final class OverdueRepositoryProvider
-    extends
-        $FunctionalProvider<
-          OverdueRepository,
-          OverdueRepository,
-          OverdueRepository
-        >
+final class OverdueRepositoryProvider extends $FunctionalProvider<OverdueRepository, OverdueRepository, OverdueRepository>
     with $Provider<OverdueRepository> {
   OverdueRepositoryProvider._()
     : super(
@@ -36,9 +30,7 @@ final class OverdueRepositoryProvider
 
   @$internal
   @override
-  $ProviderElement<OverdueRepository> $createElement(
-    $ProviderPointer pointer,
-  ) => $ProviderElement(pointer);
+  $ProviderElement<OverdueRepository> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
 
   @override
   OverdueRepository create(Ref ref) {
@@ -47,11 +39,8 @@ final class OverdueRepositoryProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(OverdueRepository value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<OverdueRepository>(value),
-    );
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<OverdueRepository>(value));
   }
 }
 
-String _$overdueRepositoryHash() => r'9cde463f877ff8a9573e3620bddfa04054f99561';
+String _$overdueRepositoryHash() => r'0f433a5ce55b533aef2ac14279407ca798ef044e';

@@ -354,6 +354,7 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     ),
     shopRepositoryProvider.overrideWithValue(
       FakeShopRepository(
+        companyName: 'Periyar Traders (FY 2026-27)',
         shops: _shops,
         detailShop: const ShopDetail(
           id: 's1',
@@ -366,7 +367,7 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     ),
     dashboardRepositoryProvider.overrideWithValue(_Dashboard()),
     analyticsRepositoryProvider.overrideWithValue(_Analytics()),
-    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops)),
+    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops, 'Periyar Traders (FY 2026-27)')),
     siteRepositoryProvider.overrideWithValue(
       FakeSiteRepository(
         sitesList: _sites,

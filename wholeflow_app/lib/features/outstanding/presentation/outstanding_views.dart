@@ -25,19 +25,12 @@ import '../domain/overdue_report.dart';
 part 'outstanding_views.g.dart';
 
 @riverpod
-Future<OutstandingReport> outstandingReport(Ref ref, Company company) async {
-  final shops = await ref.watch(shopRepositoryProvider).outstanding(company.id);
-  return buildOutstandingReport(companyName: company.companyName, shops: shops, generatedAt: DateTime.now());
-}
+Future<OutstandingReport> outstandingReport(Ref ref, Company company) =>
+    ref.watch(shopRepositoryProvider).outstandingReport(company.id);
 
-/// Shops past the credit period; the period is shared with Analytics.
 @riverpod
-Future<OverdueReport> overdueReport(Ref ref, Company company) async {
-  final days = ref.watch(creditDaysProvider);
-  final now = DateTime.now();
-  final shops = await ref.watch(overdueRepositoryProvider).overdue(company.id, creditDays: days, today: now);
-  return buildOverdueReport(companyName: company.companyName, creditDays: days, shops: shops, generatedAt: now);
-}
+Future<OverdueReport> overdueReport(Ref ref, Company company) =>
+    ref.watch(overdueRepositoryProvider).report(company.id, creditDays: ref.watch(creditDaysProvider));
 
 enum OverdueSort {
   site('By site'),
@@ -92,31 +85,12 @@ bool _matches(String query, String name, String? phone, String? area, String? si
 }
 
 /// [report] narrowed to the shops matching the search, with totals recomputed.
-OutstandingReport filterDuesReport(OutstandingReport report, String query) => query.trim().isEmpty
-    ? report
-    : buildOutstandingReport(
-        companyName: report.companyName,
-        generatedAt: report.generatedAt,
-        shops: [
-          for (final g in report.groups)
-            for (final s in g.shops)
-              if (_matches(query, s.name, s.phone, s.area, s.siteName)) s,
-        ],
-      );
+OutstandingReport filterDuesReport(OutstandingReport report, String query) =>
+    query.trim().isEmpty ? report : report.narrowed((s) => _matches(query, s.name, s.phone, s.area, s.siteName));
 
 /// [report] narrowed to the shops matching the search, with totals recomputed.
-OverdueReport filterOverdueReport(OverdueReport report, String query) => query.trim().isEmpty
-    ? report
-    : buildOverdueReport(
-        companyName: report.companyName,
-        creditDays: report.creditDays,
-        generatedAt: report.generatedAt,
-        shops: [
-          for (final g in report.groups)
-            for (final s in g.shops)
-              if (_matches(query, s.name, s.phone, s.area, s.siteName)) s,
-        ],
-      );
+OverdueReport filterOverdueReport(OverdueReport report, String query) =>
+    query.trim().isEmpty ? report : report.narrowed((s) => _matches(query, s.name, s.phone, s.area, s.siteName));
 
 Future<void> shareDuesReport(BuildContext context, OutstandingReport report) => _share(
   context,

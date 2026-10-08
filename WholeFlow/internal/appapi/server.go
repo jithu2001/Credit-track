@@ -64,6 +64,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/payments/shops/{id}", s.handle(s.shopPayments))
 	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}/statement", s.handle(s.shopStatement))
 	mux.HandleFunc("GET /b/{slug}/api/v1/dashboard", s.handle(s.dashboard))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops", s.handle(s.shopsPage))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}", s.handle(s.shopDetail))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/outstanding", s.handle(s.outstandingReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/overdue", s.handle(s.overdueReport))
 	return mux
 }
 
