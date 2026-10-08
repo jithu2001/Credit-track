@@ -251,6 +251,36 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 404, "another business")
 	})
 
+	t.Run("dashboard in one call", func(t *testing.T) {
+		mustExec(t, db, `insert into public.sync_state (business_id, company_id, entity_type, last_successful_sync_at, status)
+			values ($1, $2, 'company', '2026-07-20 05:00:00+00', 'ok')`, bizA, companA)
+		code, body := get("/b/apitest/api/v1/dashboard?company="+companA+"&month=2026-06", token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		sum := body["summary"].(map[string]any)
+		eqv(t, sum["shops"], 2.0, "shops")
+		eqv(t, sum["shops_with_dues"], 1.0, "shops with dues")
+		eqv(t, sum["total_outstanding"], "1100.00", "outstanding")
+		eqv(t, sum["total_credit"], "50.00", "credit")
+		eqv(t, body["sync_state"].(map[string]any)["status"], "ok", "sync state")
+		sales := body["month_sales"].(map[string]any)
+		eqv(t, sales["amount"], "800.00", "June sales")
+		eqv(t, sales["bills"], 1.0, "June bills")
+		top := body["top_dues"].([]any)
+		eqv(t, len(top), 1, "top dues")
+		eqv(t, top[0].(map[string]any)["site_name"], "Town", "top due site")
+
+		// Staff without transaction access (set above): totals yes, sales no.
+		code, body = get("/b/apitest/api/v1/dashboard?company="+companA, token(staffA))
+		eqv(t, code, 200, "staff")
+		eqv(t, body["month_sales"], nil, "staff sales hidden")
+		code, _ = get("/b/apitest/api/v1/dashboard?company="+companA, token(ownerB))
+		eqv(t, code, 404, "another business")
+		code, _ = get("/b/apitest/api/v1/dashboard?company="+companA+"&month=June", token(ownerA))
+		eqv(t, code, 400, "bad month")
+	})
+
 	t.Run("a paused business gets 402", func(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
 		defer mustExec(t, db, `delete from public.service_status`)

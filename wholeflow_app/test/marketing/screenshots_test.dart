@@ -215,20 +215,22 @@ class _Analytics implements AnalyticsRepository {
 
 class _Dashboard implements DashboardRepository {
   @override
-  Future<CompanySummary?> summary(String companyId) async => const CompanySummary(
-    companyId: 'co',
-    companyName: 'Periyar Traders (FY 2026-27)',
-    shops: 214,
-    shopsWithDues: 96,
-    totalOutstanding: Money(248641250),
-    totalCredit: Money(11230000),
-  );
-  @override
-  Future<SyncState?> syncState(String companyId) async =>
-      SyncState(lastSuccessfulSyncAt: DateTime.now().subtract(const Duration(minutes: 3)));
-  @override
-  Future<MonthSales> monthSales(String companyId, DateTime now) async =>
-      MonthSales(month: DateTime(now.year, now.month), amount: const Money(684215000), bills: 143);
+  Future<Dashboard> load(String companyId) async {
+    final now = DateTime.now();
+    return Dashboard(
+      summary: const CompanySummary(
+        companyId: 'co',
+        companyName: 'Periyar Traders (FY 2026-27)',
+        shops: 214,
+        shopsWithDues: 96,
+        totalOutstanding: Money(248641250),
+        totalCredit: Money(11230000),
+      ),
+      syncState: SyncState(lastSuccessfulSyncAt: now.subtract(const Duration(minutes: 3))),
+      monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(684215000), bills: 143),
+      topDues: _shops.take(10).toList(),
+    );
+  }
 }
 
 ShopTransaction _txn(String id, int daysAgo, TxnCategory cat, String type, String no, {int debit = 0, int credit = 0}) =>

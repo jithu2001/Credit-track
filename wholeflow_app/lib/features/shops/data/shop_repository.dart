@@ -72,21 +72,6 @@ class ShopRepository {
     }
   }
 
-  Future<List<ShopSummary>> topDues(String companyId, {int limit = 10}) async {
-    try {
-      final rows = await _client
-          .from('v_shop_outstanding')
-          .select(ShopSummary.viewColumns)
-          .eq('company_id', companyId)
-          .gt('receivable', 0)
-          .order('receivable', ascending: false)
-          .limit(limit);
-      return rows.map(ShopSummary.fromJson).toList();
-    } catch (e) {
-      throw AppFailure.from(e);
-    }
-  }
-
   /// Every shop that owes the business, for the outstanding report.
   Future<List<ShopSummary>> outstanding(String companyId) async {
     try {

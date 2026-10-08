@@ -2,6 +2,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../../../core/money/money.dart';
 import '../../../core/money/money_json.dart';
+import '../../shops/domain/shop.dart';
 
 part 'dashboard_models.freezed.dart';
 part 'dashboard_models.g.dart';
@@ -43,10 +44,37 @@ abstract class SyncState with _$SyncState {
 class MonthSales {
   const MonthSales({required this.month, required this.amount, required this.bills});
 
+  factory MonthSales.fromJson(Map<String, dynamic> j) => MonthSales(
+    month: DateTime.parse(j['month'] as String),
+    amount: Money.parse(j['amount']),
+    bills: (j['bills'] as num).toInt(),
+  );
+
   /// First day of the month.
   final DateTime month;
   final Money amount;
   final int bills;
+}
+
+/// Everything the dashboard shows, from `GET /api/v1/dashboard` in one call.
+class Dashboard {
+  const Dashboard({this.summary, this.syncState, this.monthSales, this.topDues = const []});
+
+  factory Dashboard.fromJson(Map<String, dynamic> j) => Dashboard(
+    summary: j['summary'] == null ? null : CompanySummary.fromJson(j['summary'] as Map<String, dynamic>),
+    syncState: j['sync_state'] == null ? null : SyncState.fromJson(j['sync_state'] as Map<String, dynamic>),
+    monthSales: j['month_sales'] == null ? null : MonthSales.fromJson(j['month_sales'] as Map<String, dynamic>),
+    topDues: [for (final r in (j['top_dues'] as List? ?? const [])) ShopSummary.fromJson(r as Map<String, dynamic>)],
+  );
+
+  final CompanySummary? summary;
+  final SyncState? syncState;
+
+  /// Null for staff who may not see the company's transactions.
+  final MonthSales? monthSales;
+
+  /// The shops owing most, largest first.
+  final List<ShopSummary> topDues;
 }
 
 enum FreshnessLevel { fresh, warning }

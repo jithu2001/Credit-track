@@ -154,8 +154,6 @@ class FakeShopRepository implements ShopRepository {
   @override
   Future<ShopDetail> detail(String shopId) async => detailShop!;
   @override
-  Future<List<ShopSummary>> topDues(String companyId, {int limit = 10}) async => shops.take(limit).toList();
-  @override
   Future<List<ShopSummary>> outstanding(String companyId) async => shops;
 }
 
@@ -349,18 +347,22 @@ class FakeTransactionRepository implements TransactionRepository {
 }
 
 class FakeDashboardRepository implements DashboardRepository {
-  FakeDashboardRepository({this.summaryRow, this.state});
+  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const []});
 
   final CompanySummary? summaryRow;
   final SyncState? state;
+  final List<ShopSummary> topDues;
 
   @override
-  Future<CompanySummary?> summary(String companyId) async => summaryRow;
-  @override
-  Future<SyncState?> syncState(String companyId) async => state;
-  @override
-  Future<MonthSales> monthSales(String companyId, DateTime now) async =>
-      MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12);
+  Future<Dashboard> load(String companyId) async {
+    final now = DateTime.now();
+    return Dashboard(
+      summary: summaryRow,
+      syncState: state,
+      monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12),
+      topDues: topDues,
+    );
+  }
 }
 
 /// Two shops relative to today, as the app API answers: one with a ₹10,000

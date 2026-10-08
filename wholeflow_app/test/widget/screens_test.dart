@@ -100,7 +100,7 @@ Future<List<Override>> baseOverrides({
       FakeCompanyRepository(companies: companies, access: access, areas: const ['Pala', 'Rajakkad']),
     ),
     shopRepositoryProvider.overrideWithValue(shopRepo ?? FakeShopRepository(shops: shops)),
-    dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository()),
+    dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository(topDues: shops)),
     analyticsRepositoryProvider.overrideWithValue(FakeAnalyticsRepository()),
     overdueRepositoryProvider.overrideWithValue(overdueRepo ?? FakeOverdueRepository()),
     siteRepositoryProvider.overrideWithValue(siteRepo ?? FakeSiteRepository(sitesList: sites)),
@@ -905,6 +905,7 @@ void main() {
           theme: dark ? AppTheme.dark() : AppTheme.light(),
           overrides: await baseOverrides(
             dashboard: FakeDashboardRepository(
+              topDues: shops,
               summaryRow: const CompanySummary(
                 companyId: 'co-a',
                 companyName: 'JMJ Marketing',

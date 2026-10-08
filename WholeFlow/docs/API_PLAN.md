@@ -15,6 +15,11 @@ Owners and staff who may see the company's transactions can use it; other
 staff get 403. The Statement tab and "Share statement" use it; the customer
 PDF and text are still made on the phone.
 
+Phase 3 (dashboard) built: `GET /dashboard?company=[&month=YYYY-MM]` returns
+company totals, sync state, this month's sales (null for staff without
+transaction access) and the top 10 dues in one call, instead of four requests
+plus every sales row of the month.
+
 ## 1. Goal
 
 Today the Owner and Staff apps read tables straight from each business's

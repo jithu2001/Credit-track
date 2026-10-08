@@ -279,5 +279,6 @@ void invalidateSiteData(WidgetRef ref) {
     ..invalidate(shopListProvider)
     ..invalidate(outstandingReportProvider)
     ..invalidate(overdueReportProvider)
+    ..invalidate(dashboardProvider)
     ..invalidate(topDuesProvider);
 }
