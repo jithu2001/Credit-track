@@ -134,6 +134,7 @@ class AppFailure implements Exception {
       case 404:
         return const AppFailure(FailureKind.notFound);
       case 400:
+      case 409:
         return AppFailure(FailureKind.invalidInput, _text(e.message));
     }
     return e.status >= 500 ? const AppFailure(FailureKind.server) : const AppFailure(FailureKind.unknown);

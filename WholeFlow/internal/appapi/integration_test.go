@@ -514,6 +514,77 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 400, "bad limit")
 	})
 
+	send := func(method, path, tok, body string) (int, map[string]any) {
+		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out
+	}
+
+	t.Run("sites: create, rename, shops, report, delete", func(t *testing.T) {
+		code, body := send("POST", "/b/apitest/api/v1/sites", token(ownerA), `{"company":"`+companA+`","name":" Hills ","shops":["`+shopA2+`"]}`)
+		if code != 200 {
+			t.Fatalf("create: %d %v", code, body)
+		}
+		hills := body["id"].(string)
+		code, body = send("POST", "/b/apitest/api/v1/sites", token(ownerA), `{"company":"`+companA+`","name":"Town","shops":[]}`)
+		eqv(t, code, 409, "duplicate name")
+		eqv(t, body["error"].(map[string]any)["code"], "NAME_TAKEN", "code")
+		code, _ = send("POST", "/b/apitest/api/v1/sites", token(staffA), `{"company":"`+companA+`","name":"Staff site","shops":[]}`)
+		eqv(t, code, 403, "staff can't create sites")
+
+		_, body = get("/b/apitest/api/v1/sites?company="+companA, token(ownerA))
+		eqv(t, len(body["sites"].([]any)), 2, "two sites")
+		_, body = get("/b/apitest/api/v1/sites/"+hills+"/shops", token(ownerA))
+		eqv(t, body["shops"].([]any)[0].(map[string]any)["name"], "Beta Traders", "shop moved in")
+		_, body = get("/b/apitest/api/v1/companies/"+companA+"/site-shops", token(ownerA))
+		eqv(t, len(body["shops"].([]any)), 2, "editor shops")
+
+		code, _ = send("PATCH", "/b/apitest/api/v1/sites/"+hills, token(ownerA), `{"name":"High Range"}`)
+		eqv(t, code, 200, "rename")
+		code, _ = send("PUT", "/b/apitest/api/v1/sites/"+hills+"/shops", token(ownerA), `{"shops":[]}`)
+		eqv(t, code, 200, "empty the site")
+		_, body = get("/b/apitest/api/v1/sites/"+hills+"/shops", token(ownerA))
+		eqv(t, len(body["shops"].([]any)), 0, "site emptied")
+
+		code, body = get("/b/apitest/api/v1/reports/sites?company="+companA+"&from=2026-04-01&to=2026-07-31", token(ownerA))
+		if code != 200 {
+			t.Fatalf("site report: %d %v", code, body)
+		}
+		eqv(t, len(body["rows"].([]any)) > 0, true, "report rows")
+
+		code, _ = send("DELETE", "/b/apitest/api/v1/sites/"+hills, token(ownerA), ``)
+		eqv(t, code, 200, "delete")
+		code, _ = send("DELETE", "/b/apitest/api/v1/sites/"+hills, token(ownerA), ``)
+		eqv(t, code, 404, "already gone")
+	})
+
+	t.Run("shop locations", func(t *testing.T) {
+		path := "/b/apitest/api/v1/shops/" + shopA1 + "/location"
+		_, body := get(path, token(ownerA))
+		eqv(t, body["location"], nil, "no pin yet")
+		code, body := send("PUT", path, token(ownerA), `{"latitude":9.85,"longitude":76.97,"radius_m":50}`)
+		if code != 200 {
+			t.Fatalf("set: %d %v", code, body)
+		}
+		_, body = get(path, token(ownerA))
+		eqv(t, body["location"].(map[string]any)["radius_m"], 50.0, "radius")
+		code, _ = send("PUT", path, token(staffA), `{"latitude":9.85,"longitude":76.97,"radius_m":50}`)
+		eqv(t, code, 403, "staff can't set pins")
+		code, _ = send("DELETE", path, token(ownerA), ``)
+		eqv(t, code, 200, "clear")
+		_, body = get(path, token(ownerA))
+		eqv(t, body["location"], nil, "cleared")
+		_, body = get("/b/apitest/api/v1/location-suggestions", token(ownerA))
+		eqv(t, len(body["suggestions"].([]any)), 0, "no suggestions")
+	})
+
 	t.Run("a paused business gets 402", func(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
 		defer mustExec(t, db, `delete from public.service_status`)

@@ -25,8 +25,6 @@ abstract class ShopSummary with _$ShopSummary {
   }) = _ShopSummary;
 
   factory ShopSummary.fromJson(Map<String, dynamic> json) => _$ShopSummaryFromJson(json);
-
-  static const shopColumns = 'id,name,area,phone,receivable,site_id,sites(name)';
 }
 
 /// Everything the shop detail screen shows.

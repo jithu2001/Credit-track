@@ -84,6 +84,19 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/service-status", s.handle(s.serviceStatus))
 	mux.HandleFunc("GET /b/{slug}/api/v1/sync/connections", s.handle(s.syncConnections))
 	mux.HandleFunc("GET /b/{slug}/api/v1/sync/logs", s.handle(s.syncLogs))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sites", s.handle(s.sitesList))
+	mux.HandleFunc("POST /b/{slug}/api/v1/sites", s.handleWrite(s.createSite))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/sites/{id}", s.handleWrite(s.renameSite))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/sites/{id}", s.handleWrite(s.deleteSite))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sites/{id}/shops", s.handle(s.siteShops))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/sites/{id}/shops", s.handleWrite(s.putSiteShops))
+	mux.HandleFunc("GET /b/{slug}/api/v1/companies/{id}/site-shops", s.handle(s.companySiteShops))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/sites", s.handle(s.siteReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}/location", s.handle(s.shopLocation))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/shops/{id}/location", s.handleWrite(s.setShopLocation))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/shops/{id}/location", s.handleWrite(s.clearShopLocation))
+	mux.HandleFunc("GET /b/{slug}/api/v1/location-suggestions", s.handle(s.locationSuggestions))
+	mux.HandleFunc("POST /b/{slug}/api/v1/location-suggestions/{id}/review", s.handleWrite(s.reviewSuggestion))
 	return mux
 }
 

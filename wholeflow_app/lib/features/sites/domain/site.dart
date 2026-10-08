@@ -8,8 +8,6 @@ class Site {
   factory Site.fromJson(Map<String, dynamic> json) =>
       Site(id: json['id'] as String, companyId: json['company_id'] as String, name: (json['name'] as String?) ?? '');
 
-  static const columns = 'id,company_id,name';
-
   final String id;
   final String companyId;
   final String name;
@@ -74,8 +72,6 @@ class SiteShop {
     siteId: json['site_id'] as String?,
     receivable: Money.parse(json['receivable']),
   );
-
-  static const columns = 'id,name,area,site_id,receivable';
 
   final String id;
   final String name;

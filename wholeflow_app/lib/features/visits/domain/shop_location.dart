@@ -18,8 +18,6 @@ class ShopLocation {
     setAt: json['set_at'] == null ? null : DateTime.tryParse(json['set_at'] as String)?.toLocal(),
   );
 
-  static const columns = 'shop_id,latitude,longitude,radius_m,source,set_at';
-
   /// Allowed radius range and default, as the database enforces.
   static const minRadius = 5;
 
@@ -59,8 +57,6 @@ class LocationSuggestion {
     accuracyM: (json['accuracy_m'] as num?)?.toDouble(),
     createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
   );
-
-  static const columns = 'id,shop_id,latitude,longitude,accuracy_m,created_at,shops(name),users!suggested_by(name)';
 
   final String id;
   final String shopId;
