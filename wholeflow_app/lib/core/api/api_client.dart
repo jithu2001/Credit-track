@@ -4,8 +4,10 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../app_info.dart';
 import '../connection/business_connection.dart';
 import '../providers.dart';
+import '../upgrade/upgrade_gate.dart';
 
 /// An error answer from the WholeFlow app API:
 /// `{"error": {"code", "message", "details", "hint"}}` with its HTTP status.
@@ -26,13 +28,19 @@ class ApiException implements Exception {
 /// (`<base_url>/api/v1/…`, docs/API_PLAN.md), signed in with the same login
 /// as the rest of the app.
 class ApiClient {
-  ApiClient({required this.baseUrl, required this.token, http.Client? client}) : _http = client ?? http.Client();
+  ApiClient({required this.baseUrl, required this.token, this.headers = const {}, http.Client? client})
+    : _http = client ?? http.Client();
 
   /// The business address, e.g. `https://api.jitsuji.xyz/b/demo`.
   final String baseUrl;
 
   /// The current access token (refreshed when expired); null when signed out.
   final Future<String?> Function() token;
+
+  /// Sent with every request: the app version and platform
+  /// (`X-App-Version`, `X-App-Platform`), so the server can refuse versions
+  /// that are too old.
+  final Map<String, String> headers;
   final http.Client _http;
 
   static const timeout = Duration(seconds: 30);
@@ -53,7 +61,9 @@ class ApiClient {
     );
     final t = await token();
     if (t == null) throw const ApiException(401, 'UNAUTHENTICATED', 'Sign in again.');
-    final req = http.Request(method, uri)..headers.addAll({'Authorization': 'Bearer $t', 'Accept': 'application/json'});
+    final req = http.Request(method, uri)
+      ..headers.addAll(headers)
+      ..headers.addAll({'Authorization': 'Bearer $t', 'Accept': 'application/json'});
     if (body != null) {
       req.headers['Content-Type'] = 'application/json';
       req.body = jsonEncode(body);
@@ -67,6 +77,7 @@ class ApiClient {
     }
     if (res.statusCode == 200 && answer is Map<String, dynamic>) return answer;
     final e = answer is Map && answer['error'] is Map ? answer['error'] as Map : const {};
+    if (res.statusCode == 426) UpgradeGate.trigger(e['message'] as String?);
     throw ApiException(
       res.statusCode,
       (e['code'] as String?) ?? 'HTTP_${res.statusCode}',
@@ -82,6 +93,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   final auth = ref.watch(supabaseProvider).auth;
   return ApiClient(
     baseUrl: connection.baseUrl,
+    headers: AppInfo.current.headers,
     token: () async {
       var session = auth.currentSession;
       if (session == null) return null;

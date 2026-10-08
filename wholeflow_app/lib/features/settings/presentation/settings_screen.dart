@@ -142,10 +142,10 @@ class ChangePasswordSheet extends ConsumerStatefulWidget {
 class _ChangePasswordSheetState extends ConsumerState<ChangePasswordSheet> {
   bool _busy = false;
 
-  Future<void> _submit(String password) async {
+  Future<void> _submit(String password, String? currentPassword) async {
     setState(() => _busy = true);
     try {
-      await ref.read(sessionControllerProvider.notifier).changePassword(password);
+      await ref.read(sessionControllerProvider.notifier).changePassword(password, currentPassword: currentPassword);
       if (!mounted) return;
       Navigator.pop(context);
       showMessage(context, 'Password changed');
@@ -167,7 +167,7 @@ class _ChangePasswordSheetState extends ConsumerState<ChangePasswordSheet> {
           children: [
             Text('Change password', style: context.text.titleLarge),
             const SizedBox(height: Insets.l),
-            NewPasswordForm(onSubmit: _submit, submitLabel: 'Change password', busy: _busy),
+            NewPasswordForm(onSubmit: _submit, submitLabel: 'Change password', busy: _busy, askCurrentPassword: true),
           ],
         ),
       ),

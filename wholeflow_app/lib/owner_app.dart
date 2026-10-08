@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/owner_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/upgrade/update_required_screen.dart';
 import 'features/subscription/presentation/subscription_banner.dart';
 import 'features/settings/presentation/theme_controller.dart';
 
@@ -22,7 +23,7 @@ class WholeFlowOwnerApp extends ConsumerWidget {
         darkTheme: AppTheme.dark(dark),
         themeMode: mode,
         routerConfig: router,
-        builder: (context, child) => SubscriptionFrame(forOwner: true, child: child!),
+        builder: (context, child) => UpdateRequiredFrame(child: SubscriptionFrame(forOwner: true, child: child!)),
       ),
     );
   }

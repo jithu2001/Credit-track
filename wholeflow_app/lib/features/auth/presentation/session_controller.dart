@@ -133,10 +133,12 @@ class SessionController extends _$SessionController {
     state = AsyncData(SignedOut(message: message));
   }
 
-  Future<void> changePassword(String newPassword) async {
-    await _repo.changePassword(newPassword);
+  /// [currentPassword]: see [AuthRepository.changePassword]. Afterwards the
+  /// user's flags are read from the server's answer.
+  Future<void> changePassword(String newPassword, {String? currentPassword}) async {
+    await _repo.changePassword(newPassword, currentPassword: currentPassword);
     final current = state.value;
-    if (current is SignedIn) state = AsyncData(SignedIn(current.user));
+    if (current is SignedIn) state = AsyncData(SignedIn(current.user, mustChangePassword: _repo.mustChangePassword));
   }
 
   /// Re-reads the caller's row (on resume and refresh) so a disabled account

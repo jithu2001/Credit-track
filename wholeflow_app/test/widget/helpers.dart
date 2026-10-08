@@ -113,8 +113,19 @@ class FakeAuthRepository implements AuthRepository {
   Future<void> signOut() async => signedIn = false;
   @override
   Future<AppUser?> loadProfile() async => profile;
+
+  /// Password changes made: (new, current).
+  final List<(String, String?)> passwordChanges = [];
+
+  /// Thrown by [changePassword] when set.
+  AppFailure? changePasswordError;
+
   @override
-  Future<void> changePassword(String newPassword) async {}
+  Future<void> changePassword(String newPassword, {String? currentPassword}) async {
+    if (changePasswordError != null) throw changePasswordError!;
+    passwordChanges.add((newPassword, currentPassword));
+  }
+
   @override
   Future<String?> businessName(String businessId) async => 'Test Business';
 }
@@ -230,10 +241,16 @@ class FakeSiteRepository implements SiteRepository {
 
 /// A phone that is always at [reading].
 class FakeLocationService implements LocationService {
-  const FakeLocationService(this.reading, {this.devMode = false});
+  const FakeLocationService(this.reading, {this.devMode = false, this.askPermission = false});
 
   final LocationReading reading;
   final bool devMode;
+
+  /// The phone would still show its permission prompt.
+  final bool askPermission;
+
+  @override
+  Future<bool> willAskPermission() async => askPermission;
 
   @override
   Future<LocationReading> current({Duration timeout = const Duration(seconds: 20)}) async => reading;

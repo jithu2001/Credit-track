@@ -9,6 +9,7 @@ import '../domain/app_user.dart';
 part 'auth_repository.g.dart';
 
 const inactiveAccountMessage = 'Your account is not active. Contact your business owner.';
+const wrongCurrentPassword = 'Current password is wrong.';
 
 /// Signing in and passwords go to the business's login service; the
 /// profile comes from the app API.
@@ -53,11 +54,28 @@ class AuthRepository {
     }
   }
 
-  Future<void> changePassword(String newPassword) async {
+  /// Sets a new password. The server clears `must_change_password` itself
+  /// and answers with the updated user, which the login library keeps (so
+  /// [mustChangePassword] is read fresh afterwards).
+  ///
+  /// With [currentPassword] (Settings → Change password), signs in with it
+  /// first: the server only accepts a password change from a session made in
+  /// the last few minutes. The first-sign-in screen passes none; its session
+  /// is new already.
+  Future<void> changePassword(String newPassword, {String? currentPassword}) async {
+    if (currentPassword != null) {
+      final email = _client.auth.currentUser?.email;
+      if (email == null) throw const AppFailure(FailureKind.unauthenticated);
+      try {
+        await _client.auth.signInWithPassword(email: email, password: currentPassword);
+      } catch (e) {
+        final f = AppFailure.from(e);
+        if (f.kind == FailureKind.invalidCredentials) throw const AppFailure(FailureKind.invalidInput, wrongCurrentPassword);
+        throw f;
+      }
+    }
     try {
-      final metadata = Map<String, dynamic>.from(_client.auth.currentUser?.userMetadata ?? const {});
-      metadata['must_change_password'] = false;
-      await _client.auth.updateUser(UserAttributes(password: newPassword, data: metadata));
+      await _client.auth.updateUser(UserAttributes(password: newPassword));
     } catch (e) {
       throw AppFailure.from(e);
     }

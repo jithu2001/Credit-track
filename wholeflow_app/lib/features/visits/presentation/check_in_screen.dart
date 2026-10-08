@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
 import '../../../core/errors/app_failure.dart';
+import '../../../core/location/location_disclosure.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/shop_map.dart';
@@ -55,7 +56,16 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
     super.dispose();
   }
 
+  static const _locationDeclined = 'Check-in needs your location. Tap the location button to try again.';
+
   Future<void> _locate() async {
+    // Already reading (e.g. resumed after the permission prompt): only
+    // re-check Developer options.
+    if (_locating) {
+      final dev = await ref.read(locationServiceProvider).developerModeOn();
+      if (mounted) setState(() => _devMode = dev);
+      return;
+    }
     setState(() {
       _locating = true;
       _locationError = null;
@@ -70,6 +80,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       unawaited(_showDevModeDialog());
     }
     try {
+      if (!await ensureLocationDisclosure(context, service, LocationPurpose.checkIn)) {
+        if (mounted) setState(() => _locationError = _locationDeclined);
+        return;
+      }
       final r = await service.current();
       if (mounted) setState(() => _reading = r);
     } on AppFailure catch (f) {
@@ -111,6 +125,10 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       _rejection = null;
     });
     try {
+      if (!await ensureLocationDisclosure(context, service, LocationPurpose.checkIn)) {
+        if (mounted) setState(() => _locationError = _locationDeclined);
+        return;
+      }
       // A fresh fix for the check-in itself, never the one shown earlier.
       final r = await service.current();
       final devMode = await service.developerModeOn();

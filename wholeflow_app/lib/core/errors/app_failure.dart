@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../api/api_client.dart';
+import '../upgrade/upgrade_gate.dart';
 
 enum FailureKind {
   network,
@@ -15,6 +16,14 @@ enum FailureKind {
   emailTaken,
   server,
   subscriptionEnded,
+
+  /// This app version is too old for the server (HTTP 426); the app shows
+  /// only the "Update required" screen.
+  upgradeRequired,
+
+  /// Changing the password needs a fresh sign-in (the server's
+  /// `reauthentication_needed`).
+  reauthenticationNeeded,
   unknown,
 }
 
@@ -47,6 +56,8 @@ class AppFailure implements Exception {
     FailureKind.emailTaken => 'An account with this email already exists.',
     FailureKind.server => 'The server had a problem. Please try again in a moment.',
     FailureKind.subscriptionEnded => 'WholeFlow is paused for this business.',
+    FailureKind.upgradeRequired => detail ?? UpgradeGate.defaultMessage,
+    FailureKind.reauthenticationNeeded => 'For your security, please sign in again, then change your password.',
     FailureKind.unknown => 'Something went wrong. Please try again.',
   };
 
@@ -73,6 +84,12 @@ class AppFailure implements Exception {
 
   static AppFailure _fromAuth(AuthException e) {
     final code = e.code ?? '';
+    if (code == 'upgrade_required' || e.statusCode == '426') {
+      final f = AppFailure(FailureKind.upgradeRequired, _text(e.message));
+      UpgradeGate.trigger(f.detail);
+      return f;
+    }
+    if (code == 'reauthentication_needed') return const AppFailure(FailureKind.reauthenticationNeeded);
     if (e is AuthRetryableFetchException) return const AppFailure(FailureKind.network);
     if (code == 'invalid_credentials' || e.message.toLowerCase().contains('invalid login credentials')) {
       return const AppFailure(FailureKind.invalidCredentials);
@@ -98,6 +115,10 @@ class AppFailure implements Exception {
       case 402:
         final f = AppFailure(FailureKind.subscriptionEnded, _text(e.details), _text(e.hint));
         onSubscriptionEnded?.call(f);
+        return f;
+      case 426:
+        final f = AppFailure(FailureKind.upgradeRequired, _text(e.message));
+        UpgradeGate.trigger(f.detail);
         return f;
       case 401:
         return const AppFailure(FailureKind.unauthenticated);

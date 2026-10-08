@@ -24,6 +24,10 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>WholeFlow uses your location only during a shop check-in (or when pinning a shop), while that screen is open. It never tracks you in the background.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>WholeFlow uses the camera only to scan a business's connection QR code.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

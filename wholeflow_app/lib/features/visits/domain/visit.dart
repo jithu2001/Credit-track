@@ -146,10 +146,10 @@ class ShopVisit {
   const ShopVisit({
     required this.id,
     required this.checkedInAt,
-    required this.deviceLat,
-    required this.deviceLng,
-    required this.accuracyM,
     required this.status,
+    this.deviceLat,
+    this.deviceLng,
+    this.accuracyM,
     this.shopLat,
     this.shopLng,
     this.radiusM,
@@ -160,9 +160,9 @@ class ShopVisit {
   factory ShopVisit.fromJson(Map<String, dynamic> json) => ShopVisit(
     id: json['id'] as String,
     checkedInAt: DateTime.parse(json['checked_in_at'] as String).toLocal(),
-    deviceLat: (json['device_lat'] as num).toDouble(),
-    deviceLng: (json['device_lng'] as num).toDouble(),
-    accuracyM: (json['accuracy_m'] as num).toDouble(),
+    deviceLat: (json['device_lat'] as num?)?.toDouble(),
+    deviceLng: (json['device_lng'] as num?)?.toDouble(),
+    accuracyM: (json['accuracy_m'] as num?)?.toDouble(),
     status: VisitState.parse(json['status'] as String?),
     shopLat: (json['shop_lat'] as num?)?.toDouble(),
     shopLng: (json['shop_lng'] as num?)?.toDouble(),
@@ -173,15 +173,21 @@ class ShopVisit {
 
   final String id;
   final DateTime checkedInAt;
-  final double deviceLat;
-  final double deviceLng;
-  final double accuracyM;
+
+  /// Where the phone was; null once the server's retention removed it
+  /// (12 months after the check-in).
+  final double? deviceLat;
+  final double? deviceLng;
+  final double? accuracyM;
   final VisitState status;
   final double? shopLat;
   final double? shopLng;
   final int? radiusM;
   final double? distanceM;
   final String? note;
+
+  /// The phone's position was removed (kept 12 months).
+  bool get locationRemoved => deviceLat == null || deviceLng == null;
 }
 
 /// A check-in the server refused (owners only).
