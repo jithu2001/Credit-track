@@ -1,3 +1,4 @@
+# LEGACY: no longer used for new businesses (see business-nginx.conf).
 # One business's login (GoTrue) and data API (PostgREST). Values come from
 # businesses/<slug>/env (made by scripts/new-business.sh).
 services:

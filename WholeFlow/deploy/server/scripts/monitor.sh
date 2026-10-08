@@ -63,7 +63,7 @@ fi
 
 # Services.
 if command -v systemctl >/dev/null; then
-  for unit in wholeflow-control wholeflow-api nginx docker; do
+  for unit in wholeflow-control wholeflow-api nginx docker wholeflow-backup.timer; do
     state=$(systemctl is-active "$unit" 2>/dev/null || true)
     [ "$state" = active ] || problem "$unit is ${state:-unknown}"
   done
@@ -92,15 +92,48 @@ if [ -n "$public" ]; then
   fi
 fi
 
-# Newest backup.
+# Backups (scripts/backup.sh): the newest finished run must have an OK marker
+# and be recent; FAILED runs and the off-site copy are reported too.
 if [ -d "$BACKUP_DIR" ]; then
-  newest=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
-  if [ -n "$newest" ]; then
-    age=$(( ($(date +%s) - ${newest%.*}) / 3600 ))
-    [ "$age" -gt "$BACKUP_HOURS" ] && problem "newest backup is ${age}h old"
-    note "backup=${age}h"
-  else
+  runs=$(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -name '20[0-9][0-9]-*' -printf '%f\n' 2>/dev/null | sort)
+  newest=$(echo "$runs" | tail -1)
+  if [ -z "$newest" ]; then
     problem "no backups in $BACKUP_DIR"
+  else
+    if [ -e "$BACKUP_DIR/$newest/FAILED" ]; then
+      what=$(grep -E '^(failed|reason)=' "$BACKUP_DIR/$newest/FAILED" | cut -d= -f2- | tr '\n' ' ')
+      problem "backup $newest FAILED: ${what% }"
+    elif [ ! -e "$BACKUP_DIR/$newest/OK" ]; then
+      problem "backup $newest has no OK marker"
+    fi
+    last_ok=""
+    for run in $(echo "$runs" | sort -r); do
+      [ -e "$BACKUP_DIR/$run/OK" ] && { last_ok=$run; break; }
+    done
+    if [ -z "$last_ok" ]; then
+      problem "no complete backup (none has an OK marker)"
+    else
+      done_at=$(grep -E '^completed_epoch=' "$BACKUP_DIR/$last_ok/OK" | cut -d= -f2)
+      age=$(( ($(date +%s) - ${done_at:-0}) / 3600 ))
+      [ "$age" -gt "$BACKUP_HOURS" ] && problem "newest complete backup is ${age}h old ($last_ok)"
+      note "backup=${age}h"
+      purge=$(grep -E '^purge_failed=' "$BACKUP_DIR/$last_ok/OK" | cut -d= -f2-)
+      [ -n "$purge" ] && problem "purge_old_data failed in $purge"
+    fi
+  fi
+  # Off-site copy: offsite.status = "ok|failed|not-configured <epoch> …",
+  # offsite.last-ok = "<epoch> <run>".
+  read -r state _ orun rest < "$BACKUP_DIR/offsite.status" 2>/dev/null || state=""
+  case "$state" in
+    ok) ;;
+    failed) problem "off-site copy of $orun failed: $rest" ;;
+    not-configured) problem "off-site copy not configured (BACKUP_REMOTE in $KIT/backup.env)" ;;
+    *) problem "off-site copy status unknown (no $BACKUP_DIR/offsite.status yet)" ;;
+  esac
+  if read -r ok_at _ < "$BACKUP_DIR/offsite.last-ok" 2>/dev/null; then
+    oage=$(( ($(date +%s) - ok_at) / 3600 ))
+    [ "$state" != not-configured ] && [ "$oage" -gt "$BACKUP_HOURS" ] && problem "last off-site copy is ${oage}h old"
+    note "offsite=${oage}h"
   fi
 fi
 

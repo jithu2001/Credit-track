@@ -79,8 +79,10 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// Only the LEGACY Deno staff service uses INTERNAL_TOKEN (/control/internal/);
+	// leave it unset once that service is retired and the route is gone.
 	token := os.Getenv("INTERNAL_TOKEN")
-	if len(token) < 32 {
+	if token != "" && len(token) < 32 {
 		return errors.New("INTERNAL_TOKEN must be at least 32 characters")
 	}
 	store, err := openStore(ctx)

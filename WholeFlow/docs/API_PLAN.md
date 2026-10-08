@@ -182,6 +182,34 @@ Each step can be undone on its own (in brackets).
 
 New businesses created after step 3 get no containers at all.
 
+**Security hardening (review of 2026-10-08)**, deployed together with the steps above:
+- Server kit (backups, users, read-only control_db role, units, PostgreSQL
+  settings, nginx): `deploy/server/README.md` "Deploying the hardening", done
+  at steps 3-5. Its nginx file blocks `/control/admin/` and `/control/internal/`
+  on the api host and keeps the LEGACY `functions/v1` route until step 12.
+- Control: its migration `0003_admin_security` applies itself at start. Every
+  admin must sign in again and set up two-step sign-in (keep the backup codes;
+  lost phone: `wholeflow-control reset-2fa EMAIL`). Create **installer**
+  accounts for setting up customers' Tally PCs instead of using admin logins there.
+- API settings (`api.env`): `API_EXPECTED_MIGRATION=0009_lockdown.sql`; optional
+  `API_TENANT_MAX_CONNS` / `API_AUTH_MAX_CONNS` (defaults 3 / 2).
+- Business databases, **only after step 10** (no PostgREST left, every PC on
+  0.6.0, every phone on the new app — PostgREST relied on the old grants):
+  first `select datname, datacl from pg_database where datname like 'biz\_%'`
+  (each must grant CONNECT to its `<slug>_api`/`<slug>_auth`), then for each
+  business `revoke anon from <slug>_api;`, `scripts/migrate.sh --all` (applies
+  `0009_lockdown`; it dumps each database first), then `db/lock-databases.sql`.
+  [undo: restore from the pre-migrate dump into a scratch database and swap —
+  RUNBOOK_RESTORE.md]
+- After the new apps are on every phone: admin app → Settings → minimum app
+  build = the new build number (older builds that send their version are then
+  asked to update), and latest PC version = 0.6.0 (outdated PCs are flagged).
+- Step 12 also: remove the `staff` service and `deno-cache` volume from
+  `docker-compose.yml`, the `functions/v1` location from `nginx/wholeflow.conf`,
+  and `INTERNAL_TOKEN` from `control.env` and `.env` (the internal route then
+  no longer exists).
+- Existing phone sessions get their 30-day limit from their next refresh.
+
 Tests: `go test ./...`; with the throwaway database from `db/tests/run_local.sh`,
 `WF_TEST_PG=postgres://postgres:pw@127.0.0.1:55432/wf go test ./internal/appapi ./internal/authn`
 (every endpoint, sign-in, the Tally PC client end to end). With `WF_WRITE_FIXTURES=1` the

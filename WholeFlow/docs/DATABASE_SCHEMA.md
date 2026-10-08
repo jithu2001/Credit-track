@@ -37,7 +37,7 @@ One row per login account; `id` references `auth.users(id)` (the login service's
 | permissions | jsonb | reserved for staff restrictions, e.g. `{"areas":["Pala"],"transactions":false}` |
 | created_by | uuid | the owner who created a staff user |
 
-Admins (you) never have a row here. The owner is created with the business in the admin app; staff are created by the owner in the Owner app (through the staff service), or from the Tally PC's Cloud Sync page, section "Business owner & staff accounts". Each calls the login service's admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service key; disabling an account sets `is_active = false` and bans the login.
+Admins (you) never have a row here. The owner is created with the business in the admin app; staff are created by the owner in the Owner app (through the app API's `/staff` routes), or from the Tally PC's Cloud Sync page, section "Business owner & staff accounts". Each calls the login service's admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service key; disabling an account sets `is_active = false` and bans the login.
 
 ### tally_connections
 | Column | Notes |

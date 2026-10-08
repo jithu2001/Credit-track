@@ -24,7 +24,7 @@ import (
 type Server struct {
 	Svc           *Service
 	Log           *slog.Logger
-	InternalToken string // shared with the staff service on this machine
+	InternalToken string // shared with the LEGACY staff service; empty = no /control/internal/
 	MonitorDir    string // scripts/monitor.sh's logs; empty = MonitorDir
 
 	limiter      *auth.Limiter // wrong passwords/codes per email and address
@@ -60,7 +60,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /control/pc/login", s.pcLogin)
 
 	// Staff service (same machine, shared token).
-	mux.HandleFunc("GET /control/internal/tenant/{slug}", s.internalTenant)
+	if s.InternalToken != "" { // LEGACY: only the old Deno staff service calls it
+		mux.HandleFunc("GET /control/internal/tenant/{slug}", s.internalTenant)
+	}
 
 	// Admin app.
 	mux.HandleFunc("POST /control/admin/login", s.adminLogin)

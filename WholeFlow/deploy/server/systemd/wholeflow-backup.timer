@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the WholeFlow backup at 02:30 India time
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 Asia/Kolkata
+# Catch up after the server was off at 02:30.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

@@ -1,15 +1,59 @@
 # Shared services on the WholeFlow server: one PostgreSQL holding the control
-# database and one database per business. Each business's login (GoTrue) and
-# data API (PostgREST) run from businesses/<slug>/compose.yml on the same
-# network, created by scripts/new-business.sh.
+# database and one database per business. The WholeFlow app API
+# (wholeflow-api, systemd) serves every business's sign-in and data; the
+# control service (wholeflow-control, systemd) runs the admin app. Neither
+# runs in Docker. Staff management is in the app API under
+# /b/<slug>/api/v1/staff; the old Deno staff service below stays only until
+# every phone runs the new apps (docs/API_PLAN.md §5, steps 11-12).
 name: wholeflow
 
 services:
   db:
-    image: postgres:15
+    # Pinned to a minor release so a `docker compose pull` never changes the
+    # server under us. 15.19 is the Debian 13 (trixie) build that `postgres:15`
+    # pointed to in September 2026 (digest sha256:724292da1f2e...). Check the
+    # server runs the same before deploying this file:
+    #   docker compose exec db postgres --version   (15.19 ... pgdg13)
+    # If it shows another Debian (pgdg12 = bookworm), use postgres:15.19-bookworm.
+    # Before changing this tag later, compare `docker compose exec db cat /etc/os-release` with the new
+    # image: a different Debian release means a different glibc, whose
+    # collation changes can corrupt text indexes (then REINDEX every database).
+    # Minor updates (15.19 -> 15.20): read the release notes, take a backup,
+    # change the tag, `docker compose pull db && docker compose up -d db`.
+    image: postgres:15.19
     restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    # Sized for the Contabo VPS: 8 GB RAM, 4 vCPU (README "PostgreSQL
+    # capacity" shows how to recompute for another size). Changing these
+    # restarts the database (docker compose up -d db): a few seconds offline.
+    #   max_connections        300: see README for the per-business math
+    #   shared_buffers         2GB  = 25% of RAM
+    #   effective_cache_size   5GB  ~ RAM left for the OS page cache (planner hint only)
+    #   work_mem               4MB  per sort/hash per connection; small because of 300 connections
+    #   maintenance_work_mem   256MB  vacuum / index builds
+    command:
+      - postgres
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=5GB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - idle_in_transaction_session_timeout=10min
+    # Container logs are capped (Docker keeps them forever by default).
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+    # Parallel queries use /dev/shm; Docker's default 64 MB is too small.
+    shm_size: 256mb
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -22,8 +66,12 @@ services:
       interval: 5s
       retries: 20
 
-  # Staff management (manage-staff) for every business: /b/<slug>/functions/v1/.
+  # LEGACY: the old Deno staff service, for app versions from before the app
+  # API. Defined only so the running container is not an orphan; it is not
+  # started by `docker compose up -d` (profile). Delete this service, its
+  # deno-cache volume and the functions/v1 nginx location at §5 step 12.
   staff:
+    profiles: [legacy-staff]
     image: denoland/deno:2.1.4
     restart: unless-stopped
     network_mode: host  # reaches the control service and nginx on 127.0.0.1
@@ -33,7 +81,7 @@ services:
       - deno-cache:/deno-dir
     environment:
       CONTROL_URL: http://127.0.0.1:8100
-      INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN in .env}
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
       PORT: "8200"
     command: ["run", "--no-lock", "--allow-net", "--allow-env", "multi.ts"]
     mem_limit: 192m

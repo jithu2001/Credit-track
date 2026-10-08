@@ -4,3 +4,10 @@ logs/
 .env.*
 !.env.example
 dist/
+# Server secrets, if a copy of /opt/wholeflow ever lands here
+api.env
+control.env
+backup.env
+backup.recipients
+*.age
+key.properties

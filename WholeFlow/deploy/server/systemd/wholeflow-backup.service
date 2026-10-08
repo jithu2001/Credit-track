@@ -1,0 +1,13 @@
+[Unit]
+Description=WholeFlow nightly backup (encrypted; see scripts/backup.sh)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wholeflow/scripts/backup.sh
+# Dumps can take a while; never run into the next night.
+TimeoutStartSec=3h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

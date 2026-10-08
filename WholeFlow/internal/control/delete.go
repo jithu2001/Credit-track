@@ -105,7 +105,9 @@ func (s *Service) DeleteCompany(ctx context.Context, businessID, companyID, conf
 
 // DeleteBusiness removes a business completely: containers, route, database,
 // login roles, files and its control_db records (scripts/delete-business.sh),
-// and with deleteBackups its nightly dumps too. confirm must be its short name.
+// and with deleteBackups its nightly dumps on this server too (the off-site
+// copies are kept by the bucket's retention rules, and the script's final
+// backup is kept on purpose). confirm must be its short name.
 func (s *Service) DeleteBusiness(ctx context.Context, businessID, confirm string, deleteBackups bool, adminID string) (string, error) {
 	slug, name, err := s.slugOf(ctx, businessID)
 	if err != nil {
@@ -114,12 +116,17 @@ func (s *Service) DeleteBusiness(ctx context.Context, businessID, confirm string
 	if strings.TrimSpace(strings.ToLower(confirm)) != slug {
 		return "", userErr(http.StatusBadRequest, "CONFIRM_MISMATCH", "Type the business's short name exactly to confirm.")
 	}
-	if out, err := s.runScript(ctx, 5*time.Minute, "scripts/delete-business.sh", slug, "--yes"); err != nil {
+	if out, err := s.runScript(ctx, 14*time.Minute, "scripts/delete-business.sh", slug, "--yes"); err != nil {
 		return "", errors.New("delete-business.sh: " + err.Error() + ": " + tail(out, 300))
 	}
 	removed := 0
 	if deleteBackups {
-		files, _ := filepath.Glob(filepath.Join(BackupDir, "*", "biz_"+slug+".dump"))
+		// Encrypted nightly dumps (backup.sh), and plain ones from before encryption.
+		var files []string
+		for _, pat := range []string{"biz_" + slug + ".dump.age", "biz_" + slug + ".dump"} {
+			m, _ := filepath.Glob(filepath.Join(BackupDir, "*", pat))
+			files = append(files, m...)
+		}
 		for _, f := range files {
 			if os.Remove(f) == nil {
 				removed++

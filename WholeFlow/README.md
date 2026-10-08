@@ -72,7 +72,7 @@ First find which case you are in. On the client PC, look for `C:\Program Files\W
 
 1. **The business exists on the WholeFlow server.** In https://admin.jitsuji.xyz → **New business**. The result screen shows the **reference key** and a first **activation code**. For a business that already exists: open it → **Add a Tally PC** gives a new activation code. Codes work **once** and expire after **48 hours**.
 2. **The release package.** On your PC: `powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1` produces `dist\WholeFlow-<version>.zip` (see [Rolling out an update](#rolling-out-an-update)). Copy it to the client PC (USB, WhatsApp Desktop, AnyDesk file transfer).
-3. **Your WholeFlow admin account** (email + password, the same one as the admin app). It signs in on the PC's page. Every sign-in needs internet, because the server checks it each time.
+3. **Your WholeFlow installer account** (email + password; admin app → Admins → add an *installer*). Use an installer account on customers' PCs rather than a full admin login: it can only sign in to the PC's page, not the admin app. It signs in on the PC's page. Every sign-in needs internet, because the server checks it each time.
 4. **An Administrator account on the client PC**, for the UAC prompt. Without one, use [logon autostart](#b-logon-autostart-no-administrator) instead of the service.
 5. **TallyPrime in server mode**: Help (F1) → Settings → Connectivity → Client/Server configuration → *TallyPrime acts as* = **Server** (or Both). Note the port; the app reads it from `tally.ini`. The company must be open in Tally for a sync to work.
 
@@ -107,7 +107,7 @@ Do this once the business exists in the admin app.
 
 1. Optional safety copy, from an Administrator console: `Copy-Item C:\ProgramData\WholeFlow C:\WholeFlow-backup -Recurse`.
 2. Extract the new zip and double-click **`Install-WholeFlow.cmd`** (accept UAC). It prints `Upgrading WholeFlow 0.3.x -> <new>`. It then stops the service, waits for Windows to release the old exe, copies the new one, restarts the service and prints `status`, which says the PC is *not connected*.
-3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow admin account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
+3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow installer (or admin) account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
 4. Cloud Sync → **Step 1 · Connect to WholeFlow**: enter the **reference key** and **activation code**, then click **Connect**.
 5. Click **Test cloud connection**. Check the ticked companies are still right: the plan's limit applies, and the page refuses more than the plan allows. Click **Save settings**.
 6. Click **Sync now**. The first sync is automatically a **full** one: the app sees a new cloud company and starts its markers from zero, so all history goes up. It takes a few minutes per company.

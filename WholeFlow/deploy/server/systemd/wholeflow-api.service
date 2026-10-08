@@ -4,17 +4,50 @@ After=network-online.target docker.service
 Wants=network-online.target
 
 [Service]
+# api.env is read by systemd (as root) before the service starts, so it can
+# stay root-only (600). Run scripts/setup-users.sh once before using this unit:
+# it creates the wholeflow-api user and lets group wholeflow read
+# businesses/<slug>/env (the only files this service reads).
 EnvironmentFile=/opt/wholeflow/api.env
 ExecStart=/opt/wholeflow/bin/wholeflow-api
 WorkingDirectory=/opt/wholeflow
+User=wholeflow-api
+Group=wholeflow
 Restart=on-failure
 RestartSec=3
-# Reads businesses/<slug>/env (root only). Listens on 127.0.0.1 only (nginx
-# forwards /b/<slug>/api/v1/); writes nothing to disk.
+LimitNOFILE=65536
+
+# Listens on 127.0.0.1:8300 only (nginx forwards /b/<slug>/auth/v1/ and
+# /api/v1/), talks to PostgreSQL on 127.0.0.1:5432, logs to the journal
+# (stderr), writes nothing to disk and starts no programs.
 NoNewPrivileges=true
-PrivateTmp=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+# A blocked call fails with EPERM instead of killing the process.
+SystemCallErrorNumber=EPERM
+UMask=0077
+# Everything is read-only already (ProtectSystem=strict); keep the other
+# secrets out of reach even if file modes are ever loosened.
+InaccessiblePaths=-/opt/wholeflow/control.env -/opt/wholeflow/.env -/opt/wholeflow/backup.env -/var/backups/wholeflow
 
 [Install]
 WantedBy=multi-user.target

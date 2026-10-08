@@ -28,19 +28,30 @@ jobs:
         run: go vet ./...
       - name: Migrations and SQL tests (throwaway Postgres in Docker)
         run: db/tests/run_local.sh
+      - name: Save the committed contract fixtures
+        working-directory: .
+        run: cp -r wholeflow_app/test/fixtures/api "$RUNNER_TEMP/fixtures-committed"
       - name: Go tests, including the database integration tests
         env:
           WF_TEST_PG: postgres://postgres:pw@127.0.0.1:55432/wf
           WF_WRITE_FIXTURES: "1"
         run: go test -count=1 ./...
+      # Ids and times differ on every run, so the fixtures are compared by
+      # shape: the same files, and in each the same keys and value types.
       - name: App contract fixtures match the server
         working-directory: .
         run: |
-          git status --porcelain wholeflow_app/test/fixtures
-          git diff --exit-code wholeflow_app/test/fixtures || {
-            echo "::error::The server's answers changed: run the integration test with WF_WRITE_FIXTURES=1 and commit wholeflow_app/test/fixtures"
-            exit 1
-          }
+          shape='[paths(type != "object" and type != "array") as $p | [($p | map(if type == "number" then "#" else . end)), (getpath($p) | type)]] | unique'
+          fail=0
+          for f in "$RUNNER_TEMP"/fixtures-committed/*.json wholeflow_app/test/fixtures/api/*.json; do
+            n=$(basename "$f")
+            a="$RUNNER_TEMP/fixtures-committed/$n" b="wholeflow_app/test/fixtures/api/$n"
+            if [ ! -f "$a" ] || [ ! -f "$b" ]; then echo "::error::fixture $n added or removed"; fail=1; continue; fi
+            if ! diff <(jq -c "$shape" "$a") <(jq -c "$shape" "$b") >/dev/null; then
+              echo "::error::fixture $n changed shape: run the integration test with WF_WRITE_FIXTURES=1 and commit"; fail=1
+            fi
+          done
+          exit $fail
       - name: Known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 

@@ -81,11 +81,11 @@ cp android/key.properties.example android/key.properties   # then fill in the pa
 
 | Path | What it does |
 |---|---|
-| `db/migrations/0001`–`0007` | The business database: tables, Row Level Security, reports (`overdue_shops`, `site_report`), sites and visits, subscription status. The WholeFlow server applies them to every business (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). |
-| `staff-service/` | The staff service, one for every business on the server (`multi.ts`): owner-only `create_staff`, `update_staff`, `set_companies`, `set_active`, `reset_password` |
+| `db/migrations/0001`–`0009` | The business database: tables, Row Level Security, reports (`overdue_shops`, `site_report`), sites and visits, subscription status. The WholeFlow server applies them to every business (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). |
+| `internal/appapi/staff_http.go` | Staff management for every business (`/b/<slug>/api/v1/staff`): owner-only create, update, companies and sites, enable/disable, reset password |
 | `db/tests/*.sql` + `db/tests/run_local.sh` | Run every migration and SQL test on a throwaway Postgres in Docker; everything is rolled back |
 
-Tests: `WholeFlow/db/tests/run_local.sh` (SQL) and `cd WholeFlow/staff-service && deno test` (staff service).
+Tests: `WholeFlow/db/tests/run_local.sh` (SQL) and the Go tests in `WholeFlow` (`go test ./...`; with `WF_TEST_PG` they cover every endpoint).
 
 ## How access works
 
