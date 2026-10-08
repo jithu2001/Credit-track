@@ -62,6 +62,7 @@ func (s *Server) Routes() http.Handler {
 	})
 	mux.HandleFunc("GET /b/{slug}/api/v1/payments", s.handle(s.paymentSummary))
 	mux.HandleFunc("GET /b/{slug}/api/v1/payments/shops/{id}", s.handle(s.shopPayments))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}/statement", s.handle(s.shopStatement))
 	return mux
 }
 

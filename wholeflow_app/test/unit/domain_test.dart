@@ -12,6 +12,8 @@ import 'package:wholeflow_app/features/shops/domain/shop.dart';
 import 'package:wholeflow_app/features/sites/domain/site.dart';
 import 'package:wholeflow_app/features/staff/domain/staff.dart';
 
+import '../widget/helpers.dart';
+
 ShopTransaction txn(String id, String date, int amountPaise, {TxnCategory c = TxnCategory.sales}) => ShopTransaction(
   id: id,
   transactionDate: DateTime.parse(date),
@@ -29,21 +31,44 @@ void main() {
       txn('s2', '2026-04-20', 20000),
     ];
 
-    test('running balance from the opening balance, newest first', () {
-      final s = buildStatement(opening: const Money(10000), closing: const Money(50000), transactions: txns);
-      expect(s.newestFirst.map((l) => l.transaction.id), ['s2', 'r1', 's1']);
-      expect(s.newestFirst.map((l) => l.balanceAfter.paise), [50000, 30000, 60000]);
-      expect(s.reconciled, isTrue);
-    });
-
-    test('flags a mismatch with the synced balance', () {
-      final s = buildStatement(opening: const Money(10000), closing: const Money(55000), transactions: txns);
+    // Balances are worked out on the server (internal/appapi/statement_test.go);
+    // here: reading its answer and the on-screen filters.
+    test('reads the server statement, newest first', () {
+      final s = Statement.fromJson({
+        'ledger_opening': '100.00',
+        'tally_balance': '550.00',
+        'computed_balance': '500.00',
+        'reconciled': false,
+        'lines': [
+          {
+            'id': 's2',
+            'transaction_date': '2026-04-20',
+            'category': 'sales',
+            'debit': '200.00',
+            'credit': '0.00',
+            'amount': '200.00',
+            'balance_after': '500.00',
+          },
+          {
+            'id': 'r1',
+            'transaction_date': '2026-04-10',
+            'category': 'receipts',
+            'debit': '0.00',
+            'credit': '300.00',
+            'amount': '-300.00',
+            'balance_after': '300.00',
+          },
+        ],
+      });
+      expect(s.newestFirst.map((l) => l.transaction.id), ['s2', 'r1']);
+      expect(s.newestFirst.first.balanceAfter, const Money(50000));
+      expect(s.newestFirst.last.transaction.category, TxnCategory.receipts);
       expect(s.reconciled, isFalse);
       expect(s.difference, const Money(5000));
     });
 
-    test('filters keep full-ledger balances', () {
-      final s = buildStatement(opening: Money.zero, closing: const Money(40000), transactions: txns);
+    test('filters keep full-ledger balances', () async {
+      final s = await FakeTransactionRepository(txns).statement('x');
       final receipts = s.filtered(categories: {TxnCategory.receipts});
       expect(receipts.single.balanceAfter, const Money(20000));
       final april = s.filtered(from: DateTime(2026, 4, 5), to: DateTime(2026, 4, 15));

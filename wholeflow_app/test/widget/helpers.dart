@@ -293,13 +293,59 @@ class FakeOverdueRepository implements OverdueRepository {
   }
 }
 
+/// Answers like `GET /shops/{id}/statement`: running balances from
+/// [opening]; the Tally balance is the computed one unless [tally] is given.
 class FakeTransactionRepository implements TransactionRepository {
-  FakeTransactionRepository([this.txns = const []]);
+  FakeTransactionRepository([this.txns = const [], this.opening = Money.zero, this.tally]);
 
   final List<ShopTransaction> txns;
+  final Money opening;
+  final Money? tally;
+
+  Map<String, dynamic> _json({DateTime? from, DateTime? to}) {
+    String day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    String rs(Money m) => (m.paise / 100).toStringAsFixed(2);
+    final ordered = [...txns]..sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+    var running = opening, periodOpening = opening;
+    final lines = <Map<String, dynamic>>[];
+    for (final t in ordered) {
+      running += t.amount;
+      if (from != null && t.transactionDate.isBefore(from)) {
+        periodOpening = running;
+      } else if (to == null || !t.transactionDate.isAfter(to)) {
+        lines.insert(0, {
+          'id': t.id,
+          'transaction_date': day(t.transactionDate),
+          'voucher_type': t.voucherType,
+          'voucher_number': t.voucherNumber,
+          'category': t.category.name,
+          'narration': t.narration,
+          'debit': rs(t.debit),
+          'credit': rs(t.credit),
+          'amount': rs(t.amount),
+          'balance_after': rs(running),
+        });
+      }
+    }
+    return {
+      'from': from == null ? null : day(from),
+      'to': to == null ? null : day(to),
+      'opening': rs(periodOpening),
+      'closing': lines.isEmpty ? rs(periodOpening) : lines.first['balance_after'],
+      'ledger_opening': rs(opening),
+      'tally_balance': rs(tally ?? running),
+      'computed_balance': rs(running),
+      'reconciled': (tally ?? running) == running,
+      'lines': lines,
+    };
+  }
 
   @override
-  Future<List<ShopTransaction>> forShop(String shopId) async => txns;
+  Future<Statement> statement(String shopId) async => Statement.fromJson(_json());
+
+  @override
+  Future<PeriodStatement> period(String shopId, {DateTime? from, DateTime? to}) async =>
+      PeriodStatement.fromJson(_json(from: from, to: to));
 }
 
 class FakeDashboardRepository implements DashboardRepository {

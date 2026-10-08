@@ -38,7 +38,7 @@ const (
 	secret  = "test-secret-test-secret-test-secret-32"
 )
 
-func TestIntegrationPayments(t *testing.T) {
+func TestIntegration(t *testing.T) {
 	admin := os.Getenv("WF_TEST_PG")
 	if admin == "" {
 		t.Skip("set WF_TEST_PG (see the comment at the top of this file)")
@@ -201,6 +201,54 @@ func TestIntegrationPayments(t *testing.T) {
 		eqv(t, code, 404, "unknown business")
 		code, _ = get("/b/apitest/api/v1/payments?company=not-a-uuid", token(ownerA))
 		eqv(t, code, 400, "malformed id")
+	})
+
+	statementPath := "/b/apitest/api/v1/shops/" + shopA1 + "/statement"
+	t.Run("owner gets the statement with running balances", func(t *testing.T) {
+		code, body := get(statementPath, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["ledger_opening"], "1000.00", "ledger opening")
+		eqv(t, body["tally_balance"], "1100.00", "tally balance")
+		eqv(t, body["reconciled"], true, "reconciled")
+		lines := body["lines"].([]any)
+		eqv(t, len(lines), 3, "lines")
+		newest := lines[0].(map[string]any)
+		eqv(t, newest["voucher_number"], "R1", "newest first")
+		eqv(t, newest["balance_after"], "1100.00", "balance after receipt")
+		eqv(t, lines[2].(map[string]any)["balance_after"], "1500.00", "balance after first bill")
+	})
+
+	t.Run("a period brings the balance forward", func(t *testing.T) {
+		code, body := get(statementPath+"?from=2026-06-01&to=2026-06-30", token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		eqv(t, body["opening"], "1500.00", "brought forward")
+		eqv(t, body["closing"], "2300.00", "closing")
+		eqv(t, body["total_debit"], "800.00", "debits")
+		eqv(t, len(body["lines"].([]any)), 1, "June lines")
+		code, _ = get(statementPath+"?from=2026-07-01&to=2026-06-01", token(ownerA))
+		eqv(t, code, 400, "from after to")
+		code, _ = get(statementPath+"?from=yesterday", token(ownerA))
+		eqv(t, code, 400, "bad date")
+	})
+
+	t.Run("staff need the company's transaction access", func(t *testing.T) {
+		code, _ := get(statementPath, token(staffA))
+		eqv(t, code, 404, "unassigned staff can't see the shop")
+		mustExec(t, db, `insert into public.staff_company_access (user_id, business_id, company_id, full_company, can_view_transactions)
+			values ($1, $2, $3, true, true)`, staffA, bizA, companA)
+		code, body := get(statementPath, token(staffA))
+		eqv(t, code, 200, "assigned staff")
+		eqv(t, len(body["lines"].([]any)), 3, "staff lines")
+		mustExec(t, db, `update public.staff_company_access set can_view_transactions = false where user_id = $1`, staffA)
+		code, body = get(statementPath, token(staffA))
+		eqv(t, code, 403, "no transaction access")
+		eqv(t, body["error"].(map[string]any)["code"], "NO_TRANSACTIONS", "code")
+		code, _ = get(statementPath, token(ownerB))
+		eqv(t, code, 404, "another business")
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

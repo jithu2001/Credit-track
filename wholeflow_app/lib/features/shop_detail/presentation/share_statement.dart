@@ -93,13 +93,13 @@ class _ShareStatementSheetState extends ConsumerState<ShareStatementSheet> {
     }
   }
 
-  CustomerStatement _build(Statement s) {
+  CustomerStatement _build(PeriodStatement period) {
     final companies = ref.read(companiesProvider).value ?? const [];
     final company = companies.where((c) => c.id == widget.shop.companyId).firstOrNull;
     return CustomerStatement(
       companyName: company?.companyName ?? '',
       shop: widget.shop,
-      period: periodStatement(s, from: _range?.start, to: _range?.end),
+      period: period,
       generatedAt: DateTime.now(),
     );
   }
@@ -129,7 +129,8 @@ class _ShareStatementSheetState extends ConsumerState<ShareStatementSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final statement = ref.watch(shopStatementProvider(widget.shop.id));
+    final range = _range;
+    final statement = ref.watch(statementPeriodProvider((shopId: widget.shop.id, from: range?.start, to: range?.end)));
     final periods = [
       if (_custom != null && _period != StatementPeriod.custom) StatementPeriod.shown,
       StatementPeriod.thisYear,
@@ -177,7 +178,7 @@ class _ShareStatementSheetState extends ConsumerState<ShareStatementSheet> {
     );
   }
 
-  Widget _ready(BuildContext context, Statement s) {
+  Widget _ready(BuildContext context, PeriodStatement s) {
     final c = _build(s);
     final p = c.period;
     final phones = [
@@ -215,7 +216,7 @@ class _ShareStatementSheetState extends ConsumerState<ShareStatementSheet> {
             child: Padding(
               padding: const EdgeInsets.all(Insets.m),
               child: Text(
-                "These transactions don't add up to the Tally balance (${formatBalance(s.closing)}). "
+                "These transactions don't add up to the Tally balance (${formatBalance(s.tallyBalance)}). "
                 'The statement shows balances worked out from the transactions. Sync again before sending if you can.',
                 style: context.text.bodySmall?.copyWith(color: context.semantic.onWarningContainer),
               ),

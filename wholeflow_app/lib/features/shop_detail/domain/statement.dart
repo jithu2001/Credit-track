@@ -57,6 +57,14 @@ class StatementLine {
 class Statement {
   const Statement({required this.opening, required this.closing, required this.computedClosing, required this.newestFirst});
 
+  /// `GET /api/v1/shops/{id}/statement` (no dates): the whole ledger, worked out on the server.
+  factory Statement.fromJson(Map<String, dynamic> j) => Statement(
+    opening: Money.parse(j['ledger_opening']),
+    closing: Money.parse(j['tally_balance']),
+    computedClosing: Money.parse(j['computed_balance']),
+    newestFirst: _lines(j),
+  );
+
   final Money opening;
 
   /// `shops.receivable` as synced from Tally.
@@ -83,30 +91,10 @@ class Statement {
   }
 }
 
-/// Builds the statement from transactions in any order.
-Statement buildStatement({required Money opening, required Money closing, required List<ShopTransaction> transactions}) {
-  final chronological = [...transactions]..sort(_chronological);
-  var running = opening;
-  final lines = <StatementLine>[];
-  for (final t in chronological) {
-    running += t.amount;
-    lines.add(StatementLine(t, running));
-  }
-  return Statement(
-    opening: opening,
-    closing: closing,
-    computedClosing: running,
-    newestFirst: lines.reversed.toList(growable: false),
-  );
-}
-
-int _chronological(ShopTransaction a, ShopTransaction b) {
-  final byDate = a.transactionDate.compareTo(b.transactionDate);
-  if (byDate != 0) return byDate;
-  final ac = a.createdAt, bc = b.createdAt;
-  if (ac != null && bc != null && ac != bc) return ac.compareTo(bc);
-  return (a.voucherNumber ?? '').compareTo(b.voucherNumber ?? '');
-}
+List<StatementLine> _lines(Map<String, dynamic> j) => [
+  for (final l in (j['lines'] as List? ?? const []).cast<Map<String, dynamic>>())
+    StatementLine(ShopTransaction.fromJson(l), Money.parse(l['balance_after'])),
+];
 
 /// A shop's statement for a period, as sent to the customer: the balance
 /// brought forward, the period's vouchers oldest first, and the balance at the
@@ -118,7 +106,20 @@ class PeriodStatement {
     required this.opening,
     required this.lines,
     required this.closing,
+    this.reconciled = true,
+    this.tallyBalance = Money.zero,
   });
+
+  /// `GET /api/v1/shops/{id}/statement?from=&to=`, worked out on the server.
+  factory PeriodStatement.fromJson(Map<String, dynamic> j) => PeriodStatement(
+    from: j['from'] == null ? null : DateTime.parse(j['from'] as String),
+    to: j['to'] == null ? null : DateTime.parse(j['to'] as String),
+    opening: Money.parse(j['opening']),
+    lines: _lines(j).reversed.toList(),
+    closing: Money.parse(j['closing']),
+    reconciled: j['reconciled'] != false,
+    tallyBalance: Money.parse(j['tally_balance']),
+  );
 
   /// Null = from the first voucher / up to the last.
   final DateTime? from;
@@ -131,30 +132,10 @@ class PeriodStatement {
   final List<StatementLine> lines;
   final Money closing;
 
+  /// Whether the shop's whole ledger adds up to its Tally balance ([tallyBalance]).
+  final bool reconciled;
+  final Money tallyBalance;
+
   Money get totalDebit => lines.fold(Money.zero, (sum, l) => sum + l.transaction.debit);
   Money get totalCredit => lines.fold(Money.zero, (sum, l) => sum + l.transaction.credit);
-}
-
-/// [s] between [from] and [to] (calendar days, both included).
-PeriodStatement periodStatement(Statement s, {DateTime? from, DateTime? to}) {
-  DateTime day(DateTime d) => DateTime(d.year, d.month, d.day);
-  final start = from == null ? null : day(from);
-  final end = to == null ? null : day(to);
-  var opening = s.opening;
-  final lines = <StatementLine>[];
-  for (final l in s.newestFirst.reversed) {
-    final d = day(l.transaction.transactionDate);
-    if (start != null && d.isBefore(start)) {
-      opening = l.balanceAfter;
-    } else if (end == null || !d.isAfter(end)) {
-      lines.add(l);
-    }
-  }
-  return PeriodStatement(
-    from: start,
-    to: end,
-    opening: opening,
-    lines: lines,
-    closing: lines.isEmpty ? opening : lines.last.balanceAfter,
-  );
 }

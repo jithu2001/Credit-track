@@ -9,6 +9,12 @@ company totals are identical to the old on-phone result. One shop differed by on
 "paid bill" because the old code broke ties between same-day vouchers synced in the
 same batch at random; the server now uses a fixed order.
 
+Phase 2 (statement) built: `GET /shops/{id}/statement[?from=&to=]` gives the
+ledger with running balances, or a period with the balance brought forward.
+Owners and staff who may see the company's transactions can use it; other
+staff get 403. The Statement tab and "Share statement" use it; the customer
+PDF and text are still made on the phone.
+
 ## 1. Goal
 
 Today the Owner and Staff apps read tables straight from each business's
@@ -125,6 +131,19 @@ go test ./internal/appapi` also runs the endpoints against every migration
   keeps making them until then.
 - Retire PostgREST for the phone apps once every feature has moved (the Tally
   PC still uses it).
+
+### After the move (agreed 2026-10-08)
+
+1. **Fewer containers per business.** Today each business runs its own GoTrue
+   and PostgREST containers (~128 MB each), so 30–40 businesses would fill
+   the 8 GB server. Once the phones use only the app API, the API (or one
+   shared login service) handles logins for every business. Each business
+   keeps only its own database, so adding a business costs almost no memory.
+2. **Tally PC through the API.** Move the PC's uploads from PostgREST to app
+   API endpoints (same PC keys and revocation), so PostgREST can be retired.
+3. **Monitoring before going live.** A health check on the API (and the
+   control service) with an alert when it is down or returns errors, and a
+   short daily error summary from `journalctl`.
 
 ## 7. Decisions (made 2026-10-08)
 
