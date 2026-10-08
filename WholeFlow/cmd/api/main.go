@@ -62,7 +62,6 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		PGHost:  env("PG_HOST", "127.0.0.1:5432"),
 		Log:     log,
 		Now:     time.Now,
-		HTTP:    &http.Client{Timeout: 20 * time.Second},
 	}
 	defer api.Close()
 	srv := &http.Server{

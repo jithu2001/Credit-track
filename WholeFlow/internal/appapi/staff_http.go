@@ -1,16 +1,19 @@
 package appapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"wholeflow/internal/authn"
 )
 
 // Staff management (owner only; replaces the Deno manage-staff service):
@@ -25,10 +28,11 @@ import (
 //
 // A company entry is {"company_id", "full_company", "site_ids", "can_view_transactions"}.
 // After the owner check, changes run as the business's service role (as the
-// Deno service did with its service key); logins change through the login
-// service's admin API.
+// Deno service did with its service key); logins change in the login tables
+// (internal/authn).
 
-const banForever = "876000h" // ~100 years, as the sync service and the Deno service used
+// banForever blocks a disabled staff member's login (~100 years, as before).
+const banForever = 876000 * time.Hour
 
 var (
 	uuidRE  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -167,60 +171,26 @@ func parseGrants(r *request, in []companyGrant, businessID string, requireOne bo
 	return out, nil
 }
 
-// ---------------------------------------------------------------- login service admin API
-
-func (s *Server) authAdmin(ctx context.Context, t *tenant, method, path string, body any, out any) (int, error) {
-	var rd io.Reader
-	if body != nil {
-		raw, _ := json.Marshal(body)
-		rd = bytes.NewReader(raw)
-	}
-	req, _ := http.NewRequestWithContext(ctx, method, strings.TrimRight(t.AuthURL, "/")+"/admin/users"+path, rd)
-	req.Header.Set("Authorization", "Bearer "+t.ServiceKey)
-	req.Header.Set("apikey", t.ServiceKey)
-	req.Header.Set("Content-Type", "application/json")
-	client := s.HTTP
-	if client == nil {
-		client = http.DefaultClient
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer res.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
-	if res.StatusCode/100 != 2 {
-		return res.StatusCode, fmt.Errorf("login service %d: %s", res.StatusCode, strings.TrimSpace(string(raw)))
-	}
-	if out != nil {
-		return res.StatusCode, json.Unmarshal(raw, out)
-	}
-	return res.StatusCode, nil
-}
+// ---------------------------------------------------------------- logins
 
 // createLogin makes the staff member's login; EMAIL_TAKEN when the address is in use.
 func (s *Server) createLogin(r *request, email, password string, meta map[string]any) (string, error) {
-	var u struct {
-		ID string `json:"id"`
+	var id string
+	err := inAuthTx(r.Context(), r.tenant, func(tx pgx.Tx) (err error) {
+		id, err = authn.CreateUser(r.Context(), tx, email, password, meta, s.Now())
+		return err
+	})
+	switch {
+	case errors.Is(err, authn.ErrEmailExists):
+		return "", fail(http.StatusConflict, "EMAIL_TAKEN", "An account with this email already exists.")
+	case errors.Is(err, authn.ErrWeakPassword):
+		return "", fail(http.StatusBadRequest, "INVALID_INPUT", "Choose a stronger password.")
 	}
-	code, err := s.authAdmin(r.Context(), r.tenant, http.MethodPost, "",
-		map[string]any{"email": email, "password": password, "email_confirm": true, "user_metadata": meta}, &u)
-	if err != nil {
-		msg := strings.ToLower(err.Error())
-		switch {
-		case strings.Contains(msg, "email_exists") || strings.Contains(msg, "already") && strings.Contains(msg, "registered"):
-			return "", fail(http.StatusConflict, "EMAIL_TAKEN", "An account with this email already exists.")
-		case strings.Contains(msg, "weak_password"):
-			return "", fail(http.StatusBadRequest, "INVALID_INPUT", "Choose a stronger password.")
-		case code == http.StatusUnprocessableEntity:
-			return "", fail(http.StatusConflict, "EMAIL_TAKEN", "An account with this email already exists.")
-		}
-		return "", err
-	}
-	if u.ID == "" {
-		return "", errors.New("login service returned no user id")
-	}
-	return u.ID, nil
+	return id, err
+}
+
+func (s *Server) changeLogin(r *request, id string, up authn.Update) error {
+	return inAuthTx(r.Context(), r.tenant, func(tx pgx.Tx) error { return authn.AdminUpdate(r.Context(), tx, id, up, s.Now()) })
 }
 
 // ---------------------------------------------------------------- handlers
@@ -292,7 +262,9 @@ func (s *Server) createStaff(r *request) (any, error) {
 	}
 	if err != nil {
 		// Don't leave a login without a staff row.
-		if _, derr := s.authAdmin(context.WithoutCancel(r.Context()), r.tenant, http.MethodDelete, "/"+id, nil, nil); derr != nil {
+		if derr := inAuthTx(context.WithoutCancel(r.Context()), r.tenant, func(tx pgx.Tx) error {
+			return authn.DeleteUser(context.WithoutCancel(r.Context()), tx, id)
+		}); derr != nil {
 			s.Log.Error("staff login left behind", "user", id, "error", derr.Error())
 		}
 		return nil, err
@@ -385,9 +357,9 @@ func (s *Server) setStaffActive(r *request) (any, error) {
 		}
 		ban := banForever
 		if *in.Active {
-			ban = "none"
+			ban = 0
 		}
-		if _, err := s.authAdmin(r.Context(), r.tenant, http.MethodPut, "/"+id, map[string]any{"ban_duration": ban}, nil); err != nil {
+		if err := s.changeLogin(r, id, authn.Update{Ban: &ban}); err != nil {
 			return nil, err
 		}
 		return map[string]any{"id": id, "is_active": *in.Active}, nil
@@ -405,18 +377,8 @@ func (s *Server) resetStaffPassword(r *request) (any, error) {
 		if err := requirePassword(in.Password); err != nil {
 			return nil, err
 		}
-		var u struct {
-			Metadata map[string]any `json:"user_metadata"`
-		}
-		if _, err := s.authAdmin(r.Context(), r.tenant, http.MethodGet, "/"+id, nil, &u); err != nil {
-			return nil, err
-		}
-		if u.Metadata == nil {
-			u.Metadata = map[string]any{}
-		}
-		u.Metadata["must_change_password"] = true
-		if _, err := s.authAdmin(r.Context(), r.tenant, http.MethodPut, "/"+id,
-			map[string]any{"password": in.Password, "user_metadata": u.Metadata}, nil); err != nil {
+		if err := s.changeLogin(r, id, authn.Update{Password: &in.Password,
+			Metadata: map[string]any{"must_change_password": true}}); err != nil {
 			return nil, err
 		}
 		return map[string]any{"id": id}, nil

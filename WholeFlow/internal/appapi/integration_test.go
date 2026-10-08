@@ -17,6 +17,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"wholeflow/internal/authn"
 	"wholeflow/internal/cloud"
 	"wholeflow/internal/cloud/hosted"
 	"wholeflow/internal/control"
@@ -90,47 +91,6 @@ func TestIntegration(t *testing.T) {
 		($1, $2, $3, 'v3', 'l1', '2026-07-10', 'Receipt', 'R1', 'receipts', 0, 1200, -1200, now()),
 		($1, $2, $4, 'v4', 'l2', '2026-07-01', 'Sales', '3', 'sales', 150, 0, 150, now())`, bizA, companA, shopA1, shopA2)
 
-	// A stand-in for the business's login service (GoTrue admin API): logins
-	// go into auth.users so the users rows can refer to them.
-	logins := map[string]map[string]any{} // id → last attributes sent
-	gotrue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Header.Get("Authorization") != "Bearer service-key" {
-			w.WriteHeader(401)
-			return
-		}
-		var body map[string]any
-		_ = json.NewDecoder(req.Body).Decode(&body)
-		id := strings.TrimPrefix(req.URL.Path, "/admin/users/")
-		switch {
-		case req.Method == "POST" && req.URL.Path == "/admin/users":
-			var newID string
-			err := db.QueryRow(context.Background(), `insert into auth.users (id, email) values (gen_random_uuid(), $1)
-				on conflict do nothing returning id::text`, body["email"]).Scan(&newID)
-			var exists bool
-			_ = db.QueryRow(context.Background(), `select count(*) > 1 from auth.users where email = $1`, body["email"]).Scan(&exists)
-			if err != nil || exists {
-				if newID != "" {
-					_, _ = db.Exec(context.Background(), `delete from auth.users where id = $1`, newID)
-				}
-				w.WriteHeader(422)
-				_, _ = w.Write([]byte(`{"code":"email_exists","msg":"A user with this email address has already been registered"}`))
-				return
-			}
-			logins[newID] = body
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": newID})
-		case req.Method == "GET":
-			meta := map[string]any{"name": "x", "must_change_password": false}
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "user_metadata": meta})
-		case req.Method == "PUT":
-			logins[id] = body
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
-		case req.Method == "DELETE":
-			_, _ = db.Exec(context.Background(), `delete from auth.users where id::text = $1`, id)
-			w.WriteHeader(200)
-		}
-	}))
-	defer gotrue.Close()
-
 	mustExec(t, db, `insert into public.sync_logs (business_id, company_id, started_at, completed_at, status, mode, records_processed)
 		values ($1, $2, '2026-07-20 05:00:00+00', '2026-07-20 05:00:09+00', 'success', 'incremental', 12)`, bizA, companA)
 	mustExec(t, db, `insert into public.tally_connections (business_id, machine_identifier, hostname, status, app_version, last_seen_at)
@@ -145,7 +105,8 @@ func TestIntegration(t *testing.T) {
 			if slug != "apitest" {
 				return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
 			}
-			return TenantInfo{Secret: secret, DBURL: u.String(), AuthURL: gotrue.URL, ServiceKey: "service-key", BusinessID: bizA}, nil
+			return TenantInfo{Secret: secret, DBURL: u.String(), AuthDBURL: admin, BusinessID: bizA,
+				BaseURL: "https://api.example.test/b/apitest"}, nil
 		},
 	}
 	defer srv.Close()
@@ -757,7 +718,9 @@ func TestIntegration(t *testing.T) {
 		save("staff_created")
 		newID := out["id"].(string)
 		eqv(t, out["email"], "new@new.test", "email normalised")
-		eqv(t, logins[newID]["user_metadata"].(map[string]any)["must_change_password"], true, "must change password")
+		var mustChange bool
+		_ = db.QueryRow(context.Background(), `select (raw_user_meta_data->>'must_change_password')::bool from auth.users where id = $1`, newID).Scan(&mustChange)
+		eqv(t, mustChange, true, "must change password")
 
 		code, out = send("POST", "/b/apitest/api/v1/staff", token(ownerA), body)
 		eqv(t, code, 409, "same email again")
@@ -805,13 +768,21 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 200, "check-in off")
 		code, _ = send("PUT", staffPath+"/active", token(ownerA), `{"active":false}`)
 		eqv(t, code, 200, "disable")
-		eqv(t, logins[newID]["ban_duration"], banForever, "login blocked")
+		var banned bool
+		_ = db.QueryRow(context.Background(), `select banned_until > now() + interval '50 years' from auth.users where id = $1`, newID).Scan(&banned)
+		eqv(t, banned, true, "login blocked")
 		code, _ = send("PUT", staffPath+"/active", token(ownerA), `{"active":true}`)
 		eqv(t, code, 200, "enable")
-		eqv(t, logins[newID]["ban_duration"], "none", "login unblocked")
+		_ = db.QueryRow(context.Background(), `select banned_until is not null from auth.users where id = $1`, newID).Scan(&banned)
+		eqv(t, banned, false, "login unblocked")
 		code, _ = send("POST", staffPath+"/password", token(ownerA), `{"password":"another123"}`)
 		eqv(t, code, 200, "reset password")
-		eqv(t, logins[newID]["user_metadata"].(map[string]any)["must_change_password"], true, "must change again")
+		_ = db.QueryRow(context.Background(), `update auth.users set raw_user_meta_data = raw_user_meta_data || '{"must_change_password": false}'
+			where id = $1 returning false`, newID).Scan(&mustChange)
+		code, _ = send("POST", staffPath+"/password", token(ownerA), `{"password":"another456"}`)
+		eqv(t, code, 200, "reset again")
+		_ = db.QueryRow(context.Background(), `select (raw_user_meta_data->>'must_change_password')::bool from auth.users where id = $1`, newID).Scan(&mustChange)
+		eqv(t, mustChange, true, "must change again")
 		code, _ = send("PATCH", "/b/apitest/api/v1/staff/"+ownerA, token(ownerA), `{"name":"Me"}`)
 		eqv(t, code, 403, "owner accounts not here")
 		code, _ = send("PATCH", "/b/apitest/api/v1/staff/"+ownerB, token(ownerA), `{"name":"Them"}`)
@@ -954,6 +925,92 @@ func TestIntegration(t *testing.T) {
 		mustExec(t, db, `insert into public.service_status (status) values ('suspended')`)
 		eqv(t, cloud.KindOf(pc.Authenticate(ctx)), cloud.KindSubscriptionEnded, "paused business")
 		mustExec(t, db, `delete from public.service_status`)
+	})
+
+	t.Run("sign in, refresh, update, sign out (GoTrue's API)", func(t *testing.T) {
+		ctx := context.Background()
+		// Give the test owner a password, as the admin app does at creation.
+		tx, _ := db.Begin(ctx)
+		pw := "owner-pass-1"
+		if err := authn.AdminUpdate(ctx, tx, ownerA, authn.Update{Password: &pw}, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		_ = tx.Commit(ctx)
+		authPath := "/b/apitest/auth/v1/"
+		post := func(path, tok, body string) (int, map[string]any, http.Header) {
+			req, _ := http.NewRequest("POST", ts.URL+authPath+path, strings.NewReader(body))
+			if tok != "" {
+				req.Header.Set("Authorization", "Bearer "+tok)
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			lastRaw, _ = io.ReadAll(res.Body)
+			var out map[string]any
+			_ = json.Unmarshal(lastRaw, &out)
+			return res.StatusCode, out, res.Header
+		}
+
+		code, out, hdr := post("token?grant_type=password", "", `{"email":"o@a.test","password":"wrong-pass"}`)
+		eqv(t, code, 400, "wrong password")
+		eqv(t, out["code"], "invalid_credentials", "error code")
+		eqv(t, hdr.Get("X-Supabase-Api-Version"), "2024-01-01", "api version header")
+		save("auth_error")
+
+		code, out, _ = post("token?grant_type=password", "", `{"email":"O@A.test","password":"owner-pass-1"}`)
+		if code != 200 {
+			t.Fatalf("sign in: %d %v", code, out)
+		}
+		save("auth_token")
+		access, refresh := out["access_token"].(string), out["refresh_token"].(string)
+		eqv(t, out["token_type"], "bearer", "token type")
+		eqv(t, out["user"].(map[string]any)["id"], ownerA, "user")
+
+		// The access token works with the app API, like GoTrue's did.
+		code, me := get("/b/apitest/api/v1/me", access)
+		eqv(t, code, 200, "token works for data")
+		eqv(t, me["user"].(map[string]any)["role"], "OWNER", "me")
+
+		code, user := get(authPath+"user", access)
+		eqv(t, code, 200, "get user")
+		eqv(t, user["email"], "o@a.test", "user email")
+		code, out = send("PUT", authPath+"user", access, `{"password":"owner-pass-1","data":{}}`)
+		eqv(t, code, 422, "same password")
+		eqv(t, out["code"], "same_password", "same password code")
+		code, out = send("PUT", authPath+"user", access, `{"password":"owner-pass-2","data":{"must_change_password":false}}`)
+		if code != 200 {
+			t.Fatalf("update user: %d %v", code, out)
+		}
+		save("auth_user")
+		eqv(t, out["user_metadata"].(map[string]any)["must_change_password"], false, "metadata")
+
+		code, out, _ = post("token?grant_type=refresh_token", "", `{"refresh_token":"`+refresh+`"}`)
+		if code != 200 {
+			t.Fatalf("refresh: %d %v", code, out)
+		}
+		access2 := out["access_token"].(string)
+		eqv(t, out["refresh_token"] != refresh, true, "rotated")
+		code, out, _ = post("token?grant_type=refresh_token", "", `{"refresh_token":"nope"}`)
+		eqv(t, code, 400, "unknown refresh token")
+		eqv(t, out["code"], "refresh_token_not_found", "code")
+
+		code, _, _ = post("logout?scope=local", access2, ``)
+		eqv(t, code, 204, "sign out")
+		code, out = get(authPath+"user", access2)
+		eqv(t, code, 403, "session ended")
+		eqv(t, out["code"], "session_not_found", "code")
+		code, _ = get(authPath+"user", "")
+		eqv(t, code, 401, "no token")
+
+		// Ten wrong passwords lock that email for 15 minutes.
+		for i := 0; i < 10; i++ {
+			post("token?grant_type=password", "", `{"email":"locked@a.test","password":"guess"}`)
+		}
+		code, out, _ = post("token?grant_type=password", "", `{"email":"locked@a.test","password":"guess"}`)
+		eqv(t, code, 429, "locked")
+		eqv(t, out["code"], "over_request_rate_limit", "code")
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

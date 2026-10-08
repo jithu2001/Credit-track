@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Runs every migration and every SQL test against a throwaway local Postgres
-# (Docker, postgres:15) with a minimal stand-in for the login service's auth
-# schema. Nothing touches a real server. Usage: tests/run_local.sh
+# (Docker, postgres:15) with the login tables of db/auth/auth_schema.sql. Nothing touches a real server. Usage: tests/run_local.sh
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 NAME=wholeflow-sqltest
@@ -21,12 +20,9 @@ $P -d wf <<'SQL'
 grant usage on schema public to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
-create schema auth;
-grant usage on schema auth to anon, authenticated, service_role;
-create table auth.users (id uuid primary key, email text);
-create function auth.uid() returns uuid language sql stable as $$
-  select nullif(current_setting('request.jwt.claims', true)::json->>'sub', '')::uuid $$;
 SQL
+# The real login tables (as on the server), so sign-in can be tested too.
+$P -d wf -f "$HERE/../auth/auth_schema.sql" >/dev/null
 for m in "$HERE"/../migrations/*.sql; do $P -d wf -f "$m" >/dev/null || { echo "FAIL migration $(basename "$m")"; exit 1; }; done
 rc=0
 for t in "$HERE"/*.sql; do

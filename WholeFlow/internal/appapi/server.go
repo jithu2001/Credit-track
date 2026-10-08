@@ -34,7 +34,6 @@ type Server struct {
 	PGHost  string          // host:port of PostgreSQL as seen from this process
 	Log     *slog.Logger
 	Now     func() time.Time
-	HTTP    *http.Client // calls to the businesses' login services
 
 	// Resolve finds a business's token secret, database URL and login service;
 	// nil means control_db + businesses/<slug>/env (tests set their own).
@@ -50,6 +49,7 @@ type tenant struct {
 	TenantInfo
 	slug     string
 	pool     *pgxpool.Pool
+	authPool *pgxpool.Pool // the login tables, as the business's login role
 	loadedAt time.Time
 }
 
@@ -60,6 +60,8 @@ type TenantInfo struct {
 	AuthURL    string // its login service, e.g. http://127.0.0.1:9101 (admin API)
 	ServiceKey string // service_role key for the login service's admin API
 	BusinessID string // the business's row id inside its database (businesses.id)
+	AuthDBURL  string // its login role (<slug>_auth) on biz_<slug>: the login tables
+	BaseURL    string // https://api.example/b/<slug> (iss of the access tokens)
 }
 
 const tenantTTL = 5 * time.Minute
@@ -126,6 +128,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/visits/{id}", s.handle(s.visitDetail))
 	mux.HandleFunc("POST /b/{slug}/api/v1/visits/{id}/note", s.handleWrite(s.addVisitNote))
 	s.pcRoutes(mux)
+	s.authRoutes(mux)
 	mux.HandleFunc("GET /b/{slug}/api/v1/staff", s.handle(s.staffList))
 	mux.HandleFunc("POST /b/{slug}/api/v1/staff", s.handleWrite(s.createStaff))
 	mux.HandleFunc("PATCH /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.renameStaff))
@@ -141,7 +144,7 @@ func (s *Server) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, t := range s.tenants {
-		t.pool.Close()
+		t.close()
 	}
 	s.tenants = nil
 }
@@ -328,7 +331,7 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cur := s.tenants[slug]; cur != nil && cur.DBURL == info.DBURL {
+	if cur := s.tenants[slug]; cur != nil && cur.DBURL == info.DBURL && cur.AuthDBURL == info.AuthDBURL {
 		cur.TenantInfo, cur.loadedAt = info, s.Now()
 		return cur, nil
 	}
@@ -342,10 +345,24 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	if err != nil {
 		return nil, err
 	}
-	if old := s.tenants[slug]; old != nil {
-		old.pool.Close()
+	var authPool *pgxpool.Pool
+	if info.AuthDBURL != "" {
+		acfg, err := pgxpool.ParseConfig(info.AuthDBURL)
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+		acfg.MaxConns = 2
+		acfg.MaxConnIdleTime = 5 * time.Minute
+		if authPool, err = pgxpool.NewWithConfig(ctx, acfg); err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
-	t := &tenant{TenantInfo: info, slug: slug, pool: pool, loadedAt: s.Now()}
+	if old := s.tenants[slug]; old != nil {
+		old.close()
+	}
+	t := &tenant{TenantInfo: info, slug: slug, pool: pool, authPool: authPool, loadedAt: s.Now()}
 	s.tenants[slug] = t
 	return t, nil
 }
@@ -377,14 +394,25 @@ func (s *Server) fromControl(ctx context.Context, slug string) (TenantInfo, erro
 	if info.DBURL, err = s.localURL(env["API_DB_URL"]); err != nil {
 		return TenantInfo{}, fmt.Errorf("business %s API_DB_URL: %w", slug, err)
 	}
+	if info.AuthDBURL, err = s.localURL(env["AUTH_DB_URL"]); err != nil {
+		return TenantInfo{}, fmt.Errorf("business %s AUTH_DB_URL: %w", slug, err)
+	}
+	info.BaseURL = env["BASE_URL"]
 	return info, nil
+}
+
+func (t *tenant) close() {
+	t.pool.Close()
+	if t.authPool != nil {
+		t.authPool.Close()
+	}
 }
 
 func (s *Server) drop(slug string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if t := s.tenants[slug]; t != nil {
-		t.pool.Close()
+		t.close()
 		delete(s.tenants, slug)
 	}
 }

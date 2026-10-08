@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +15,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"wholeflow/internal/authn"
 )
 
 // Service holds the control operations; the HTTP layer only validates and calls it.
@@ -130,8 +130,12 @@ func (s *Service) Create(ctx context.Context, in CreateBusiness, adminID string)
 	if ownerName == "" {
 		ownerName = strings.TrimSpace(in.ContactName)
 	}
-	ownerID, err := s.createAuthUser(ctx, authPort, serviceKey, in.OwnerEmail, ownerPassword, map[string]any{
-		"name": ownerName, "business_id": tenantBusinessID, "role": "OWNER", "must_change_password": true,
+	var ownerID string
+	err = pgx.BeginFunc(ctx, tenant, func(tx pgx.Tx) (err error) {
+		ownerID, err = authn.CreateUser(ctx, tx, in.OwnerEmail, ownerPassword, map[string]any{
+			"name": ownerName, "business_id": tenantBusinessID, "role": "OWNER", "must_change_password": true,
+		}, s.Now())
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("owner login: %w", err)
@@ -181,27 +185,6 @@ func (s *Service) Create(ctx context.Context, in CreateBusiness, adminID string)
 	}
 	s.Store.Audit(ctx, nullable(adminID), &out.ID, "business.create", map[string]any{"slug": in.Slug, "plan": in.PlanCode})
 	return out, nil
-}
-
-func (s *Service) createAuthUser(ctx context.Context, port int, serviceKey, email, password string, meta map[string]any) (string, error) {
-	body, _ := json.Marshal(map[string]any{"email": email, "password": password, "email_confirm": true, "user_metadata": meta})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/admin/users", port), bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+serviceKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("login service %d: %s", resp.StatusCode, tail(string(raw), 300))
-	}
-	var u struct{ ID string }
-	if err := json.Unmarshal(raw, &u); err != nil || u.ID == "" {
-		return "", errors.New("login service returned no user id")
-	}
-	return u.ID, nil
 }
 
 // ---------------------------------------------------------------- subscription

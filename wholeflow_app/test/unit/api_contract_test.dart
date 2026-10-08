@@ -201,7 +201,8 @@ void main() {
 
   tearDownAll(() {
     // Every fixture the server wrote is read by some repository.
-    final written = {for (final f in Directory('test/fixtures/api').listSync()) f.uri.pathSegments.last.replaceAll('.json', '')};
+    final written = {for (final f in Directory('test/fixtures/api').listSync()) f.uri.pathSegments.last.replaceAll('.json', '')}
+      ..removeWhere((name) => name.startsWith('auth_')); // read by auth_contract_test.dart
     expect(written.difference(served), isEmpty, reason: 'fixtures no repository reads');
   });
 }

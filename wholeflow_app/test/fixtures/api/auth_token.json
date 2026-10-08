@@ -1,0 +1,22 @@
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc4NDUyNzIwMH1dLCJhcHBfbWV0YWRhdGEiOnt9LCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZW1haWwiOiJvQGEudGVzdCIsImV4cCI6MTc4NDUzMDgwMCwiaWF0IjoxNzg0NTI3MjAwLCJpc19hbm9ueW1vdXMiOmZhbHNlLCJpc3MiOiJodHRwczovL2FwaS5leGFtcGxlLnRlc3QvYi9hcGl0ZXN0L2F1dGgvdjEiLCJwaG9uZSI6IiIsInJvbGUiOiJhdXRoZW50aWNhdGVkIiwic2Vzc2lvbl9pZCI6ImVjZmYyNGMwLTczYzYtNDkzNi05Zjg2LWRmZDI2OWMwMDE4NyIsInN1YiI6ImEwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwYTAwMSIsInVzZXJfbWV0YWRhdGEiOnt9fQ.RHWiWT5bz_ZquI2fUn5Q-M_q2akz0X9PPacSj55B-tA",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "expires_at": 1784530800,
+  "refresh_token": "QkF7BKw3pxKhLGyPSaMJ1m2TW2ygZBad",
+  "user": {
+    "id": "a0000000-0000-0000-0000-00000000a001",
+    "aud": "",
+    "role": "",
+    "email": "o@a.test",
+    "phone": "",
+    "last_sign_in_at": "2026-07-20T06:00:00Z",
+    "app_metadata": {},
+    "user_metadata": {},
+    "identities": [],
+    "created_at": "2026-10-08T13:48:35.466214+05:30",
+    "updated_at": "2026-10-08T13:48:35.350576+05:30",
+    "is_anonymous": false
+  }
+}
+

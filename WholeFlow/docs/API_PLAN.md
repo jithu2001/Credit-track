@@ -171,11 +171,17 @@ test. Regenerate the fixtures whenever an endpoint's answer changes.
 
 ### After the move (agreed 2026-10-08)
 
-1. **Fewer containers per business.** Today each business runs its own GoTrue
-   and PostgREST containers (~128 MB each), so 30–40 businesses would fill
-   the 8 GB server. Once the phones use only the app API, the API (or one
-   shared login service) handles logins for every business. Each business
-   keeps only its own database, so adding a business costs almost no memory.
+1. **Fewer containers per business.** Logins: done (2026-10-08). The app API
+   signs people in itself (`internal/authn`, endpoints at the same
+   `/b/<slug>/auth/v1/…` in GoTrue's format, so the apps don't change), on
+   GoTrue's own tables (`db/auth/auth_schema.sql`): existing logins, password
+   hashes and sessions keep working. Refresh tokens are replaced on every use;
+   reusing an old one ends the session. Wrong passwords lock an email for 15
+   minutes after 10 tries (and an address after 60). Staff management and the
+   admin app's owner creation and password reset use it too. The app's own
+   login library is tested against the server's real answers
+   (`test/unit/auth_contract_test.dart`). Still to do: provisioning new
+   businesses without containers, and the steps to stop the existing ones.
 2. **Tally PC through the API.** Done (2026-10-08): `/api/v1/pc/…` endpoints
    (PC keys only: role service_role + device_id, still checked by
    `check_request()` for revocation and the subscription pause; every row must
