@@ -49,6 +49,18 @@ void main() {
     expect(seen?.contact, '98000 00000');
   });
 
+  test('a refused token (session ended on the server) signs the app out', () async {
+    var ended = 0;
+    AppFailure.onSessionEnded = () => ended++;
+    addTearDown(() => AppFailure.onSessionEnded = null);
+    final repo = AnalyticsRepository(client(401, {'error': {'code': 'UNAUTHENTICATED', 'message': 'Sign in again.'}}));
+    await expectLater(
+      repo.summary('c1', creditDays: 30),
+      throwsA(isA<AppFailure>().having((f) => f.kind, 'kind', FailureKind.unauthenticated)),
+    );
+    expect(ended, 1);
+  });
+
   test('errors map to the usual failures', () {
     expect(AppFailure.from(const ApiException(401, 'UNAUTHENTICATED', 'x')).kind, FailureKind.unauthenticated);
     expect(

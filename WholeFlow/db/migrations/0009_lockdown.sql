@@ -55,6 +55,9 @@ grant usage, select on all sequences in schema public to service_role;
 -- Not for clients at all.
 revoke all on public.schema_migrations from public, anon, authenticated, service_role;
 revoke all on public.revoked_devices from public, anon, authenticated, service_role;
+-- The app API reads the newest migration name (as service_role) to warn when a
+-- business lags behind.
+grant select on public.schema_migrations to service_role;
 -- Written only by the control service (postgres); read for the banners.
 revoke insert, update, delete on public.service_status from service_role;
 

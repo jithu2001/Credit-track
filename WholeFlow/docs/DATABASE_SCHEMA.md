@@ -243,7 +243,7 @@ Migration: `db/migrations/0009_lockdown.sql`. Checks: `db/tests/privileges.sql` 
 |---|---|
 | `anon` | Nothing (no table, function, schema or temp rights). The app API never uses it. |
 | `authenticated` | `SELECT` on every table and view except `schema_migrations`, `revoked_devices`; RLS picks the rows. Writes: `sites` INSERT (`id, business_id, company_id, name`), UPDATE (`name`), DELETE; `visit_plans` INSERT (`id, business_id, site_id, staff_id, plan_date, weekday, starts_on, ends_on`), UPDATE (`active`), DELETE; `users` UPDATE (`name, is_active, requires_check_in`). Everything else goes through `SECURITY DEFINER` functions (`check_in`, `set_site_shops`, `set_shop_location`, `set_stock_minimum`, …). |
-| `service_role` | `SELECT, INSERT, UPDATE, DELETE` (no `TRUNCATE`/`TRIGGER`/`REFERENCES`); `service_status` read-only; nothing on `schema_migrations`, `revoked_devices`. |
+| `service_role` | `SELECT, INSERT, UPDATE, DELETE` (no `TRUNCATE`/`TRIGGER`/`REFERENCES`); `service_status` and `schema_migrations` read-only; nothing on `revoked_devices`. |
 
 No API role may create temporary tables, and `PUBLIC` cannot connect to a business database (only `<slug>_api` and `<slug>_auth`). Every `SECURITY DEFINER` function runs with `search_path = public, pg_temp`; no WholeFlow function is executable by `anon`/`PUBLIC`.
 

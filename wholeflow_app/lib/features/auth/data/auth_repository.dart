@@ -9,6 +9,7 @@ import '../domain/app_user.dart';
 part 'auth_repository.g.dart';
 
 const inactiveAccountMessage = 'Your account is not active. Contact your business owner.';
+const sessionEndedMessage = 'Your session has ended. Please sign in again.';
 const wrongCurrentPassword = 'Current password is wrong.';
 
 /// Signing in and passwords go to the business's login service; the

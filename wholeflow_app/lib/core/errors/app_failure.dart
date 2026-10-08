@@ -46,6 +46,11 @@ class AppFailure implements Exception {
   /// controller uses it to switch to the "paused" screen at once.
   static void Function(AppFailure failure)? onSubscriptionEnded;
 
+  /// Called whenever the app API refuses the access token (HTTP 401: signed
+  /// out elsewhere, password reset, account disabled). The session controller
+  /// uses it to go back to the sign-in screen at once.
+  static void Function()? onSessionEnded;
+
   String get message => switch (kind) {
     FailureKind.network => 'No internet connection. Check your network and try again.',
     FailureKind.unauthenticated => 'Your session has ended. Please sign in again.',
@@ -121,6 +126,7 @@ class AppFailure implements Exception {
         UpgradeGate.trigger(f.detail);
         return f;
       case 401:
+        onSessionEnded?.call();
         return const AppFailure(FailureKind.unauthenticated);
       case 403:
         return AppFailure(FailureKind.forbidden, e.code == 'FORBIDDEN' ? null : _text(e.message));
