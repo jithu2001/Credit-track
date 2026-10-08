@@ -1,5 +1,5 @@
 [Unit]
-Description=WholeFlow nightly backup (encrypted; see scripts/backup.sh)
+Description=WholeFlow nightly backup to /opt/wholeflow/backup (see scripts/backup.sh)
 After=docker.service network-online.target
 Wants=network-online.target
 

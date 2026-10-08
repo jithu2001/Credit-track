@@ -38,7 +38,8 @@ PostgreSQL 15 (docker compose, 127.0.0.1:5432): control_db + biz_<slug> per busi
 | `docker-compose.yml`, `.env` | Shared PostgreSQL 15 (localhost only). `.env`: `POSTGRES_PASSWORD`, `PUBLIC_URL` | root 600 |
 | `control.env` | Control service: superuser URLs, `MASTER_KEY`, `INTERNAL_TOKEN` | root 600 |
 | `api.env` | App API: `CONTROL_DB_URL` as read-only `wholeflow_api_ro`, `MASTER_KEY` (systemd reads it as root) | root 600 |
-| `backup.env`, `backup.recipients` | Off-site remote; age **public** key(s) for backups | root 600 / 644 |
+| `backup/` | Nightly backups (download them yourself) | root 700, files 600 |
+| `backup.env`, `backup.recipients` | Optional: off-site remote; age **public** key(s) to encrypt backups | root 600 / 644 |
 | `businesses/<slug>/env` | That business's DB logins, JWT secret, keys | root:wholeflow 640 (dir 2750 + default ACL) |
 | `db/` | `init/00-roles.sql` (server-wide roles), `api_ro_role.sql`, `lock-databases.sql` | |
 | `migrations/`, `auth/` | Copies of `WholeFlow/db/migrations/*.sql`, `db/auth/auth_schema.sql` | |
@@ -85,8 +86,8 @@ Roll back with the `.prev` binary. Add or reset an admin on the server:
 `control.env` loaded; the password is read from stdin).
 
 Remove a business: admin app → business → *Danger zone*, or
-`scripts/delete-business.sh <slug> --yes`. It first writes an encrypted final
-backup to `/var/backups/wholeflow/final/` (and off-site); if that fails nothing
+`scripts/delete-business.sh <slug> --yes`. It first writes a final
+backup to `/opt/wholeflow/backup/final/`; if that fails nothing
 is deleted. The admin app's "also delete backups" removes only this server's
 nightly copies; final backups stay 90 days here and off-site copies follow the
 bucket's retention (for an erasure request, also delete them in the B2
@@ -159,38 +160,55 @@ add 5 (PostgREST) + ~10 (GoTrue) per business until retired.
 
 ## Backups and restore
 
-`scripts/backup.sh`, run by `wholeflow-backup.timer` at 02:30 IST:
+`scripts/backup.sh`, run by `wholeflow-backup.timer` at 02:30 IST, writes to
+**`/opt/wholeflow/backup/`** (root only):
 
 - every database (`control_db`, each `biz_<slug>`) with `pg_dump -Fc`, checked
   with `pg_restore --list`; the roles (`pg_dumpall --globals-only`); the
   configuration and secrets (env files, nginx, systemd units, rclone config,
   `/etc/letsencrypt`);
-- everything **encrypted with age** to the public key(s) in
-  `/opt/wholeflow/backup.recipients`. The private key is never on the server
-  (made on the owner's laptop: [../../docs/RUNBOOK_RESTORE.md](../../docs/RUNBOOK_RESTORE.md)).
-  **No recipients file = no backup** (the run writes `FAILED`, the monitor reports it);
-- written to `/var/backups/wholeflow/.tmp-<run>/`, renamed to `<YYYY-MM-DD_HHMM>/`
-  when done, with an `OK` marker (counts) or `FAILED` (what failed; the other
-  databases are still dumped). Kept 14 days (`KEEP_DAYS`), by folder name;
-- **off-site**: with `BACKUP_REMOTE=<rclone remote:path>` in `backup.env`
-  (see `backup.env.example`), `rclone copy` of the finished folder. Use a
-  Backblaze B2 bucket with **Object Lock** (e.g. 30 days) and a lifecycle
-  rule (e.g. delete after 90 days), and a B2 application key for that bucket
-  only, **without** `deleteFiles`. The server never deletes remote files;
-  remote retention is the bucket's job. Not configured → `PROBLEM off-site copy not configured`;
+- written to `.tmp-<run>/`, renamed to `<YYYY-MM-DD_HHMM>/` when done, with an
+  `OK` marker (counts) or `FAILED` (what failed; the other databases are still
+  dumped) and `SHA256SUMS`. Kept 14 days on the server (`KEEP_DAYS`), by folder name;
 - then `select public.purge_old_data()` in every business database (data
   retention), skipped with a note where the function does not exist yet.
 
+**Download them yourself** (for now there is no automatic off-site copy).
+From your laptop, e.g. weekly, the newest finished run (one with `OK`):
+
+```bash
+ssh wholeflow 'ls /opt/wholeflow/backup'                 # pick a run with OK inside
+scp -r wholeflow:/opt/wholeflow/backup/2026-10-08_0230 ~/wholeflow-backups/
+# or everything new since last time:
+rsync -av --exclude '.tmp-*' --exclude '.lock' wholeflow:/opt/wholeflow/backup/ ~/wholeflow-backups/
+```
+
+The files are **not encrypted**: they hold every customer's ledgers and the
+server's secrets (`MASTER_KEY`, database passwords, JWT secrets). Keep the
+downloaded copies on an encrypted disk (or in an encrypted archive, e.g.
+`7z a -p`), never in a shared or synced folder, and delete old ones you no
+longer need.
+
+**Optional later — encryption and an automatic off-site copy:** put an age
+public key in `/opt/wholeflow/backup.recipients` (made on your laptop:
+[../../docs/RUNBOOK_RESTORE.md](../../docs/RUNBOOK_RESTORE.md) "Backup key") and every file is
+encrypted (`*.age`; the private key never comes to the server). Then
+`BACKUP_REMOTE=<rclone remote:path>` in `backup.env` copies each finished run
+off-site (Backblaze B2 with Object Lock, a key without `deleteFiles`); only
+encrypted backups are ever sent off-site.
+
 The monitor checks the newest finished run's `OK` marker and age, reports
-`FAILED` runs, failed purges, and the off-site state and age
-(`/var/backups/wholeflow/offsite.status`, `offsite.last-ok`). Log:
+`FAILED` runs, failed purges, and (when configured) the off-site copy
+(`/opt/wholeflow/backup/offsite.status`, `offsite.last-ok`; without one it
+notes `offsite=manual`). Log:
 `/var/log/wholeflow/backup.log` and `journalctl -u wholeflow-backup`.
 
 Restore (one business into a scratch database and swap, or a fresh VPS):
 `scripts/restore.sh` and [../../docs/RUNBOOK_RESTORE.md](../../docs/RUNBOOK_RESTORE.md),
 including the quarterly drill. **Never** `pg_restore --clean` into a live database.
 
-**RPO / RTO:** RPO 24 h (nightly dumps; no WAL archiving). RTO ≈ 15 min for
+**RPO / RTO:** RPO 24 h on the server (nightly dumps; no WAL archiving); if the
+server itself is lost, everything since your last download. RTO ≈ 15 min for
 one business, ≈ 2 h for a new VPS. Next step for a smaller RPO: continuous WAL
 archiving with wal-g or pgBackRest to the same bucket (point-in-time recovery).
 
@@ -230,21 +248,18 @@ backups (they expire on their own within those periods).
 
 ## Deploying the hardening (order)
 
-1. On your laptop: make the backup key (RUNBOOK_RESTORE.md "Backup key").
-   On the server: `apt-get install -y age rclone acl`;
-   `echo age1… > /opt/wholeflow/backup.recipients` (**required**: without it
-   no backup is taken); `backup.env` from `backup.env.example` (chmod 600).
-   The B2 bucket + `rclone config` can follow later; until then the monitor
-   logs `PROBLEM off-site copy not configured`.
+1. On the server: `apt-get install -y acl` (and `age rclone` only if you
+   later turn on encryption / off-site copies, see "Backups and restore").
 2. Copy the kit files (`scripts/`, `systemd/`, `templates/`, `nginx/`,
    `docker-compose.yml`, `db/`) to `/opt/wholeflow` (keep `.prev` copies of
    `nginx/wholeflow.conf` and `docker-compose.yml`).
 3. Remove the old backup cron entry if there is one (`crontab -l`, `/etc/cron.d/`),
    then install and start the timer:
    `cp systemd/wholeflow-backup.{service,timer} /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now wholeflow-backup.timer`;
-   run one now: `systemctl start wholeflow-backup` → newest folder has `OK`, off-site copy present.
-   Old unencrypted dumps in `/var/backups/wholeflow/` age out after 14 days
-   (or delete them once the new run is OK).
+   run one now: `systemctl start wholeflow-backup` → the newest folder in
+   `/opt/wholeflow/backup/` has `OK`; download it once to check (`scp`, above).
+   The old backup folder `/var/backups/wholeflow/` is no longer used: delete
+   it once the new run is OK (`rm -rf /var/backups/wholeflow`).
 4. `scripts/setup-users.sh` (user, group, permissions, journald).
 5. Read-only control_db role: `db/api_ro_role.sql` (see its header), put the
    new `CONTROL_DB_URL` in `api.env`.

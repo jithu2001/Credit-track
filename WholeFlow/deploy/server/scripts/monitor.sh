@@ -12,7 +12,7 @@ set -uo pipefail
 
 KIT=${KIT:-/opt/wholeflow}
 LOG_DIR=${LOG_DIR:-/var/log/wholeflow}
-BACKUP_DIR=${BACKUP_DIR:-/var/backups/wholeflow}
+BACKUP_DIR=${BACKUP_DIR:-$KIT/backup}
 CONTROL_URL=${CONTROL_URL:-http://127.0.0.1:8100/control/health}
 API_URL=${API_URL:-http://127.0.0.1:8300/health}
 DISK_LIMIT=${DISK_LIMIT:-85}      # % used
@@ -121,19 +121,22 @@ if [ -d "$BACKUP_DIR" ]; then
       [ -n "$purge" ] && problem "purge_old_data failed in $purge"
     fi
   fi
-  # Off-site copy: offsite.status = "ok|failed|not-configured <epoch> …",
-  # offsite.last-ok = "<epoch> <run>".
+  # Off-site copy: offsite.status = "ok|failed|manual <epoch> …" (manual = no
+  # BACKUP_REMOTE: you download the backups yourself), offsite.last-ok =
+  # "<epoch> <run>".
   read -r state _ orun rest < "$BACKUP_DIR/offsite.status" 2>/dev/null || state=""
   case "$state" in
     ok) ;;
     failed) problem "off-site copy of $orun failed: $rest" ;;
-    not-configured) problem "off-site copy not configured (BACKUP_REMOTE in $KIT/backup.env)" ;;
-    *) problem "off-site copy status unknown (no $BACKUP_DIR/offsite.status yet)" ;;
+    manual|not-configured) note "offsite=manual" ;;
+    *) ;;  # no backup run yet
   esac
-  if read -r ok_at _ < "$BACKUP_DIR/offsite.last-ok" 2>/dev/null; then
-    oage=$(( ($(date +%s) - ok_at) / 3600 ))
-    [ "$state" != not-configured ] && [ "$oage" -gt "$BACKUP_HOURS" ] && problem "last off-site copy is ${oage}h old"
-    note "offsite=${oage}h"
+  if [ "$state" = ok ] || [ "$state" = failed ]; then
+    if read -r ok_at _ < "$BACKUP_DIR/offsite.last-ok" 2>/dev/null; then
+      oage=$(( ($(date +%s) - ok_at) / 3600 ))
+      [ "$oage" -gt "$BACKUP_HOURS" ] && problem "last off-site copy is ${oage}h old"
+      note "offsite=${oage}h"
+    fi
   fi
 fi
 

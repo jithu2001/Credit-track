@@ -1,15 +1,21 @@
 # shellcheck shell=bash
 # Shared by backup.sh and delete-business.sh (sourced, not run).
 #
-# Every backup file is encrypted with age (https://age-encryption.org) to the
-# PUBLIC key(s) in /opt/wholeflow/backup.recipients. The matching private key
-# never comes to this server: it lives offline with the owner (password
-# manager / USB key). Without the recipients file nothing is backed up and the
-# run fails loudly (FAILED marker, monitor PROBLEM line).
+# Backups go to /opt/wholeflow/backup (root only, 700/600) and are copied off
+# the server by hand (scp/rsync; deploy/server/README.md "Backups").
+#
+# Encryption is optional: with an age (https://age-encryption.org) PUBLIC key
+# in /opt/wholeflow/backup.recipients every file is encrypted (*.age) and the
+# private key stays off the server; without that file the files are plain.
+# Plain backups hold every customer's data and the server's secrets
+# (MASTER_KEY, database passwords): keep downloaded copies on an encrypted
+# disk or in an encrypted archive.
 
 WF_KIT=${KIT:-/opt/wholeflow}
-WF_BACKUP_DIR=${BACKUP_DIR:-/var/backups/wholeflow}
+WF_BACKUP_DIR=${BACKUP_DIR:-$WF_KIT/backup}
 WF_RECIPIENTS=${BACKUP_RECIPIENTS:-$WF_KIT/backup.recipients}
+# ".age" when backups are encrypted, "" when plain (wf_choose_encryption).
+WF_EXT=""
 
 wf_log() { echo "$(TZ=Asia/Kolkata date -Iseconds) $*"; }
 
@@ -32,15 +38,31 @@ wf_check_encryption() {
   echo probe | age -R "$WF_RECIPIENTS" >/dev/null 2>&1 || { echo "age cannot use the keys in $WF_RECIPIENTS"; return 1; }
 }
 
-# wf_encrypt <out.age>: stdin -> encrypted file (written to .part, then renamed).
-wf_encrypt() {
-  age -R "$WF_RECIPIENTS" -o "$1.part" && mv "$1.part" "$1"
+# Encrypt when a recipients file exists (and then it must work), else plain.
+# Sets WF_EXT. Prints the reason and fails when the key file is unusable.
+wf_choose_encryption() {
+  if [ -e "$WF_RECIPIENTS" ]; then
+    wf_check_encryption || return 1
+    WF_EXT=.age
+  else
+    WF_EXT=""
+  fi
 }
 
-# wf_dump_db <database> <out.dump.age> <work dir>
+# wf_encrypt <out>: stdin -> file (encrypted when WF_EXT=.age), written to
+# .part and renamed, readable by root only.
+wf_encrypt() {
+  if [ "$WF_EXT" = .age ]; then
+    age -R "$WF_RECIPIENTS" -o "$1.part" && mv "$1.part" "$1"
+  else
+    (umask 077; cat >"$1.part") && mv "$1.part" "$1"
+  fi
+}
+
+# wf_dump_db <database> <out> <work dir>
 # pg_dump (custom format), checks the dump reads back (pg_restore --list),
-# then encrypts it. The plaintext dump exists only for that check, inside the
-# root-only work dir, and is removed straight after.
+# then stores it (encrypted when WF_EXT=.age). The check copy is inside the
+# root-only work dir and removed straight after.
 wf_dump_db() {
   local db=$1 out=$2 work=$3
   local plain="$work/.${db}.dump.plain"
@@ -57,7 +79,7 @@ wf_dump_db() {
   return "$ok"
 }
 
-# wf_dump_globals <out.sql.age>: roles (with password hashes) and tablespaces.
+# wf_dump_globals <out>: roles (with password hashes) and tablespaces.
 wf_dump_globals() {
   local out=$1
   (cd "$WF_KIT" && docker compose exec -T db pg_dumpall -U postgres --globals-only </dev/null) | wf_encrypt "$out"
@@ -86,7 +108,7 @@ wf_config_paths() {
   if [ "${BACKUP_LETSENCRYPT:-1}" = 1 ] && [ -d /etc/letsencrypt ]; then echo etc/letsencrypt; fi
 }
 
-# wf_config_bundle <out.tar.gz.age>
+# wf_config_bundle <out>
 wf_config_bundle() {
   local out=$1
   local -a paths

@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Restores WholeFlow backups made by scripts/backup.sh. Run as root on the
-# server, with the age PRIVATE key brought over for the occasion (it is never
-# kept on the server). Step by step guide: docs/RUNBOOK_RESTORE.md.
+# server. Plain backups need nothing else; encrypted ones (*.age) need the age
+# PRIVATE key brought over for the occasion (-i KEY; never kept on the
+# server). Step by step guide: docs/RUNBOOK_RESTORE.md.
 #
-#   restore.sh fetch  <run>                       copy a run from BACKUP_REMOTE to /var/backups/wholeflow/<run>
+#   restore.sh fetch  <run>                       copy a run from BACKUP_REMOTE to /opt/wholeflow/backup/<run>
 #   restore.sh verify <run>                       checksums + OK marker
-#   restore.sh config <run> -i KEY                unpack config.tar.gz.age into /root/restore-config-<run>/ (review, then copy)
-#   restore.sh globals <run> -i KEY               roles and password hashes (errors for roles that exist are normal)
-#   restore.sh all    <run> -i KEY                fresh server: globals + every database under its own name
-#   restore.sh db     <run> <slug> <scratch> -i KEY   one business into a NEW scratch database (live one untouched)
+#   restore.sh config <run> [-i KEY]              unpack config.tar.gz into /root/restore-config-<run>/ (review, then copy)
+#   restore.sh globals <run> [-i KEY]              roles and password hashes (errors for roles that exist are normal)
+#   restore.sh all    <run> [-i KEY]              fresh server: globals + every database under its own name
+#   restore.sh db     <run> <slug> <scratch> [-i KEY]  one business into a NEW scratch database (live one untouched)
 #   restore.sh swap   <slug> <scratch>            make the scratch database the live biz_<slug> (old one kept, renamed)
 #
-# <run> is a folder name in /var/backups/wholeflow (e.g. 2026-10-08_0230) or a path.
-# KEY is the age identity file (age-keygen output), plain or passphrase-protected
+# <run> is a folder name in /opt/wholeflow/backup (e.g. 2026-10-08_0230) or a
+# path, e.g. a folder you uploaded back from your computer.
+# KEY (encrypted backups only) is the age identity file (age-keygen output), plain or passphrase-protected
 # (age -p); a protected one is decrypted once into /dev/shm and wiped on exit.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -22,7 +24,6 @@ wf_load_backup_env
 
 die() { echo "restore: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || die "run as root"
-command -v age >/dev/null || die "age is not installed (apt-get install -y age)"
 
 action=${1:-}; shift || true
 args=(); IDENTITY=""
@@ -46,6 +47,7 @@ KEYFILE=""
 cleanup() { [ -n "$KEYFILE" ] && [ "$KEYFILE" != "$IDENTITY" ] && shred -u "$KEYFILE" 2>/dev/null || true; }
 trap cleanup EXIT
 need_key() {
+  command -v age >/dev/null || die "age is not installed (apt-get install -y age)"
   [ -n "$IDENTITY" ] || die "needs the private key: -i /path/to/wholeflow-backup-key.txt"
   [ -r "$IDENTITY" ] || die "cannot read $IDENTITY"
   if head -c 40 "$IDENTITY" | grep -Eq '^(age-encryption.org|-----BEGIN AGE ENCRYPTED)'; then
@@ -57,7 +59,21 @@ need_key() {
     KEYFILE=$IDENTITY
   fi
 }
-dec() { age -d -i "$KEYFILE" "$1"; }
+# bfile <run dir> <name>: the plain or encrypted (.age) file of that name.
+bfile() { if [ -e "$1/$2" ]; then echo "$1/$2"; else echo "$1/$2.age"; fi; }
+# key_for <run dir>: unlock the private key once, here (not inside a pipe),
+# when the run holds encrypted files.
+key_for() { if compgen -G "$1/*.age" >/dev/null; then need_key; fi; }
+# dec <file>: its contents, decrypted when it is a .age file.
+dec() {
+  case "$1" in
+    *.age) [ -n "$KEYFILE" ] || die "encrypted backup: needs -i KEY"; age -d -i "$KEYFILE" "$1" ;;
+    *) cat "$1" ;;
+  esac
+}
+# dumps <run dir>: the database dumps in it, plain or encrypted.
+dumps() { local f; for f in "$1"/*.dump "$1"/*.dump.age; do [ -e "$f" ] && echo "$f"; done; }
+dbname() { local b; b=$(basename "$1"); b=${b%.age}; echo "${b%.dump}"; }
 
 psql_pg() { docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
 db_exists() { [ "$(docker compose exec -T db psql -U postgres -tAc "select 1 from pg_database where datname = '$1'" </dev/null)" = 1 ]; }
@@ -82,29 +98,29 @@ case "$action" in
     verify "$(run_dir "${args[0]:-}")"
     ;;
   config)
-    d=$(run_dir "${args[0]:-}"); need_key
+    d=$(run_dir "${args[0]:-}"); key_for "$d"
     out=/root/restore-config-$(basename "$d")
     mkdir -m 700 -p "$out"
-    dec "$d/config.tar.gz.age" | tar -C "$out" -xzf -
+    dec "$(bfile "$d" config.tar.gz)" | tar -C "$out" -xzf -
     echo "Unpacked into $out (paths as under /). Review, then copy what you need, e.g.:"
     echo "  cp -a $out/opt/wholeflow/{.env,control.env,api.env} $out/opt/wholeflow/businesses $WF_KIT/"
     ;;
   globals)
-    d=$(run_dir "${args[0]:-}"); need_key
+    d=$(run_dir "${args[0]:-}"); key_for "$d"
     # Not ON_ERROR_STOP: "role postgres already exists" and similar are expected.
-    dec "$d/globals.sql.age" | docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=0 >/dev/null
+    dec "$(bfile "$d" globals.sql)" | docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=0 >/dev/null
     echo "roles restored"
     ;;
   all)
-    d=$(run_dir "${args[0]:-}"); verify "$d"; need_key
-    for f in "$d"/*.dump.age; do
-      db=$(basename "$f" .dump.age)
+    d=$(run_dir "${args[0]:-}"); verify "$d"; key_for "$d"
+    for f in $(dumps "$d"); do
+      db=$(dbname "$f")
       db_exists "$db" && die "database $db already exists; 'all' is for an empty server (use db/swap for one business)"
     done
-    dec "$d/globals.sql.age" | docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=0 >/dev/null
+    dec "$(bfile "$d" globals.sql)" | docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=0 >/dev/null
     echo "roles restored"
-    for f in "$d"/*.dump.age; do
-      db=$(basename "$f" .dump.age)
+    for f in $(dumps "$d"); do
+      db=$(dbname "$f")
       echo "== $db"
       # --create: makes the database with its own grants and settings.
       dec "$f" | docker compose exec -T db pg_restore -U postgres --create --exit-on-error -d postgres
@@ -117,8 +133,8 @@ case "$action" in
     [[ $scratch =~ ^[a-z_][a-z0-9_]{1,62}$ ]] || die "bad scratch name"
     [ "$scratch" != "biz_$slug" ] || die "restore into a scratch database, not the live biz_$slug"
     db_exists "$scratch" && die "$scratch already exists (drop it first if it is an old scratch copy)"
-    f="$d/biz_$slug.dump.age"; [ -e "$f" ] || die "no $f"
-    verify "$d"; need_key
+    f=$(bfile "$d" "biz_$slug.dump"); [ -e "$f" ] || die "no biz_$slug.dump in $d"
+    verify "$d"; key_for "$d"
     psql_pg </dev/null -c "create database $scratch"
     dec "$f" | docker compose exec -T db pg_restore -U postgres --exit-on-error -d "$scratch"
     echo "Restored biz_$slug from $(basename "$d") into $scratch. Live data is untouched."
@@ -135,7 +151,6 @@ case "$action" in
     psql_pg </dev/null \
       -c "revoke all on database $scratch from public" \
       -c "grant connect on database $scratch to ${slug}_auth, ${slug}_api" \
-      -c "grant temporary on database $scratch to authenticated, service_role" \
       -c "grant create on database $scratch to ${slug}_auth"
     # Keep the app API out while renaming, then end its open connections.
     if db_exists "$live"; then
@@ -150,5 +165,5 @@ case "$action" in
     echo "The app API reconnects by itself; check sign-in and a PC sync for this business."
     ;;
   *)
-    sed -n '2,17p' "$0"; exit 2 ;;
+    sed -n '2,20p' "$0"; exit 2 ;;
 esac

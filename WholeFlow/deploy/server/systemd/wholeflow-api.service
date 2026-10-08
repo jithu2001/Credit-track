@@ -47,7 +47,7 @@ SystemCallErrorNumber=EPERM
 UMask=0077
 # Everything is read-only already (ProtectSystem=strict); keep the other
 # secrets out of reach even if file modes are ever loosened.
-InaccessiblePaths=-/opt/wholeflow/control.env -/opt/wholeflow/.env -/opt/wholeflow/backup.env -/var/backups/wholeflow
+InaccessiblePaths=-/opt/wholeflow/control.env -/opt/wholeflow/.env -/opt/wholeflow/backup.env -/opt/wholeflow/backup -/var/backups/wholeflow
 
 [Install]
 WantedBy=multi-user.target

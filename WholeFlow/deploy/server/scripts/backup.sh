@@ -1,30 +1,29 @@
 #!/usr/bin/env bash
 # Nightly WholeFlow backup (wholeflow-backup.timer, 02:30 India time).
 #
-#   /var/backups/wholeflow/<YYYY-MM-DD_HHMM>/
-#     globals.sql.age          roles and their password hashes (pg_dumpall --globals-only)
-#     control_db.dump.age      the control database
-#     biz_<slug>.dump.age      one per business (pg_dump custom format)
-#     config.tar.gz.age        .env, control.env, api.env, businesses/*/env, nginx,
+#   /opt/wholeflow/backup/<YYYY-MM-DD_HHMM>/
+#     globals.sql              roles and their password hashes (pg_dumpall --globals-only)
+#     control_db.dump          the control database
+#     biz_<slug>.dump          one per business (pg_dump custom format)
+#     config.tar.gz            .env, control.env, api.env, businesses/*/env, nginx,
 #                              systemd units, rclone config, /etc/letsencrypt
-#     SHA256SUMS               checksums of the .age files
+#     SHA256SUMS               checksums of the files above
 #     OK | FAILED              written last: counts, or what failed
 #
-# Every file is encrypted with age to the public key(s) in
-# /opt/wholeflow/backup.recipients; the private key is never on this server
-# (docs/RUNBOOK_RESTORE.md). No key, no backup: the run writes FAILED and
-# exits 1. Each dump is checked with pg_restore --list before it is encrypted.
-# A failing database does not stop the others; it is listed in FAILED and the
-# script exits 1 at the end.
+# Download the newest finished folder by hand (README "Backups"); the server
+# keeps KEEP_DAYS (14) days, by the date in the folder name. Files are root
+# only (700/600). With an age public key in /opt/wholeflow/backup.recipients
+# every file is encrypted instead (*.age; docs/RUNBOOK_RESTORE.md).
+# Each dump is checked with pg_restore --list. A failing database does not
+# stop the others; it is listed in FAILED and the script exits 1 at the end.
 #
 # Built in a .tmp-<name> folder and renamed when complete, so a folder without
-# a dot is always a finished run. Kept KEEP_DAYS (14) days here, by the date in
-# the folder name.
+# a dot is always a finished run.
 #
-# Off-site: with BACKUP_REMOTE=<rclone remote:path> in /opt/wholeflow/backup.env
-# the finished folder is copied there (rclone copy: never deletes anything
-# remote; remote retention is the bucket's lifecycle / object-lock policy).
-# Result in /var/backups/wholeflow/offsite.status (scripts/monitor.sh reads it).
+# Off-site (optional): with BACKUP_REMOTE=<rclone remote:path> in
+# /opt/wholeflow/backup.env the finished folder is copied there (rclone copy:
+# never deletes anything remote). Only encrypted backups are sent off-site.
+# Result in <backup dir>/offsite.status (scripts/monitor.sh reads it).
 #
 # Afterwards runs public.purge_old_data() in every business database (data
 # retention), when the function exists. The dump above is taken first.
@@ -62,7 +61,7 @@ dbs=0
 
 finish() { # finish <OK|FAILED> <lines…>: marker, rename, summary
   local marker=$1; shift
-  (cd "$TMP" && ls ./*.age >/dev/null 2>&1 && sha256sum ./*.age > SHA256SUMS)
+  (cd "$TMP" && ls ./*.sql* ./*.dump* ./*.tar.gz* >/dev/null 2>&1 && sha256sum ./*.sql* ./*.dump* ./*.tar.gz* > SHA256SUMS)
   {
     echo "completed=$(TZ=Asia/Kolkata date -Iseconds)"
     echo "completed_epoch=$(date +%s)"
@@ -74,19 +73,20 @@ finish() { # finish <OK|FAILED> <lines…>: marker, rename, summary
   FINAL=$final
 }
 
-if ! reason=$(wf_check_encryption); then
+if [ -e "$WF_RECIPIENTS" ] && ! reason=$(wf_check_encryption 2>&1); then
   finish FAILED "failed=encryption" "reason=$reason"
-  wf_log "PROBLEM backup not taken: $reason"
+  wf_log "PROBLEM backup not taken: $reason (remove $WF_RECIPIENTS for plain backups)"
   exit 1
 fi
+wf_choose_encryption >/dev/null
 
 wf_log "backup $NAME starting"
-wf_dump_globals "$TMP/globals.sql.age" || failures+=("globals")
+wf_dump_globals "$TMP/globals.sql$WF_EXT" || failures+=("globals")
 
 if list=$(wf_psql -c "select datname from pg_database where datname not in ('template0','template1','postgres') and datallowconn order by 1"); then
   for db in $list; do
     dbs=$((dbs + 1))
-    if ! wf_dump_db "$db" "$TMP/$db.dump.age" "$TMP"; then
+    if ! wf_dump_db "$db" "$TMP/$db.dump$WF_EXT" "$TMP"; then
       failures+=("$db")
       wf_log "PROBLEM dump of $db failed"
     fi
@@ -95,12 +95,12 @@ else
   failures+=("database-list")
 fi
 
-wf_config_bundle "$TMP/config.tar.gz.age" || failures+=("config")
+wf_config_bundle "$TMP/config.tar.gz$WF_EXT" || failures+=("config")
 
-files=$(find "$TMP" -maxdepth 1 -name '*.age' | wc -l)
+files=$(find "$TMP" -maxdepth 1 -type f \( -name '*.sql*' -o -name '*.dump*' -o -name '*.tar.gz*' \) ! -name '*.part' | wc -l)
 size=$(du -sh "$TMP" | cut -f1)
 if [ ${#failures[@]} -eq 0 ]; then
-  finish OK "databases=$dbs" "files=$files" "size=$size"
+  finish OK "databases=$dbs" "files=$files" "size=$size" "encrypted=$([ "$WF_EXT" = .age ] && echo yes || echo no)"
 else
   finish FAILED "failed=${failures[*]}" "databases=$dbs" "files=$files" "size=$size"
 fi
@@ -108,7 +108,11 @@ wf_log "backup $(basename "$FINAL"): $dbs databases, $files files, $size${failur
 
 # ---- off-site copy (encrypted files only; never deletes remote files)
 if [ -n "${BACKUP_REMOTE:-}" ]; then
-  if ! command -v rclone >/dev/null; then
+  if [ "$WF_EXT" != .age ]; then
+    echo "failed $(date +%s) $(basename "$FINAL") not encrypted: add an age key to $WF_RECIPIENTS first" > "$DEST/offsite.status"
+    wf_log "PROBLEM off-site copy refused: backups are not encrypted (add an age public key to $WF_RECIPIENTS)"
+    failures+=("offsite")
+  elif ! command -v rclone >/dev/null; then
     echo "failed $(date +%s) $(basename "$FINAL") rclone is not installed" > "$DEST/offsite.status"
     wf_log "PROBLEM off-site copy: rclone is not installed"
     failures+=("offsite")
@@ -123,8 +127,7 @@ if [ -n "${BACKUP_REMOTE:-}" ]; then
     failures+=("offsite")
   fi
 else
-  echo "not-configured $(date +%s)" > "$DEST/offsite.status"
-  wf_log "PROBLEM off-site copy not configured (BACKUP_REMOTE in $WF_KIT/backup.env)"
+  echo "manual $(date +%s)" > "$DEST/offsite.status"
 fi
 
 # ---- data retention inside each business database

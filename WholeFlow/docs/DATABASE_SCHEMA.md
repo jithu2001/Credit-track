@@ -254,7 +254,7 @@ RLS policies call `current_business_id()`, `is_owner()` and `auth.uid()` as `(se
 - Keep the `begin;` … `commit;` lines (each on a line of its own). `migrate.sh` removes them and runs the file in one transaction together with its `schema_migrations` row and `lock_timeout = 10s`, so a file is applied and recorded, or neither. A file cannot commit part-way (no `create index concurrently`, no `vacuum`).
 - New tables get **no** rights for `authenticated` by default: `alter table … enable row level security`, add policies, then `grant select` (and any write, column-limited) explicitly, and update `tests/privileges.sql` when a write is added. `service_role` gets read/write by default.
 - New functions: `revoke all on function … from public, anon;` then grant `authenticated` / `service_role` as needed; `SECURITY DEFINER` functions must `set search_path = public, pg_temp`.
-- `migrate.sh` dumps the business database to `/var/backups/wholeflow/pre-migrate/<date>/` before applying anything to a database that already has migrations (kept 14 days), runs one at a time (`flock`), carries on with the other businesses when one fails and exits non-zero with a summary.
+- `migrate.sh` dumps the business database to `/opt/wholeflow/backup/pre-migrate/<date>/` before applying anything to a database that already has migrations (kept 14 days), runs one at a time (`flock`), carries on with the other businesses when one fails and exits non-zero with a summary.
 
 **Data retention** — `public.purge_old_data()`, run daily per business database as `postgres` (`select public.purge_old_data();`; returns counts as jsonb). Not executable by `anon`/`authenticated`. Periods (constants in the function):
 

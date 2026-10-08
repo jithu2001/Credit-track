@@ -6,7 +6,7 @@
 #
 # * One run at a time (flock); a second run waits up to 10 minutes.
 # * Before the first pending migration of a business that already has some,
-#   its database is dumped to /var/backups/wholeflow/pre-migrate/<date>/.
+#   its database is dumped to /opt/wholeflow/backup/pre-migrate/<date>/.
 # * Each file runs in ONE transaction together with its schema_migrations
 #   row, with lock_timeout 10s: it is applied and recorded, or neither.
 #   Files may keep their own top-level `begin;` / `commit;` lines (each on a
@@ -21,7 +21,7 @@ ROOT=${WF_ROOT:-/opt/wholeflow}
 cd "$ROOT" || exit 1
 read -r -a PSQL <<< "${WF_PSQL:-docker compose exec -T db psql}"
 read -r -a PG_DUMP <<< "${WF_PG_DUMP:-docker compose exec -T db pg_dump}"
-BACKUP_BASE=${WF_BACKUP_DIR:-/var/backups/wholeflow/pre-migrate}
+BACKUP_BASE=${WF_BACKUP_DIR:-/opt/wholeflow/backup/pre-migrate}
 LOCK=${WF_MIGRATE_LOCK:-/run/lock/wholeflow-migrate.lock}
 
 exec 9>"$LOCK" || { echo "cannot open lock file $LOCK" >&2; exit 1; }

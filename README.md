@@ -431,24 +431,16 @@ Then open http://127.0.0.1:18080.
 
 ## 7. Backups and restore
 
-- **Nightly** at 02:30 IST, `scripts/backup.sh` dumps every database (`control_db` and each `biz_*`) and the roles to `/var/backups/wholeflow/<date>/`. It checks each dump is readable and keeps 14 days. The log is `/var/log/wholeflow-backup.log`.
-- **Restore drill** (passed on 6 Oct 2026): restore a dump into a scratch database and compare row counts.
+- **Nightly** at 02:30 IST (`wholeflow-backup.timer` → `scripts/backup.sh`): every database (`control_db`, each `biz_*`), the roles and the server's configuration and secrets (env files, `businesses/*/env`, nginx, certificates) go to **`/opt/wholeflow/backup/<date>_<time>/`**, each dump checked, with an `OK` or `FAILED` marker and checksums. Kept 14 days on the server. Log: `/var/log/wholeflow/backup.log`; the admin app's Server health shows the newest backup's age.
+- **Download them yourself** (no automatic off-site copy yet), e.g. weekly from your laptop:
 
   ```bash
-  cd /opt/wholeflow
-  docker compose exec -T db createdb -U postgres restore_drill
-  docker compose exec -T db pg_restore -U postgres -d restore_drill < /var/backups/wholeflow/<date>/biz_<slug>.dump
-  docker compose exec -T db psql -U postgres -d restore_drill -c 'select count(*) from shops'
-  docker compose exec -T db dropdb -U postgres restore_drill
-  ```
-- **Restore one business for real**:
-
-  ```bash
-  docker compose exec -T db pg_restore -U postgres -d biz_<slug> --clean --if-exists < /var/backups/wholeflow/<date>/biz_<slug>.dump
+  rsync -av --exclude '.tmp-*' --exclude '.lock' wholeflow:/opt/wholeflow/backup/ ~/wholeflow-backups/
   ```
 
-- **Rebuilding the whole server**: do section 4.2 on a new VPS, using the **same `MASTER_KEY`**. Restore `control_db` and every `biz_*`, and copy `/opt/wholeflow/businesses/` (each business's keys and ports) from the old server or a backup of it. Then start each business with `docker compose -p biz-<slug> -f businesses/<slug>/compose.yml --env-file businesses/<slug>/env up -d`, copy its nginx file, and reload nginx. **Back up `/opt/wholeflow/businesses/`, `.env` and `control.env` somewhere safe as well as the database dumps.**
-- **Off-site copy**: not set up yet (see section 9).
+  They are **not encrypted** and contain every customer's data and the server's `MASTER_KEY`: keep them on an encrypted disk only.
+- **Restore** (one business into a scratch database, then swap; or a whole new server from a downloaded copy): `scripts/restore.sh` and [WholeFlow/docs/RUNBOOK_RESTORE.md](WholeFlow/docs/RUNBOOK_RESTORE.md). Never `pg_restore --clean` into the live database.
+- **Later, optional:** encryption (an age public key in `/opt/wholeflow/backup.recipients`) and an automatic off-site copy (`BACKUP_REMOTE`), see `WholeFlow/deploy/server/README.md` "Backups and restore".
 
 ## 8. Security
 

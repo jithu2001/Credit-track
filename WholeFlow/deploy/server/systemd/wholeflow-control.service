@@ -13,7 +13,7 @@ RestartSec=3
 # Runs as root on purpose: the admin app's actions run the kit's scripts
 # (new-business.sh, migrate.sh, delete-business.sh), which use the docker CLI
 # (root-equivalent anyway), write /opt/wholeflow/businesses and
-# /var/backups/wholeflow, edit /etc/nginx/wholeflow-businesses and reload
+# /opt/wholeflow/backup, edit /etc/nginx/wholeflow-businesses and reload
 # nginx. So no User=, no capability limits and no ProtectSystem=strict/full
 # (they would break those scripts). It listens on 127.0.0.1:8100 only; nginx
 # exposes the admin API on admin.<domain> only.

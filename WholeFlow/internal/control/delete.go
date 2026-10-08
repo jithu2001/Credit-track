@@ -17,7 +17,7 @@ import (
 // password; the server checks both.
 
 // BackupDir is where scripts/backup.sh keeps the nightly dumps.
-const BackupDir = "/var/backups/wholeflow"
+const BackupDir = "/opt/wholeflow/backup"
 
 // CompanyInfo is one Tally company in a business database.
 type CompanyInfo struct {
