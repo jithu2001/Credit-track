@@ -1,0 +1,80 @@
+{
+  "advance": "0.00",
+  "ageing": {
+    "d1_30": "800.00",
+    "d31_60": "300.00",
+    "d61_90": "0.00",
+    "d90_plus": "0.00",
+    "not_due": "0.00"
+  },
+  "avg_days_late": 65,
+  "avg_days_to_pay": 95,
+  "bills": [
+    {
+      "allocations": [
+        {
+          "amount": "1000.00",
+          "date": "2026-07-10",
+          "kind": "payment"
+        }
+      ],
+      "amount": "1000.00",
+      "date": "2026-04-01",
+      "due": "2026-05-01",
+      "is_opening": true,
+      "remaining": "0.00",
+      "settled_on": "2026-07-10",
+      "voucher": "Opening balance"
+    },
+    {
+      "allocations": [
+        {
+          "amount": "200.00",
+          "date": "2026-07-10",
+          "kind": "payment"
+        }
+      ],
+      "amount": "500.00",
+      "date": "2026-05-01",
+      "due": "2026-05-31",
+      "is_opening": false,
+      "remaining": "300.00",
+      "settled_on": null,
+      "voucher": "Sales · 1"
+    },
+    {
+      "allocations": [],
+      "amount": "800.00",
+      "date": "2026-06-15",
+      "due": "2026-07-15",
+      "is_opening": false,
+      "remaining": "800.00",
+      "settled_on": null,
+      "voucher": "Sales · 2"
+    }
+  ],
+  "closed_bills": 1,
+  "computed_balance": "1100.00",
+  "credit_days": 30,
+  "last_payment_amount": "1200.00",
+  "last_payment_date": "2026-07-10",
+  "max_days_overdue": 50,
+  "oldest_open_bill_date": "2026-05-01",
+  "on_time_bills": 0,
+  "on_time_rate": 0,
+  "open_amount": "1100.00",
+  "open_bills": 2,
+  "overdue": "1100.00",
+  "paid_bills": 1,
+  "reconciled": true,
+  "shop": {
+    "id": "d0000000-0000-0000-0000-00000000a001",
+    "name": "Alpha Stores",
+    "opening": "1000.00",
+    "phone": "9800000001",
+    "receivable": "1100.00",
+    "site_name": "Town"
+  },
+  "today": "2026-07-20"
+}
+

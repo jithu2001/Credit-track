@@ -156,6 +156,10 @@ Tests: `go test ./internal/appapi` (FIFO cases); with the throwaway database
 from `db/tests/run_local.sh`, `WF_TEST_PG=postgres://postgres:pw@127.0.0.1:55432/wf
 go test ./internal/appapi` also runs the endpoints against every migration
 (numbers, owner only, other business, paused business → 402, bad tokens).
+With `WF_WRITE_FIXTURES=1` it also saves each endpoint's real answer to
+`wholeflow_app/test/fixtures/api/`; the app's `test/unit/api_contract_test.dart`
+feeds them through every repository, so a field renamed on either side fails a
+test. Regenerate the fixtures whenever an endpoint's answer changes.
 
 ## 6. Later
 

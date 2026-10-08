@@ -1,0 +1,32 @@
+{
+  "id": "f0000000-0000-0000-0000-00000000c001",
+  "purchase_date": "2026-07-05",
+  "supplier_id": "f0000000-0000-0000-0000-00000000b001",
+  "supplier_name": "Supplier One",
+  "voucher_number": "PB/1",
+  "voucher_type": null,
+  "supplier_bill_number": null,
+  "taxable_amount": 0.00,
+  "total_amount": 1180.00,
+  "line_count": 1,
+  "narration": null,
+  "tax_and_other_amount": 0.00,
+  "total_qty": 0.000,
+  "ledger_entries": [],
+  "synced_at": "2026-10-08T07:36:05.096215+00:00",
+  "purchase_lines": [
+    {
+      "line_no": 1,
+      "stock_item_id": "f0000000-0000-0000-0000-00000000a001",
+      "item_name": "TYRE",
+      "godown": null,
+      "qty": 10.000,
+      "actual_qty": 0.000,
+      "unit": "Nos",
+      "rate": 100.00,
+      "discount_percent": 0.00,
+      "amount": 1000.00
+    }
+  ]
+}
+

@@ -1,0 +1,13 @@
+{
+  "business_name": "API Biz",
+  "user": {
+    "id": "a0000000-0000-0000-0000-00000000a001",
+    "business_id": "b0000000-0000-0000-0000-00000000a001",
+    "role": "OWNER",
+    "name": "Owner",
+    "email": "o@a.test",
+    "is_active": true,
+    "requires_check_in": false
+  }
+}
+

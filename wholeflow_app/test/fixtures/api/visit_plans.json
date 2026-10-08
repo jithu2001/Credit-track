@@ -1,0 +1,21 @@
+{
+  "plans": [
+    {
+      "id": "fcbaf5ce-357a-4a6d-a243-4eb93bf68183",
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "staff_id": "a0000000-0000-0000-0000-00000000a002",
+      "active": true,
+      "plan_date": "2026-10-08",
+      "weekday": null,
+      "starts_on": null,
+      "ends_on": null,
+      "sites": {
+        "name": "Town"
+      },
+      "users": {
+        "name": "Staff"
+      }
+    }
+  ]
+}
+

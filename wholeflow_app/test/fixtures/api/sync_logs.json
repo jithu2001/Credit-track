@@ -1,0 +1,22 @@
+{
+  "logs": [
+    {
+      "id": "b8532c03-63f0-46f9-9f68-80634a3f6e87",
+      "company_id": "c0000000-0000-0000-0000-00000000a001",
+      "started_at": "2026-07-20T05:00:00+00:00",
+      "completed_at": "2026-07-20T05:00:09+00:00",
+      "status": "success",
+      "mode": "incremental",
+      "records_processed": 12,
+      "records_created": 0,
+      "records_updated": 0,
+      "records_deleted": 0,
+      "records_failed": 0,
+      "shops_processed": 0,
+      "transactions_fetched": 0,
+      "error_code": null,
+      "error_message": null
+    }
+  ]
+}
+

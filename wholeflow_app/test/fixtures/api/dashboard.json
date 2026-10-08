@@ -1,0 +1,34 @@
+{
+  "month_sales": {
+    "amount": "800.00",
+    "bills": 1,
+    "month": "2026-06-01"
+  },
+  "summary": {
+    "company_id": "c0000000-0000-0000-0000-00000000a001",
+    "company_name": "API Co",
+    "shops": 2,
+    "shops_with_dues": 1,
+    "total_credit": "50.00",
+    "total_outstanding": "1100.00"
+  },
+  "sync_state": {
+    "error_code": null,
+    "error_message": null,
+    "last_attempt_at": null,
+    "last_successful_sync_at": "2026-07-20T05:00:00Z",
+    "status": "ok"
+  },
+  "top_dues": [
+    {
+      "area": null,
+      "name": "Alpha Stores",
+      "phone": "9800000001",
+      "receivable": "1100.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a001",
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town"
+    }
+  ]
+}
+

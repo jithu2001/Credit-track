@@ -1,0 +1,11 @@
+{
+  "access": [
+    {
+      "user_id": "a0000000-0000-0000-0000-00000000a002",
+      "company_id": "c0000000-0000-0000-0000-00000000a001",
+      "full_company": true,
+      "can_view_transactions": false
+    }
+  ]
+}
+

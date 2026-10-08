@@ -1,6 +1,7 @@
 package appapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +129,11 @@ func TestIntegration(t *testing.T) {
 	}))
 	defer gotrue.Close()
 
+	mustExec(t, db, `insert into public.sync_logs (business_id, company_id, started_at, completed_at, status, mode, records_processed)
+		values ($1, $2, '2026-07-20 05:00:00+00', '2026-07-20 05:00:09+00', 'success', 'incremental', 12)`, bizA, companA)
+	mustExec(t, db, `insert into public.tally_connections (business_id, machine_identifier, hostname, status, app_version, last_seen_at)
+		values ($1, 'pc-1', 'SHOP-PC', 'online', '0.5.1', '2026-07-20 05:00:00+00')`, bizA)
+
 	u, _ := url.Parse(admin)
 	u.User = url.UserPassword("wftest_api", "pw")
 	srv := &Server{
@@ -151,19 +158,45 @@ func TestIntegration(t *testing.T) {
 		}
 		return tok
 	}
-	get := func(path, tok string) (int, map[string]any) {
-		req, _ := http.NewRequest(http.MethodGet, ts.URL+path, nil)
-		if tok != "" {
-			req.Header.Set("Authorization", "Bearer "+tok)
+	// lastRaw is the last response body; save() keeps it as a fixture for the
+	// app's contract test (test/unit/api_contract_test.dart) when
+	// WF_WRITE_FIXTURES=1, so the app parses exactly what this server sends.
+	var lastRaw []byte
+	save := func(name string) {
+		t.Helper()
+		if os.Getenv("WF_WRITE_FIXTURES") != "1" {
+			return
 		}
+		dir := filepath.Join("..", "..", "..", "wholeflow_app", "test", "fixtures", "api")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		var pretty bytes.Buffer
+		if err := json.Indent(&pretty, lastRaw, "", "  "); err != nil {
+			t.Fatalf("fixture %s: %v", name, err)
+		}
+		pretty.WriteByte('\n')
+		if err := os.WriteFile(filepath.Join(dir, name+".json"), pretty.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	do := func(req *http.Request) (int, map[string]any) {
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer res.Body.Close()
+		lastRaw, _ = io.ReadAll(res.Body)
 		var body map[string]any
-		_ = json.NewDecoder(res.Body).Decode(&body)
+		_ = json.Unmarshal(lastRaw, &body)
 		return res.StatusCode, body
+	}
+	get := func(path, tok string) (int, map[string]any) {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		return do(req)
 	}
 	summaryPath := "/b/apitest/api/v1/payments?company=" + companA
 
@@ -172,6 +205,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("payments")
 		// Opening dated at the period start (1 Apr); 30 days credit; today 20 Jul.
 		// FIFO: ₹1,200 settles the opening (₹1,000) and ₹200 of the May bill → May ₹300 (due 31 May)
 		// and June ₹800 (due 15 Jul) are overdue.
@@ -205,6 +239,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("payments_shop")
 		bills := body["bills"].([]any)
 		if len(bills) != 3 {
 			t.Fatalf("bills = %d", len(bills))
@@ -251,6 +286,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("statement")
 		eqv(t, body["ledger_opening"], "1000.00", "ledger opening")
 		eqv(t, body["tally_balance"], "1100.00", "tally balance")
 		eqv(t, body["reconciled"], true, "reconciled")
@@ -267,6 +303,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("statement_period")
 		eqv(t, body["opening"], "1500.00", "brought forward")
 		eqv(t, body["closing"], "2300.00", "closing")
 		eqv(t, body["total_debit"], "800.00", "debits")
@@ -300,6 +337,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("dashboard")
 		sum := body["summary"].(map[string]any)
 		eqv(t, sum["shops"], 2.0, "shops")
 		eqv(t, sum["shops_with_dues"], 1.0, "shops with dues")
@@ -357,10 +395,13 @@ func TestIntegration(t *testing.T) {
 	})
 
 	t.Run("shop detail", func(t *testing.T) {
+		get("/b/apitest/api/v1/shops?company="+companA, token(ownerA))
+		save("shops")
 		code, body := get("/b/apitest/api/v1/shops/"+shopA1, token(ownerA))
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("shop_detail")
 		eqv(t, body["name"], "Alpha Stores", "name")
 		eqv(t, body["opening_balance_amount"], "1000.00", "opening")
 		eqv(t, body["opening_balance_type"], "DR", "opening side")
@@ -375,6 +416,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("report_outstanding")
 		eqv(t, body["company_name"], "API Co", "company")
 		eqv(t, body["total"], "1100.00", "total")
 		groups := body["groups"].([]any)
@@ -389,6 +431,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("report_overdue")
 		eqv(t, body["total"], "1100.00", "overdue at 30 days")
 		shop := body["groups"].([]any)[0].(map[string]any)["shops"].([]any)[0].(map[string]any)
 		eqv(t, shop["max_days_overdue"], 50.0, "days")
@@ -423,14 +466,7 @@ func TestIntegration(t *testing.T) {
 	put := func(path, tok, body string) (int, map[string]any) {
 		req, _ := http.NewRequest(http.MethodPut, ts.URL+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+tok)
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		var out map[string]any
-		_ = json.NewDecoder(res.Body).Decode(&out)
-		return res.StatusCode, out
+		return do(req)
 	}
 
 	t.Run("stock with minimums, status and the alert", func(t *testing.T) {
@@ -438,11 +474,13 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("set minimum: %d %v", code, body)
 		}
+		save("stock_minimum")
 		eqv(t, body["changed"], 1.0, "changed")
 		code, body = get("/b/apitest/api/v1/stock?company="+companA, token(ownerA))
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("stock")
 		items := body["items"].([]any)
 		eqv(t, len(items), 2, "items")
 		tube, tyre := items[0].(map[string]any), items[1].(map[string]any) // by name
@@ -459,9 +497,11 @@ func TestIntegration(t *testing.T) {
 		eqv(t, sum["by_status"].(map[string]any)["low"], 1.0, "low count")
 
 		code, body = get("/b/apitest/api/v1/stock/"+item1, token(ownerA))
+		save("stock_item")
 		eqv(t, code, 200, "one item")
 		eqv(t, body["status"], "low", "item status")
 		code, body = get("/b/apitest/api/v1/stock/"+item1+"/purchases", token(ownerA))
+		save("stock_item_purchases")
 		eqv(t, code, 200, "item purchases")
 		bills := body["purchases"].([]any)
 		eqv(t, len(bills), 1, "item bills")
@@ -497,6 +537,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("purchases")
 		bills := body["purchases"].([]any)
 		eqv(t, len(bills), 1, "bills")
 		eqv(t, bills[0].(map[string]any)["voucher_number"], "PB/1", "voucher")
@@ -505,17 +546,21 @@ func TestIntegration(t *testing.T) {
 		_, body = get("/b/apitest/api/v1/purchases?company="+companA+"&q=nothing", token(ownerA))
 		eqv(t, len(body["purchases"].([]any)), 0, "search miss")
 		code, body = get("/b/apitest/api/v1/purchases/"+purA, token(ownerA))
+		save("purchase_detail")
 		eqv(t, code, 200, "bill detail")
 		eqv(t, len(body["purchase_lines"].([]any)), 1, "lines")
 		_, body = get("/b/apitest/api/v1/purchases/months?company="+companA+"&from=2026-01-01", token(ownerA))
+		save("purchase_months")
 		months := body["months"].([]any)
 		eqv(t, len(months), 1, "months")
 		eqv(t, months[0].(map[string]any)["month"], "2026-07-01", "month")
 		eqv(t, months[0].(map[string]any)["bills"], 1.0, "bills in month")
 		code, body = get("/b/apitest/api/v1/suppliers?company="+companA, token(ownerA))
+		save("suppliers")
 		eqv(t, code, 200, "suppliers")
 		eqv(t, len(body["suppliers"].([]any)), 1, "supplier count")
 		code, body = get("/b/apitest/api/v1/suppliers/"+supA, token(ownerA))
+		save("supplier_detail")
 		eqv(t, code, 200, "supplier")
 		eqv(t, body["payable"], 2500.0, "payable")
 		for _, path := range []string{"/purchases?company=" + companA, "/purchases/" + purA, "/suppliers?company=" + companA} {
@@ -531,26 +576,36 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("status %d: %v", code, body)
 		}
+		save("me")
 		eqv(t, body["user"].(map[string]any)["role"], "OWNER", "role")
 		eqv(t, body["business_name"], "API Biz", "business")
 		_, body = get("/b/apitest/api/v1/companies", token(ownerA))
+		save("companies")
 		eqv(t, len(body["companies"].([]any)), 1, "owner companies")
 		_, body = get("/b/apitest/api/v1/companies", token(ownerB))
 		eqv(t, len(body["companies"].([]any)), 0, "other business sees none of ours")
 		_, body = get("/b/apitest/api/v1/me/access", token(staffA))
+		save("me_access")
 		access := body["access"].([]any)
 		eqv(t, len(access), 1, "staff access")
 		eqv(t, access[0].(map[string]any)["can_view_transactions"], false, "as set above")
 		code, body = get("/b/apitest/api/v1/companies/"+companA+"/areas", token(ownerA))
+		save("company_areas")
 		eqv(t, code, 200, "areas")
 		eqv(t, len(body["areas"].([]any)), 0, "no areas in test shops")
 		code, body = get("/b/apitest/api/v1/service-status", token(ownerA))
+		save("service_status")
 		eqv(t, code, 200, "service status")
 		eqv(t, body["service_status"], nil, "none set")
 		_, body = get("/b/apitest/api/v1/sync/logs", token(ownerA))
-		eqv(t, len(body["logs"].([]any)), 0, "no logs")
+		save("sync_logs")
+		eqv(t, len(body["logs"].([]any)), 1, "seeded sync log")
+		eqv(t, body["logs"].([]any)[0].(map[string]any)["records_processed"], 12.0, "log fields")
 		_, body = get("/b/apitest/api/v1/sync/connections", token(ownerA))
-		eqv(t, len(body["connections"].([]any)), 0, "no PCs")
+		save("sync_connections")
+		eqv(t, len(body["connections"].([]any)), 1, "seeded PC")
+		_, body = get("/b/apitest/api/v1/sync/connections", token(staffA))
+		eqv(t, len(body["connections"].([]any)), 0, "staff see no PCs")
 		code, _ = get("/b/apitest/api/v1/sync/logs?limit=0", token(ownerA))
 		eqv(t, code, 400, "bad limit")
 	})
@@ -558,14 +613,7 @@ func TestIntegration(t *testing.T) {
 	send := func(method, path, tok, body string) (int, map[string]any) {
 		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
 		req.Header.Set("Authorization", "Bearer "+tok)
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer res.Body.Close()
-		var out map[string]any
-		_ = json.NewDecoder(res.Body).Decode(&out)
-		return res.StatusCode, out
+		return do(req)
 	}
 
 	t.Run("sites: create, rename, shops, report, delete", func(t *testing.T) {
@@ -573,6 +621,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("create: %d %v", code, body)
 		}
+		save("site_created")
 		hills := body["id"].(string)
 		code, body = send("POST", "/b/apitest/api/v1/sites", token(ownerA), `{"company":"`+companA+`","name":"Town","shops":[]}`)
 		eqv(t, code, 409, "duplicate name")
@@ -581,10 +630,13 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 403, "staff can't create sites")
 
 		_, body = get("/b/apitest/api/v1/sites?company="+companA, token(ownerA))
+		save("sites")
 		eqv(t, len(body["sites"].([]any)), 2, "two sites")
 		_, body = get("/b/apitest/api/v1/sites/"+hills+"/shops", token(ownerA))
+		save("site_shops")
 		eqv(t, body["shops"].([]any)[0].(map[string]any)["name"], "Beta Traders", "shop moved in")
 		_, body = get("/b/apitest/api/v1/companies/"+companA+"/site-shops", token(ownerA))
+		save("company_site_shops")
 		eqv(t, len(body["shops"].([]any)), 2, "editor shops")
 
 		code, _ = send("PATCH", "/b/apitest/api/v1/sites/"+hills, token(ownerA), `{"name":"High Range"}`)
@@ -598,6 +650,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("site report: %d %v", code, body)
 		}
+		save("report_sites")
 		eqv(t, len(body["rows"].([]any)) > 0, true, "report rows")
 
 		code, _ = send("DELETE", "/b/apitest/api/v1/sites/"+hills, token(ownerA), ``)
@@ -615,6 +668,7 @@ func TestIntegration(t *testing.T) {
 			t.Fatalf("set: %d %v", code, body)
 		}
 		_, body = get(path, token(ownerA))
+		save("shop_location")
 		eqv(t, body["location"].(map[string]any)["radius_m"], 50.0, "radius")
 		code, _ = send("PUT", path, token(staffA), `{"latitude":9.85,"longitude":76.97,"radius_m":50}`)
 		eqv(t, code, 403, "staff can't set pins")
@@ -623,6 +677,7 @@ func TestIntegration(t *testing.T) {
 		_, body = get(path, token(ownerA))
 		eqv(t, body["location"], nil, "cleared")
 		_, body = get("/b/apitest/api/v1/location-suggestions", token(ownerA))
+		save("location_suggestions")
 		eqv(t, len(body["suggestions"].([]any)), 0, "no suggestions")
 	})
 
@@ -643,6 +698,7 @@ func TestIntegration(t *testing.T) {
 		code, _ = send("POST", "/b/apitest/api/v1/visits/plans", token(staffA), plan)
 		eqv(t, code, 403, "staff can't plan")
 		_, body = get("/b/apitest/api/v1/visits/plans?company="+companA, token(ownerA))
+		save("visit_plans")
 		plans := body["plans"].([]any)
 		eqv(t, len(plans), 1, "plans")
 		planID := plans[0].(map[string]any)["id"].(string)
@@ -652,6 +708,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("tasks: %d %v", code, body)
 		}
+		save("visit_tasks")
 		tasks := body["tasks"].([]any)
 		eqv(t, len(tasks), 1, "today's task: Alpha Stores in Town")
 		taskID := tasks[0].(map[string]any)["task_id"].(string)
@@ -661,6 +718,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("check-in: %d %v", code, body)
 		}
+		save("check_in")
 		id, _ := body["visit_id"].(string)
 		eqv(t, id != "", true, "check-in made a visit")
 		{
@@ -669,10 +727,12 @@ func TestIntegration(t *testing.T) {
 			code, _ = send("POST", "/b/apitest/api/v1/visits/"+id+"/note", token(staffA), `{"note":"again"}`)
 			eqv(t, code, 403, "one note per visit")
 			code, body = get("/b/apitest/api/v1/visits/"+id, token(ownerA))
+			save("visit")
 			eqv(t, code, 200, "visit detail")
 			eqv(t, body["visit"] != nil, true, "visit found")
 		}
 		_, body = get("/b/apitest/api/v1/visits/tasks/"+taskID+"/failed-attempts", token(ownerA))
+		save("failed_attempts")
 		_, isList := body["attempts"].([]any)
 		eqv(t, isList, true, "attempts list")
 
@@ -692,6 +752,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("create: %d %v", code, out)
 		}
+		save("staff_created")
 		newID := out["id"].(string)
 		eqv(t, out["email"], "new@new.test", "email normalised")
 		eqv(t, logins[newID]["user_metadata"].(map[string]any)["must_change_password"], true, "must change password")
@@ -717,6 +778,7 @@ func TestIntegration(t *testing.T) {
 		if code != 200 {
 			t.Fatalf("list: %d %v", code, out)
 		}
+		save("staff")
 		list := out["staff"].([]any)
 		eqv(t, list[0].(map[string]any)["role"], "OWNER", "owner first")
 		var created map[string]any

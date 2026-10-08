@@ -45,6 +45,7 @@ Future<void> refreshCompanyData(WidgetRef ref) async {
     ..invalidate(shopStatementProvider)
     ..invalidate(paymentSummaryProvider)
     ..invalidate(shopPaymentsProvider)
+    ..invalidate(stockListProvider)
     ..invalidate(stockItemsProvider)
     ..invalidate(stockItemProvider)
     ..invalidate(itemPurchasesProvider)

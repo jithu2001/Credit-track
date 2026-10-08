@@ -1,0 +1,11 @@
+{
+  "companies": [
+    {
+      "id": "c0000000-0000-0000-0000-00000000a001",
+      "company_name": "API Co",
+      "sync_status": "PENDING",
+      "last_sync_at": null
+    }
+  ]
+}
+

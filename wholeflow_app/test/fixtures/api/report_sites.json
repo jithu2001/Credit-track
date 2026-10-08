@@ -1,0 +1,38 @@
+{
+  "rows": [
+    {
+      "site_id": "37699a1c-702f-4b78-9729-1604a834037d",
+      "site_name": "High Range",
+      "shops": 0,
+      "shops_with_dues": 0,
+      "outstanding": 0,
+      "advance": 0,
+      "sales": 0,
+      "returns": 0,
+      "collections": 0
+    },
+    {
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town",
+      "shops": 1,
+      "shops_with_dues": 1,
+      "outstanding": 1100.00,
+      "advance": 0,
+      "sales": 1300.00,
+      "returns": 0,
+      "collections": 1200.00
+    },
+    {
+      "site_id": null,
+      "site_name": null,
+      "shops": 1,
+      "shops_with_dues": 0,
+      "outstanding": 0,
+      "advance": 50.00,
+      "sales": 150.00,
+      "returns": 0,
+      "collections": 0
+    }
+  ]
+}
+

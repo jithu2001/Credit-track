@@ -1,0 +1,23 @@
+{
+  "address": null,
+  "address_lines": [],
+  "area": null,
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "contact_person": null,
+  "email": null,
+  "gstin": null,
+  "id": "d0000000-0000-0000-0000-00000000a001",
+  "name": "Alpha Stores",
+  "opening_balance_amount": "1000.00",
+  "opening_balance_type": "DR",
+  "phone": "9800000001",
+  "phone_source": null,
+  "phones": [],
+  "pincode": null,
+  "receivable": "1100.00",
+  "site_id": "e0000000-0000-0000-0000-00000000a001",
+  "site_name": "Town",
+  "state": null,
+  "synced_at": "2026-10-08T07:36:04.916135Z"
+}
+

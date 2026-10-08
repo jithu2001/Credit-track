@@ -1,0 +1,23 @@
+{
+  "tasks": [
+    {
+      "task_id": "bfd995cb-cad9-49d1-98d8-11036fe743c7",
+      "company_id": "c0000000-0000-0000-0000-00000000a001",
+      "staff_id": "a0000000-0000-0000-0000-00000000a002",
+      "staff_name": "Staff",
+      "shop_id": "d0000000-0000-0000-0000-00000000a001",
+      "shop_name": "Alpha Stores",
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town",
+      "visit_date": "2026-10-08",
+      "state": "pending",
+      "visit_id": null,
+      "checked_in_at": null,
+      "distance_m": null,
+      "radius_m": null,
+      "accuracy_m": null,
+      "note": null
+    }
+  ]
+}
+

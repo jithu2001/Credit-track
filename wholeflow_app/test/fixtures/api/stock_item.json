@@ -1,0 +1,21 @@
+{
+  "aliases": [],
+  "at_or_below_minimum": true,
+  "closing_qty": 3,
+  "closing_rate": "0.00",
+  "closing_value": "300.00",
+  "effective_min": 4,
+  "last_purchase_date": "2026-07-05",
+  "last_purchase_rate": "100.00",
+  "last_supplier": "Supplier One",
+  "min_qty": 4,
+  "name": "TYRE",
+  "reorder_level": 0,
+  "shortfall": 1,
+  "status": "low",
+  "stock_group": null,
+  "stock_item_id": "f0000000-0000-0000-0000-00000000a001",
+  "synced_at": "2026-10-08T07:36:05.056852Z",
+  "unit": "Nos"
+}
+
