@@ -485,6 +485,9 @@ type DeviceStatus struct {
 	SubscriptionState string `json:"subscription_state"`
 	MaxCompanies      int    `json:"max_companies"`
 	Revoked           bool   `json:"revoked"`
+	// LatestPCVersion is the newest Tally PC release (setting latest_pc_version;
+	// omitted when not set). PCs 0.6.0 and older ignore it.
+	LatestPCVersion string `json:"latest_pc_version,omitempty"`
 }
 
 // Heartbeat: a PC reports its version and learns its subscription state and
@@ -518,7 +521,7 @@ func (s *Service) Heartbeat(ctx context.Context, deviceKey, appVersion string) (
 		_, _ = s.Store.DB.Exec(ctx, `update devices set last_seen_at = now(), app_version = $2 where id::text = $1`, deviceID, clip(appVersion, 40))
 	}
 	return &DeviceStatus{SubscriptionState: AccessState(status, paidUntil, grace, remind, Today(s.Now())),
-		MaxCompanies: maxCompanies, Revoked: revokedAt != nil}, nil
+		MaxCompanies: maxCompanies, Revoked: revokedAt != nil, LatestPCVersion: s.Store.Setting(ctx, "latest_pc_version")}, nil
 }
 
 // TenantForStaff gives the staff service a business's address and service key.

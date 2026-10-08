@@ -71,7 +71,7 @@ func TestAuthn(t *testing.T) {
 		return err
 	}), authn.ErrEmailExists, "same email")
 	is400(run(func(tx pgx.Tx) error {
-		_, err := authn.CreateUser(ctx, tx, "short@authn.test", "12345", nil, clock)
+		_, err := authn.CreateUser(ctx, tx, "short@authn.test", "1234567", nil, clock)
 		return err
 	}),
 		authn.ErrWeakPassword, "weak password")
@@ -120,16 +120,23 @@ func TestAuthn(t *testing.T) {
 	if err := run(func(tx pgx.Tx) (err error) { raced, err = is.Refresh(ctx, tx, s.RefreshToken); return err }); err != nil {
 		t.Fatalf("race: %v", err)
 	}
-	if raced.RefreshToken != s2.RefreshToken {
-		t.Fatal("racing refresh should get the newest token")
+	if raced.RefreshToken == "" || raced.RefreshToken == s.RefreshToken || raced.RefreshToken == s2.RefreshToken {
+		t.Fatal("racing refresh should get a new token of its own")
 	}
+	// Tokens are stored hashed; the stored value doesn't work as a token.
+	var stored string
+	_ = db.QueryRow(ctx, `select token from auth.refresh_tokens where session_id::text = $1 order by id desc limit 1`, sessionID).Scan(&stored)
+	if len(stored) != 67 || stored[:3] != "h1:" {
+		t.Fatalf("refresh token stored as %q", stored)
+	}
+	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, stored); return err }), authn.ErrRefreshNotFound, "stored hash as a token")
 	clock = clock.Add(time.Minute)
 	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, s.RefreshToken); return err }), authn.ErrRefreshReused, "reuse")
 	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, s2.RefreshToken); return err }), authn.ErrRefreshNotFound,
 		"session ended after reuse")
 	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, "not-a-token"); return err }), authn.ErrRefreshNotFound, "unknown token")
 	var open bool
-	_ = run(func(tx pgx.Tx) (err error) { open, err = authn.SessionExists(ctx, tx, sessionID); return err })
+	_ = run(func(tx pgx.Tx) (err error) { open, err = authn.SessionExists(ctx, tx, sessionID, clock); return err })
 	if open {
 		t.Fatal("session should be gone")
 	}
@@ -141,18 +148,56 @@ func TestAuthn(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	sid := func(s *authn.Session) string {
+		c, _ := control.ParseJWTUnverified(s.AccessToken)
+		return c["session_id"].(string)
+	}
+	// Another phone signed in too.
+	var other *authn.Session
+	if err := run(func(tx pgx.Tx) (err error) {
+		other, err = is.SignIn(ctx, tx, "owner@authn.test", "first-pass-1", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	pw := "first-pass-1"
-	is400(run(func(tx pgx.Tx) error { _, err := is.UpdateUser(ctx, tx, id, &pw, nil); return err }), authn.ErrSamePassword, "same password")
-	pw = "new-pass-22"
+	is400(run(func(tx pgx.Tx) error { _, err := is.UpdateUser(ctx, tx, id, sid(s), &pw, nil); return err }), authn.ErrSamePassword, "same password")
+	pw = "short"
+	is400(run(func(tx pgx.Tx) error { _, err := is.UpdateUser(ctx, tx, id, sid(s), &pw, nil); return err }), authn.ErrWeakPassword, "short password")
+	// The user can't clear must_change_password (or set their role) by themselves.
 	var u *authn.User
 	if err := run(func(tx pgx.Tx) (err error) {
-		u, err = is.UpdateUser(ctx, tx, id, &pw, map[string]any{"must_change_password": false, "name": nil})
+		u, err = is.UpdateUser(ctx, tx, id, sid(s), nil, map[string]any{"must_change_password": false, "role": "OWNER", "theme": "dark"})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if u.UserMetadata["must_change_password"] != true || u.UserMetadata["role"] != nil || u.UserMetadata["theme"] != "dark" {
+		t.Fatalf("protected metadata changed: %v", u.UserMetadata)
+	}
+	// A password change needs a recent sign-in.
+	clock = clock.Add(6 * time.Minute)
+	pw = "new-pass-22"
+	is400(run(func(tx pgx.Tx) error { _, err := is.UpdateUser(ctx, tx, id, sid(s), &pw, nil); return err }), authn.ErrReauthNeeded, "stale sign-in")
+	if err := run(func(tx pgx.Tx) (err error) {
+		s, err = is.SignIn(ctx, tx, "owner@authn.test", "first-pass-1", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(func(tx pgx.Tx) (err error) {
+		u, err = is.UpdateUser(ctx, tx, id, sid(s), &pw, map[string]any{"must_change_password": false, "name": nil})
 		return err
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if u.UserMetadata["must_change_password"] != false {
 		t.Fatalf("metadata: %v", u.UserMetadata)
+	}
+	// Other sessions end; this one stays.
+	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, other.RefreshToken); return err }), authn.ErrRefreshNotFound, "other phone signed out")
+	if err := run(func(tx pgx.Tx) (err error) { s, err = is.Refresh(ctx, tx, s.RefreshToken); return err }); err != nil {
+		t.Fatalf("this phone stays signed in: %v", err)
 	}
 	if _, kept := u.UserMetadata["name"]; kept {
 		t.Fatal("null should remove the key")
@@ -164,6 +209,39 @@ func TestAuthn(t *testing.T) {
 		authn.ErrInvalidCredentials, "old password")
 	if err := run(func(tx pgx.Tx) (err error) {
 		_, err = is.SignIn(ctx, tx, "owner@authn.test", "new-pass-22", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sessions end 14 days after the last refresh, and 30 days after sign-in.
+	var idle *authn.Session
+	if err := run(func(tx pgx.Tx) (err error) {
+		idle, err = is.SignIn(ctx, tx, "owner@authn.test", "new-pass-22", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ { // refreshed every 10 days: fine until day 30
+		clock = clock.Add(10 * 24 * time.Hour)
+		err := run(func(tx pgx.Tx) (err error) { idle, err = is.Refresh(ctx, tx, idle.RefreshToken); return err })
+		if i < 2 && err != nil {
+			t.Fatalf("refresh on day %d: %v", (i+1)*10, err)
+		}
+		if i == 2 {
+			is400(err, authn.ErrRefreshNotFound, "30 days after sign-in")
+		}
+	}
+	if err := run(func(tx pgx.Tx) (err error) {
+		idle, err = is.SignIn(ctx, tx, "owner@authn.test", "new-pass-22", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(15 * 24 * time.Hour)
+	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, idle.RefreshToken); return err }), authn.ErrRefreshNotFound, "15 days unused")
+	if err := run(func(tx pgx.Tx) (err error) {
+		s, err = is.SignIn(ctx, tx, "owner@authn.test", "new-pass-22", authn.Meta{})
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -196,6 +274,18 @@ func TestAuthn(t *testing.T) {
 	}
 	if s.User.UserMetadata["must_change_password"] != true {
 		t.Fatal("reset should ask for a new password")
+	}
+	// An admin's password reset ends every session.
+	again := "reset-pass-44"
+	if err := run(func(tx pgx.Tx) error { return authn.AdminUpdate(ctx, tx, id, authn.Update{Password: &again}, clock) }); err != nil {
+		t.Fatal(err)
+	}
+	is400(run(func(tx pgx.Tx) error { _, err := is.Refresh(ctx, tx, s.RefreshToken); return err }), authn.ErrRefreshNotFound, "reset signs out")
+	if err := run(func(tx pgx.Tx) (err error) {
+		s, err = is.SignIn(ctx, tx, "owner@authn.test", "reset-pass-44", authn.Meta{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	// Sign out ends this session; delete removes the login.

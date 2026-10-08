@@ -4,8 +4,14 @@
 //
 // Configuration comes from the environment (systemd EnvironmentFile
 // /opt/wholeflow/api.env): CONTROL_DB_URL, MASTER_KEY, KIT_DIR, PG_HOST
-// (PostgreSQL as this process reaches it, default 127.0.0.1:5432) and LISTEN
-// (default 127.0.0.1:8300).
+// (PostgreSQL as this process reaches it, default 127.0.0.1:5432), LISTEN
+// (default 127.0.0.1:8300), API_TENANT_MAX_CONNS (connections per business as
+// its data role, default 3), API_AUTH_MAX_CONNS (per business as its login
+// role, default 2) and API_EXPECTED_MIGRATION (the newest business-database
+// migration, e.g. 0009_lockdown.sql: businesses behind it are logged as a
+// warning; empty = no check).
+//
+// From control_db it only reads (SELECT) the tables businesses and settings.
 package main
 
 import (
@@ -15,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -55,14 +62,26 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	if err := controlDB.Ping(ctx); err != nil {
 		return errors.New("control_db: " + err.Error())
 	}
-	api := &appapi.Server{
-		Control: controlDB,
-		Sealer:  sealer,
-		KitDir:  env("KIT_DIR", "/opt/wholeflow"),
-		PGHost:  env("PG_HOST", "127.0.0.1:5432"),
-		Log:     log,
-		Now:     time.Now,
+	tenantConns, err := conns("API_TENANT_MAX_CONNS", appapi.DefaultTenantMaxConns)
+	if err != nil {
+		return err
 	}
+	authConns, err := conns("API_AUTH_MAX_CONNS", appapi.DefaultAuthMaxConns)
+	if err != nil {
+		return err
+	}
+	api := &appapi.Server{
+		Control:           controlDB,
+		Sealer:            sealer,
+		KitDir:            env("KIT_DIR", "/opt/wholeflow"),
+		PGHost:            env("PG_HOST", "127.0.0.1:5432"),
+		Log:               log,
+		Now:               time.Now,
+		TenantMaxConns:    tenantConns,
+		AuthMaxConns:      authConns,
+		ExpectedMigration: env("API_EXPECTED_MIGRATION", ""),
+	}
+	log.Info("connections per business", "data", tenantConns, "login", authConns)
 	defer api.Close()
 	srv := &http.Server{
 		Addr:              env("LISTEN", "127.0.0.1:8300"),
@@ -82,4 +101,17 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// conns reads a pool size from the environment (1–50).
+func conns(key string, def int32) (int32, error) {
+	v := env(key, "")
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 || n > 50 {
+		return 0, errors.New(key + " must be a number from 1 to 50")
+	}
+	return int32(n), nil
 }

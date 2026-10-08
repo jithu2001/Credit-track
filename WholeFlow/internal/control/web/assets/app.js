@@ -85,6 +85,11 @@ async function api(method, path, body) {
     render();
     throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in again.');
   }
+  if (res.status === 403 && data && data.error && data.error.code === 'ENROL_2FA') {
+    me = null;
+    render();
+    throw new ApiError(401, 'ENROL_2FA', 'Set up two-step sign-in first.');
+  }
   if (!res.ok && !(data && 'output' in data)) {
     const e = (data && data.error) || {};
     throw new ApiError(res.status, e.code || 'ERROR', e.message || 'Something went wrong.');
@@ -163,6 +168,7 @@ async function render() {
     try { me = await api('GET', '/me'); }
     catch { return; }
   }
+  if (me.enrol_required) return showEnrol();
   const [, page, id] = (location.hash || '#/').split('/');
   const routes = { '': pageBusinesses, new: pageNew, b: () => pageBusiness(id), plans: pagePlans, leads: pageLeads, health: pageHealth, settings: pageSettings };
   const main = h('main', {}, h('p', { class: 'muted' }, 'Loading…'));
@@ -199,6 +205,9 @@ async function logout() {
 
 function showLogin() {
   const err = h('div', { class: 'notice bad', hidden: true });
+  const code = h('input', { name: 'code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 12, placeholder: '123456' });
+  const codeField = field('Two-step code', code, 'The 6-digit code from your authenticator app, or one of your backup codes.');
+  codeField.hidden = true;
   const form = h('form', { class: 'card login', onsubmit: async ev => {
     ev.preventDefault();
     const btn = form.querySelector('button');
@@ -210,9 +219,15 @@ function showLogin() {
       me = null;
       render();
     } catch (e) {
+      btn.disabled = false;
+      if (e.code === 'CODE_REQUIRED') {
+        codeField.hidden = false;
+        code.focus();
+        return;
+      }
       err.textContent = e.message;
       err.hidden = false;
-      btn.disabled = false;
+      if (e.code === 'BAD_CODE') { code.value = ''; code.focus(); }
     }
   } },
     h('div', { class: 'logo' }, 'W'),
@@ -221,8 +236,102 @@ function showLogin() {
     err,
     field('Email', h('input', { name: 'email', type: 'email', autocomplete: 'username', required: true, autofocus: true })),
     field('Password', h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true })),
+    codeField,
     h('button', { class: 'primary', type: 'submit' }, 'Sign in'));
   $app.replaceChildren(h('div', { class: 'login-wrap' }, form));
+}
+
+// Two-step sign-in is required: right after the first sign-in (or after
+// another admin reset it) this is the only page until it is set up.
+function showEnrol() {
+  const err = h('div', { class: 'notice bad', hidden: true });
+  const body = h('div');
+  const card = h('div', { class: 'card login' },
+    h('div', { class: 'logo' }, 'W'),
+    h('h1', {}, 'Set up two-step sign-in'),
+    h('p', { class: 'muted' }, 'Every admin signs in with a password and a code from an authenticator app on their phone (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS…).'),
+    err, body,
+    h('button', { class: 'link', type: 'button', onclick: logout }, 'Sign out'));
+  const fail = e => { if (e.status !== 401) { err.textContent = e.message; err.hidden = false; } };
+  const start = h('button', { class: 'primary', type: 'button', onclick: async () => {
+    start.disabled = true;
+    err.hidden = true;
+    try {
+      const r = await api('POST', '/2fa/setup', {});
+      const code = h('input', { inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, required: true, placeholder: '123456' });
+      const form = h('form', { onsubmit: async ev => {
+        ev.preventDefault();
+        const btn = form.querySelector('button');
+        btn.disabled = true;
+        err.hidden = true;
+        try {
+          const done = await api('POST', '/2fa/confirm', { code: code.value.trim() });
+          showBackupCodes(body, done.backup_codes);
+        } catch (e) { fail(e); btn.disabled = false; code.value = ''; code.focus(); }
+      } },
+        field('Code from the app', code),
+        h('button', { class: 'primary', type: 'submit' }, 'Turn on'));
+      body.replaceChildren(
+        h('p', {}, '1. In the authenticator app, add an account and scan this QR code — or type the key below.'),
+        qrImage(r.uri),
+        h('label', {}, 'Key (shown only now)'), copyable(r.secret, 'Key'),
+        h('details', {}, h('summary', { class: 'muted small' }, 'Set-up address'), h('div', { class: 'mono small break' }, r.uri)),
+        h('p', {}, '2. Enter the 6-digit code the app shows.'),
+        form);
+      code.focus();
+    } catch (e) { fail(e); start.disabled = false; }
+  } }, 'Start');
+  body.append(start);
+  $app.replaceChildren(h('div', { class: 'login-wrap' }, card));
+}
+
+function showBackupCodes(body, codes) {
+  const text = codes.join('\n');
+  body.replaceChildren(
+    h('div', { class: 'notice ok' }, 'Two-step sign-in is on.'),
+    h('div', { class: 'notice warn' }, 'Keep these backup codes somewhere safe (not on the same phone). Each works once if you lose the phone. They are not shown again.'),
+    h('pre', { class: 'out' }, text),
+    h('div', { class: 'dialog-actions' },
+      h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(text).then(() => toast('Backup codes copied')) }, icon('copy', true), 'Copy'),
+      h('button', { class: 'primary', type: 'button', onclick: () => { me = null; location.hash = '#/'; render(); } }, 'Continue')));
+}
+
+// askPassword: a small dialog asking for the admin's own password (resolves to it, or null).
+function askPassword(title, text, action) {
+  return new Promise(resolve => {
+    const pw = h('input', { type: 'password', autocomplete: 'current-password' });
+    const go = h('button', { class: 'primary', disabled: true }, action);
+    pw.addEventListener('input', () => (go.disabled = !pw.value));
+    const close = v => { scrim.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+    const onKey = ev => { if (ev.key === 'Escape') close(null); if (ev.key === 'Enter' && pw.value) close(pw.value); };
+    const body = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'dialog-icon info' }, icon('key')),
+      h('h2', {}, title), h('p', {}, text),
+      field('Your admin password', pw),
+      h('div', { class: 'dialog-actions' }, h('button', { class: 'link', onclick: () => close(null) }, 'Cancel'), go));
+    go.addEventListener('click', () => close(pw.value));
+    const scrim = h('div', { class: 'scrim' }, body);
+    document.body.append(scrim);
+    document.addEventListener('keydown', onKey);
+    pw.focus();
+  });
+}
+
+// versionLess: "0.5.1" < "0.6.0" < "0.10.0" (unreadable versions are never less).
+function versionLess(a, b) {
+  const parts = v => {
+    const s = String(v || '').trim().replace(/^v/, '').split(/[-+ ]/)[0];
+    if (!s) return null;
+    const p = s.split('.').map(Number);
+    return p.every(n => Number.isInteger(n) && n >= 0) ? p : null;
+  };
+  const x = parts(a), y = parts(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const m = x[i] || 0, n = y[i] || 0;
+    if (m !== n) return m < n;
+  }
+  return false;
 }
 
 // ------------------------------------------------------------ businesses
@@ -424,7 +533,8 @@ async function pageBusiness(id) {
     h('thead', {}, h('tr', {}, ...['PC', 'App', 'Activated', 'Last seen', ''].map(t => h('th', {}, t)))),
     h('tbody', {}, ...d.devices.map(pc => h('tr', {},
       h('td', {}, pc.machine || 'PC', h('div', { class: 'muted small' }, pc.windows_user || '')),
-      h('td', {}, pc.app_version || '—'),
+      h('td', {}, pc.app_version || '—', !pc.revoked_at && d.latest_pc_version && versionLess(pc.app_version, d.latest_pc_version)
+        ? h('div', {}, badge('renewal_due', 'Update to ' + d.latest_pc_version)) : null),
       h('td', {}, date(pc.activated_at)),
       h('td', {}, when(pc.last_seen_at)),
       h('td', {}, pc.revoked_at ? badge('revoked', 'Revoked') : h('button', { class: 'danger', onclick: ev => {
@@ -507,8 +617,6 @@ function ownerCard(b) {
 
 function resetOwnerDialog(b) {
   const pw = h('input', { type: 'password', autocomplete: 'current-password' });
-  const signOut = h('input', { type: 'checkbox' });
-  signOut.checked = true;
   const err = h('div', { class: 'notice bad', hidden: true });
   const go = h('button', { class: 'primary', disabled: true }, icon('key', true), 'Reset password');
   pw.addEventListener('input', () => (go.disabled = !pw.value));
@@ -517,17 +625,16 @@ function resetOwnerDialog(b) {
   const body = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': `Reset the owner password of ${b.name}` },
     h('div', { class: 'dialog-icon info' }, icon('key')),
     h('h2', {}, `Reset the owner password of ${b.name}?`),
-    h('p', {}, 'A new temporary password is made and shown once. The current password stops working at once.'),
+    h('p', {}, 'A new temporary password is made and shown once. The current password stops working at once, and the owner is signed out on every phone.'),
     err,
     field('Your admin password', pw),
-    h('label', { class: 'check' }, signOut, h('span', {}, 'Also sign the owner out on every phone (do this if someone else may know the password)')),
     h('div', { class: 'dialog-actions' }, h('button', { class: 'link', onclick: close }, 'Cancel'), go));
   go.addEventListener('click', async () => {
     err.hidden = true;
     go.disabled = true;
     go.lastChild.textContent = 'Resetting…';
     try {
-      const r = await api('POST', `/businesses/${b.id}/owner-password`, { password: pw.value, sign_out: signOut.checked });
+      const r = await api('POST', `/businesses/${b.id}/owner-password`, { password: pw.value });
       const message = `WholeFlow for ${b.name}\n\nSign in to the Owner app with:\n${r.email}\nTemporary password: ${r.password}\n(you will be asked to choose a new one)`;
       body.replaceChildren(...[
         h('div', { class: 'dialog-icon info' }, icon('key')),
@@ -830,13 +937,22 @@ async function pageHealth() {
           ? h('p', {}, badge('active', 'All good'), ' ', h('span', { class: 'muted small' }, 'checked ', when(latest.when), ' · ', latest.notes))
           : h('div', {}, h('p', {}, badge('ended', 'Problem'), ' ', h('span', { class: 'muted small' }, 'checked ', when(latest.when))),
             h('div', { class: 'notice bad' }, latest.problems))),
+    r.latest_pc_version ? h('div', { class: 'card' }, h('h2', {}, 'Tally PCs to update'),
+      h('p', { class: 'muted small' }, 'Active PCs older than the latest version ', r.latest_pc_version, ' (Settings).'),
+      r.outdated_pcs.length
+        ? h('div', { class: 'scroll' }, h('table', {}, h('tbody', {}, ...r.outdated_pcs.map(pc => h('tr', {},
+          h('td', {}, h('a', { href: '#/b/' + pc.business_id }, pc.business_name)),
+          h('td', {}, pc.machine || 'PC'),
+          h('td', {}, badge('renewal_due', pc.app_version || 'unknown')),
+          h('td', { class: 'small' }, when(pc.last_seen_at)))))))
+        : h('p', {}, badge('active', 'All up to date'))) : null,
     h('div', { class: 'card' }, h('h2', {}, 'Problems in the last 7 days'),
       r.problems.length ? table(r.problems) : h('p', { class: 'muted' }, 'None.')),
     h('div', { class: 'card' }, h('h2', {}, 'Recent checks'),
       r.recent.length ? table(r.recent) : h('p', { class: 'muted' }, 'None yet.')),
     h('div', { class: 'card' }, h('h2', {}, 'Daily summary', r.daily_day ? h('span', { class: 'muted small' }, ' ', date(r.daily_day)) : null),
       r.daily ? h('pre', { class: 'log' }, r.daily) : h('p', { class: 'muted' }, 'Written every evening at 23:50.')),
-  ].map(wrapGap);
+  ].filter(Boolean).map(wrapGap);
 }
 
 async function pageSettings() {
@@ -860,22 +976,51 @@ async function pageSettings() {
     });
   } }, 'Update all businesses');
 
+  const verForm = h('form', { onsubmit: async ev => {
+    ev.preventDefault();
+    const v = formData(verForm);
+    await run(verForm.querySelector('button'), async () => {
+      await api('PUT', '/settings', { min_app_build: v.min_app_build || 0, latest_pc_version: v.latest_pc_version });
+      toast('Saved');
+    });
+  } },
+    field('Minimum phone app build', h('input', { name: 'min_app_build', type: 'number', min: 0, step: 1, value: s.min_app_build || 0 }),
+      'Phones with an older app build (the number after "+" in the version, e.g. 1.0.0+3) are told to update. 0 = no minimum. Takes up to a minute.'),
+    field('Latest Tally PC version', h('input', { name: 'latest_pc_version', placeholder: '0.6.0', value: s.latest_pc_version || '' }),
+      'Older PCs are flagged on their business page and under Server health, and their own log asks for an update.'),
+    h('button', { type: 'submit' }, 'Save'));
+
+  const resetTwoStep = async (a, btn) => {
+    const pw = await askPassword(`Reset two-step sign-in of ${a.name || a.email}?`,
+      'They are signed out and set it up again at their next sign-in (for a lost phone).', 'Reset');
+    if (pw == null) return;
+    await run(btn, async () => { await api('POST', `/admins/${a.id}/reset-2fa`, { password: pw }); toast('Two-step sign-in reset'); render(); });
+  };
   const adminRows = admins.map(a => h('tr', {},
     h('td', {}, a.name || '—', h('div', { class: 'muted small' }, a.email)),
+    h('td', {}, a.role === 'installer' ? badge('plain', 'Installer') : 'Admin',
+      a.role === 'admin' ? h('div', { class: 'muted small' }, a.two_step ? 'Two-step on' : 'Two-step not set up') : null),
     h('td', {}, when(a.last_login_at)),
     h('td', {}, a.disabled ? badge('suspended', 'Disabled') : badge('active', 'Active')),
-    h('td', {}, a.id === me.id ? h('span', { class: 'muted small' }, 'you') : h('button', { onclick: ev => run(ev.currentTarget, async () => {
-      await api('POST', `/admins/${a.id}/disabled`, { disabled: !a.disabled });
-      render();
-    }) }, a.disabled ? 'Enable' : 'Disable'))));
+    h('td', {}, a.id === me.id ? h('span', { class: 'muted small' }, 'you') : [
+      h('button', { onclick: ev => run(ev.currentTarget, async () => {
+        await api('POST', `/admins/${a.id}/disabled`, { disabled: !a.disabled });
+        render();
+      }) }, a.disabled ? 'Enable' : 'Disable'),
+      a.role === 'admin' && a.two_step ? h('button', { onclick: ev => resetTwoStep(a, ev.currentTarget) }, 'Reset two-step') : null])));
 
   const addForm = h('form', { onsubmit: async ev => {
     ev.preventDefault();
-    await run(addForm.querySelector('button'), async () => { await api('POST', '/admins', formData(addForm)); toast('Admin saved'); render(); });
+    await run(addForm.querySelector('button'), async () => { await api('POST', '/admins', formData(addForm)); addForm.reset(); toast('Account added'); render(); });
   } },
     h('div', { class: 'two' }, field('Name', h('input', { name: 'name' })), field('Email', h('input', { name: 'email', type: 'email', required: true }))),
-    field('Password', h('input', { name: 'password', type: 'password', minlength: 10, autocomplete: 'new-password', required: true }), 'At least 10 characters. Also used to sign in on customers’ Tally PCs.'),
-    h('button', { type: 'submit' }, 'Add admin'));
+    field('Kind', h('select', { name: 'role' },
+      h('option', { value: 'installer' }, 'Installer — signs in only on customers’ Tally PCs'),
+      h('option', { value: 'admin' }, 'Admin — this admin app (needs two-step sign-in)')),
+      'Use installer accounts on customers’ PCs: an admin password typed there could open this admin app.'),
+    field('Their password', h('input', { name: 'password', type: 'password', minlength: 10, autocomplete: 'new-password', required: true }), 'At least 10 characters.'),
+    field('Your password', h('input', { name: 'own_password', type: 'password', autocomplete: 'current-password', required: true }), 'To confirm it is you.'),
+    h('button', { type: 'submit' }, 'Add account'));
 
   const pwForm = h('form', { onsubmit: async ev => {
     ev.preventDefault();
@@ -893,12 +1038,13 @@ async function pageSettings() {
     h('h1', {}, 'Settings'),
     h('div', { class: 'grid' },
       h('div', { class: 'card' }, h('h2', {}, 'Message to owners'), msgForm),
+      h('div', { class: 'card' }, h('h2', {}, 'App versions'), verForm),
       h('div', { class: 'card' }, h('h2', {}, 'Database updates'),
         h('p', { class: 'hint' }, 'After installing a new WholeFlow version on the server, apply its database changes to every business.'),
         migrate, migOut)),
-    h('div', { class: 'card' }, h('h2', {}, 'Admins'),
+    h('div', { class: 'card' }, h('h2', {}, 'Admins and installers'),
       h('div', { class: 'scroll' }, h('table', {}, h('tbody', {}, ...adminRows))),
-      h('h2', { class: 'gap' }, 'Add an admin'), addForm),
+      h('h2', { class: 'gap' }, 'Add an account'), addForm),
     h('div', { class: 'card' }, h('h2', {}, 'My password'), pwForm),
   ].map(wrapGap);
 }

@@ -10,8 +10,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-
-	"wholeflow/internal/auth"
 )
 
 // The admin app (admin.jitsuji.xyz): static files served by the control
@@ -35,14 +33,13 @@ func (s *Server) webRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /assets/", page)
 
 	mux.HandleFunc("GET /control/admin/businesses/{id}/backup", s.admin(s.backup))
-	mux.HandleFunc("POST /control/admin/admins/{id}/disabled", s.admin(s.setAdminDisabled))
-	mux.HandleFunc("POST /control/admin/password", s.admin(s.changePassword))
 }
 
 // backup dumps one business database (pg_dump custom format) for download.
 // The dump is written to a temporary file first so a failed dump is an error,
 // not a truncated download.
 func (s *Server) backup(w http.ResponseWriter, r *http.Request) {
+	longRequest(w, 30*time.Minute) // pg_dump (10 minutes at most), then the download
 	ctx, id, a := r.Context(), r.PathValue("id"), adminOf(r)
 	var slug string
 	if err := s.Svc.Store.DB.QueryRow(ctx, `select slug from businesses where id::text = $1`, id).Scan(&slug); err != nil {
@@ -72,67 +69,4 @@ func (s *Server) backup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	http.ServeContent(w, r, name, time.Time{}, f)
-}
-
-func (s *Server) setAdminDisabled(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Disabled bool `json:"disabled"`
-	}
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, err)
-		return
-	}
-	ctx, id, a := r.Context(), r.PathValue("id"), adminOf(r)
-	if id == a.ID && in.Disabled {
-		writeErr(w, userErr(400, "INVALID_INPUT", "You cannot disable your own account."))
-		return
-	}
-	tag, err := s.Svc.Store.DB.Exec(ctx, `update admins set disabled = $2 where id::text = $1`, id, in.Disabled)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if tag.RowsAffected() == 0 {
-		writeErr(w, userErr(404, "NOT_FOUND", "No such admin."))
-		return
-	}
-	s.Svc.Store.Audit(ctx, &a.ID, nil, "admin.disabled", map[string]any{"admin": id, "disabled": in.Disabled})
-	s.listAdmins(w, r)
-}
-
-func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Current string `json:"current"`
-		New     string `json:"new"`
-	}
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, err)
-		return
-	}
-	ctx, a := r.Context(), adminOf(r)
-	var hash string
-	if err := s.Svc.Store.DB.QueryRow(ctx, `select password_hash from admins where id = $1`, a.ID).Scan(&hash); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if err := s.limiter.Allow(a.Email); err != nil {
-		writeErr(w, userErr(429, "LOCKED", "Too many failed attempts. Try again in 15 minutes."))
-		return
-	}
-	if !auth.VerifyPassword(hash, in.Current) {
-		s.limiter.Failure(a.Email)
-		writeErr(w, userErr(400, "BAD_PASSWORD", "The current password is wrong."))
-		return
-	}
-	newHash, err := auth.HashPassword(in.New)
-	if err != nil {
-		writeErr(w, userErr(400, "INVALID_INPUT", err.Error()))
-		return
-	}
-	if _, err := s.Svc.Store.DB.Exec(ctx, `update admins set password_hash = $2 where id = $1`, a.ID, newHash); err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.Svc.Store.Audit(ctx, &a.ID, nil, "admin.password", nil)
-	writeJSON(w, 200, map[string]any{"ok": true})
 }

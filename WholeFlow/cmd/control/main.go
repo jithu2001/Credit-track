@@ -4,6 +4,8 @@
 //
 //	wholeflow-control serve                     run the HTTP API (LISTEN, default 127.0.0.1:8100)
 //	wholeflow-control create-admin EMAIL NAME   create or reset an admin (password read from stdin)
+//	wholeflow-control reset-2fa EMAIL           turn off an admin's two-step sign-in (lost phone);
+//	                                            they set it up again at the next sign-in
 //
 // Configuration comes from the environment (systemd EnvironmentFile
 // /opt/wholeflow/control.env): CONTROL_DB_URL, PG_ADMIN_URL, MASTER_KEY,
@@ -29,7 +31,7 @@ import (
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: wholeflow-control serve | create-admin EMAIL NAME")
+		fmt.Fprintln(os.Stderr, "usage: wholeflow-control serve | create-admin EMAIL NAME | reset-2fa EMAIL")
 		os.Exit(2)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -40,6 +42,8 @@ func main() {
 		err = serve(ctx, log)
 	case "create-admin":
 		err = createAdmin(ctx, os.Args[2:])
+	case "reset-2fa":
+		err = resetTOTP(ctx, os.Args[2:])
 	default:
 		err = fmt.Errorf("unknown command %q", os.Args[1])
 	}
@@ -91,7 +95,10 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		Handler:           control.NewServer(svc, log, token).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      15 * time.Minute, // creating a business runs the provisioning script
+		// Public endpoints answer within a minute; the admin requests that run
+		// scripts (creating a business, updating every database, backups)
+		// extend their own deadline (control.longRequest).
+		WriteTimeout: 60 * time.Second,
 	}
 	go func() {
 		<-ctx.Done()
@@ -129,5 +136,26 @@ func createAdmin(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Fprintln(os.Stderr, "\nAdmin saved:", id)
+	return nil
+}
+
+func resetTOTP(ctx context.Context, args []string) error {
+	if len(args) != 1 {
+		return errors.New("usage: reset-2fa EMAIL")
+	}
+	store, err := openStore(ctx)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	id, err := control.AdminIDByEmail(ctx, store, args[0])
+	if err != nil {
+		return err
+	}
+	if err := control.ResetTOTP(ctx, store, id); err != nil {
+		return err
+	}
+	store.Audit(ctx, nil, nil, "admin.2fa_reset", map[string]any{"admin": id, "by": "command line"})
+	fmt.Fprintln(os.Stderr, "Two-step sign-in turned off for", args[0]+"; they set it up again at the next sign-in.")
 	return nil
 }

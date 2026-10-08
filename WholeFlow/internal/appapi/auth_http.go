@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,40 +24,41 @@ import (
 //	POST /b/{slug}/auth/v1/token?grant_type=refresh_token   {"refresh_token"}     → session
 //	GET  /b/{slug}/auth/v1/user                             the signed-in user
 //	PUT  /b/{slug}/auth/v1/user                             {"password", "data"}  (own password, metadata)
+//	     A new password needs a sign-in within the last 5 minutes (else 400
+//	     reauthentication_needed: the app signs in with the current password
+//	     first), ends the user's other sessions and clears must_change_password;
+//	     "data" can't set must_change_password, role or business_id.
 //	POST /b/{slug}/auth/v1/logout?scope=local|global|others
 //	GET  /b/{slug}/auth/v1/health
 
-// Wrong passwords: 10 per email within 15 minutes locks that email for 15
-// minutes; 60 attempts per address (IP) within 15 minutes, likewise.
+// Sign-in attempts (counted before the password check; a correct password
+// clears the first):
+//   - 10 per email of a business from one address (IPv6: its /64) within 15
+//     minutes lock that pair for 15 minutes — a stranger can't lock the owner
+//     out of their own phone this way;
+//   - 50 per email from anywhere within 15 minutes lock the email for 15
+//     minutes (stops guessing spread over many addresses);
+//   - 60 per address within 15 minutes, across every business.
 var (
 	loginLimiterOnce sync.Once
+	pairLimiter      *auth.Limiter
 	emailLimiter     *auth.Limiter
 	ipLimiter        *auth.Limiter
 )
 
-func limiters() (*auth.Limiter, *auth.Limiter) {
+func limiters() (pair, email, ip *auth.Limiter) {
 	loginLimiterOnce.Do(func() {
-		emailLimiter = auth.NewLimiter(10, 15*time.Minute, 15*time.Minute)
+		pairLimiter = auth.NewLimiter(10, 15*time.Minute, 15*time.Minute)
+		emailLimiter = auth.NewLimiter(50, 15*time.Minute, 15*time.Minute)
 		ipLimiter = auth.NewLimiter(60, 15*time.Minute, 15*time.Minute)
 	})
-	return emailLimiter, ipLimiter
+	return pairLimiter, emailLimiter, ipLimiter
 }
 
 // authError answers like GoTrue (API version 2024-01-01): {"code", "msg"}.
 func authError(w http.ResponseWriter, status int, code, msg string) {
 	w.Header().Set("X-Supabase-Api-Version", "2024-01-01")
 	writeJSON(w, status, map[string]any{"code": code, "error_code": code, "msg": msg})
-}
-
-func clientIP(r *http.Request) string {
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); net.ParseIP(ip) != nil {
-		return ip
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return ""
-	}
-	return host
 }
 
 func (s *Server) issuer(t *tenant) authn.Issuer {
@@ -134,21 +134,24 @@ func (s *Server) authToken(w http.ResponseWriter, r *http.Request) {
 	var session *authn.Session
 	switch r.URL.Query().Get("grant_type") {
 	case "password":
-		byEmail, byIP := limiters()
-		emailKey, ipKey := t.slug+"|"+strings.ToLower(strings.TrimSpace(in.Email)), t.slug+"|"+clientIP(r)
-		if byEmail.Allow(emailKey) != nil || byIP.Allow(ipKey) != nil {
+		byPair, byEmail, byIP := limiters()
+		ip := auth.ClientIP(r)
+		emailKey := t.slug + "|" + strings.ToLower(strings.TrimSpace(in.Email))
+		pairKey, ipKey := emailKey+"|"+auth.IPKey(ip), auth.IPKey(ip)
+		if byIP.Allow(ipKey) != nil || byPair.Allow(pairKey) != nil || byEmail.Allow(emailKey) != nil {
 			authError(w, http.StatusTooManyRequests, "over_request_rate_limit", "Too many sign-in attempts. Try again in 15 minutes.")
 			return
 		}
 		err = inAuthTx(ctx, t, func(tx pgx.Tx) (err error) {
-			session, err = is.SignIn(ctx, tx, in.Email, in.Password, authn.Meta{UserAgent: r.UserAgent(), IP: clientIP(r)})
+			session, err = is.SignIn(ctx, tx, in.Email, in.Password, authn.Meta{UserAgent: r.UserAgent(), IP: ip})
 			return err
 		})
 		if errors.Is(err, authn.ErrInvalidCredentials) {
+			byPair.Failure(pairKey)
 			byEmail.Failure(emailKey)
 			byIP.Failure(ipKey)
 		} else if err == nil {
-			byEmail.Success(emailKey)
+			byPair.Success(pairKey)
 		}
 	case "refresh_token":
 		if in.RefreshToken == "" {
@@ -179,7 +182,7 @@ func (s *Server) bearer(r *http.Request, t *tenant) (userID, sessionID string, e
 	}
 	claims, err := control.VerifyJWT(t.Secret, token, s.Now())
 	if err != nil {
-		return "", "", &authn.Error{Status: http.StatusForbidden, Code: "bad_jwt", Msg: "invalid JWT: " + err.Error()}
+		return "", "", &authn.Error{Status: http.StatusForbidden, Code: "bad_jwt", Msg: "invalid JWT"}
 	}
 	userID, _ = claims["sub"].(string)
 	sessionID, _ = claims["session_id"].(string)
@@ -190,11 +193,11 @@ func (s *Server) bearer(r *http.Request, t *tenant) (userID, sessionID string, e
 }
 
 // requireSession: the token's session must still be open (not signed out or banned).
-func requireSession(ctx context.Context, tx pgx.Tx, sessionID string) error {
+func (s *Server) requireSession(ctx context.Context, tx pgx.Tx, sessionID string) error {
 	if sessionID == "" {
 		return authn.ErrSessionNotFound
 	}
-	ok, err := authn.SessionExists(ctx, tx, sessionID)
+	ok, err := authn.SessionExists(ctx, tx, sessionID, s.Now())
 	if err == nil && !ok {
 		err = authn.ErrSessionNotFound
 	}
@@ -215,7 +218,7 @@ func (s *Server) authUser(w http.ResponseWriter, r *http.Request) {
 	}
 	var u *authn.User
 	err = inAuthTx(ctx, t, func(tx pgx.Tx) (err error) {
-		if err := requireSession(ctx, tx, sessionID); err != nil {
+		if err := s.requireSession(ctx, tx, sessionID); err != nil {
 			return err
 		}
 		u, err = authn.GetUser(ctx, tx, userID)
@@ -256,12 +259,15 @@ func (s *Server) authUpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	var u *authn.User
 	err = inAuthTx(ctx, t, func(tx pgx.Tx) (err error) {
-		if err := requireSession(ctx, tx, sessionID); err != nil {
+		if err := s.requireSession(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		u, err = s.issuer(t).UpdateUser(ctx, tx, userID, in.Password, in.Data)
+		u, err = s.issuer(t).UpdateUser(ctx, tx, userID, sessionID, in.Password, in.Data)
 		return err
 	})
+	if in.Password != nil {
+		t.forgetSessions() // the user's other sessions just ended
+	}
 	if err != nil {
 		s.authFail(w, r, err)
 		return
@@ -287,5 +293,6 @@ func (s *Server) authLogout(w http.ResponseWriter, r *http.Request) {
 		s.authFail(w, r, err)
 		return
 	}
+	t.forgetSessions()
 	w.WriteHeader(http.StatusNoContent)
 }

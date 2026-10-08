@@ -234,9 +234,16 @@ func TestIntegration(t *testing.T) {
 		bad, _ := control.SignJWT("another-secret-another-secret-another", map[string]any{"sub": ownerA, "role": "authenticated"})
 		code, _ = get(summaryPath, bad)
 		eqv(t, code, 401, "wrong secret")
-		pc, _ := control.SignJWT(secret, map[string]any{"role": "service_role", "device_id": "x"})
+		pc, _ := control.SignJWT(secret, map[string]any{"role": "service_role", "device_id": "x", "exp": time.Now().Add(time.Hour).Unix()})
 		code, _ = get(summaryPath, pc)
 		eqv(t, code, 403, "PC key")
+		noExp, _ := control.SignJWT(secret, map[string]any{"sub": ownerA, "role": "authenticated"})
+		code, _ = get(summaryPath, noExp)
+		eqv(t, code, 401, "token without exp")
+		gone, _ := control.SignJWT(secret, map[string]any{"sub": ownerA, "role": "authenticated", "session_id": "5e55a000-0000-0000-0000-0000000000ff",
+			"exp": time.Now().Add(time.Hour).Unix()})
+		code, _ = get(summaryPath, gone)
+		eqv(t, code, 401, "token of an ended session")
 		code, _ = get("/b/nobody/api/v1/payments?company="+companA, token(ownerA))
 		eqv(t, code, 404, "unknown business")
 		code, _ = get("/b/apitest/api/v1/payments?company=not-a-uuid", token(ownerA))
@@ -775,8 +782,12 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 200, "enable")
 		_ = db.QueryRow(context.Background(), `select banned_until is not null from auth.users where id = $1`, newID).Scan(&banned)
 		eqv(t, banned, false, "login unblocked")
+		mustExec(t, db, `insert into auth.sessions (id, user_id, created_at, updated_at, aal) values ('5e55a000-0000-0000-0000-0000000000a1', $1, now(), now(), 'aal1')`, newID)
 		code, _ = send("POST", staffPath+"/password", token(ownerA), `{"password":"another123"}`)
 		eqv(t, code, 200, "reset password")
+		var left int
+		_ = db.QueryRow(context.Background(), `select count(*) from auth.sessions where user_id = $1`, newID).Scan(&left)
+		eqv(t, left, 0, "reset signs the staff member out")
 		_ = db.QueryRow(context.Background(), `update auth.users set raw_user_meta_data = raw_user_meta_data || '{"must_change_password": false}'
 			where id = $1 returning false`, newID).Scan(&mustChange)
 		code, _ = send("POST", staffPath+"/password", token(ownerA), `{"password":"another456"}`)
@@ -795,7 +806,8 @@ func TestIntegration(t *testing.T) {
 	t.Run("Tally PC uploads through the API", func(t *testing.T) {
 		ctx := context.Background()
 		const device = "aaaaaaaa-0000-0000-0000-0000000000c1"
-		pcKey, _ := control.SignJWT(secret, map[string]any{"iss": "wholeflow", "ref": "apitest", "role": "service_role", "device_id": device})
+		pcKey, _ := control.SignJWT(secret, map[string]any{"iss": "wholeflow", "ref": "apitest", "role": "service_role", "device_id": device,
+			"exp": time.Now().Add(time.Hour).Unix()})
 		pc, err := hosted.New(hosted.Config{URL: ts.URL + "/b/apitest", Key: pcKey, BusinessID: bizA}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		if err != nil {
 			t.Fatal(err)
@@ -979,12 +991,33 @@ func TestIntegration(t *testing.T) {
 		code, out = send("PUT", authPath+"user", access, `{"password":"owner-pass-1","data":{}}`)
 		eqv(t, code, 422, "same password")
 		eqv(t, out["code"], "same_password", "same password code")
+		// Another phone of the owner, and an old session (signed in 10 minutes ago).
+		_, other, _ := post("token?grant_type=password", "", `{"email":"o@a.test","password":"owner-pass-1"}`)
+		otherAccess := other["access_token"].(string)
+		mustExec(t, db, `insert into auth.sessions (id, user_id, created_at, updated_at, aal) values ('5e55a000-0000-0000-0000-0000000000b1', $1, $2, $2, 'aal1')`,
+			ownerA, srv.Now().Add(-10*time.Minute))
+		stale, _ := control.SignJWT(secret, map[string]any{"sub": ownerA, "role": "authenticated", "aud": "authenticated",
+			"session_id": "5e55a000-0000-0000-0000-0000000000b1", "exp": time.Now().Add(time.Hour).Unix()})
+		code, out = send("PUT", authPath+"user", stale, `{"password":"owner-pass-2"}`)
+		eqv(t, code, 400, "password change needs a recent sign-in")
+		eqv(t, out["code"], "reauthentication_needed", "reauth code")
+		save("auth_reauth_needed")
+		// The user can't mark their password as changed by themselves.
+		mustExec(t, db, `update auth.users set raw_user_meta_data = coalesce(raw_user_meta_data, '{}') || '{"must_change_password": true}' where id = $1`, ownerA)
+		code, out = send("PUT", authPath+"user", access, `{"data":{"must_change_password":false}}`)
+		eqv(t, code, 200, "metadata only")
+		eqv(t, out["user_metadata"].(map[string]any)["must_change_password"], true, "must_change_password kept")
 		code, out = send("PUT", authPath+"user", access, `{"password":"owner-pass-2","data":{"must_change_password":false}}`)
 		if code != 200 {
 			t.Fatalf("update user: %d %v", code, out)
 		}
 		save("auth_user")
 		eqv(t, out["user_metadata"].(map[string]any)["must_change_password"], false, "metadata")
+		// The owner's other phone is signed out at once.
+		code, _ = get("/b/apitest/api/v1/me", otherAccess)
+		eqv(t, code, 401, "other session ended by the password change")
+		code, _ = get("/b/apitest/api/v1/me", access)
+		eqv(t, code, 200, "this session kept")
 
 		code, out, _ = post("token?grant_type=refresh_token", "", `{"refresh_token":"`+refresh+`"}`)
 		if code != 200 {
@@ -996,8 +1029,12 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 400, "unknown refresh token")
 		eqv(t, out["code"], "refresh_token_not_found", "code")
 
+		code, _ = get("/b/apitest/api/v1/me", access2)
+		eqv(t, code, 200, "refreshed token works")
 		code, _, _ = post("logout?scope=local", access2, ``)
 		eqv(t, code, 204, "sign out")
+		code, _ = get("/b/apitest/api/v1/me", access2)
+		eqv(t, code, 401, "signed-out token refused by the app API at once")
 		code, out = get(authPath+"user", access2)
 		eqv(t, code, 403, "session ended")
 		eqv(t, out["code"], "session_not_found", "code")
@@ -1025,6 +1062,54 @@ func TestIntegration(t *testing.T) {
 		code, out, _ = post("token?grant_type=password", "", `{"email":"locked@a.test","password":"guess"}`)
 		eqv(t, code, 429, "locked")
 		eqv(t, out["code"], "over_request_rate_limit", "code")
+	})
+
+	t.Run("outdated apps are asked to update", func(t *testing.T) {
+		srv.MinAppBuild = func(context.Context) int { return 5 }
+		defer func() { srv.MinAppBuild = func(context.Context) int { return 0 } }()
+		withVersion := func(method, path, version string) (int, map[string]any, http.Header) {
+			req, _ := http.NewRequest(method, ts.URL+path, nil)
+			req.Header.Set("Authorization", "Bearer "+token(ownerA))
+			if version != "" {
+				req.Header.Set("X-App-Version", version)
+				req.Header.Set("X-App-Platform", "android")
+			}
+			res, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			lastRaw, _ = io.ReadAll(res.Body)
+			var out map[string]any
+			_ = json.Unmarshal(lastRaw, &out)
+			return res.StatusCode, out, res.Header
+		}
+		code, out, _ := withVersion("GET", "/b/apitest/api/v1/me", "1.0.0+3")
+		eqv(t, code, 426, "old build")
+		eqv(t, out["error"].(map[string]any)["code"], "UPGRADE_REQUIRED", "code")
+		code, out, hdr := withVersion("GET", "/b/apitest/auth/v1/user", "1.0.0+4")
+		eqv(t, code, 426, "old build signing in")
+		eqv(t, out["code"], "upgrade_required", "auth code")
+		eqv(t, hdr.Get("X-Supabase-Api-Version"), "2024-01-01", "api version header")
+		save("auth_upgrade_required")
+		code, _, _ = withVersion("GET", "/b/apitest/api/v1/me", "1.0.0+5")
+		eqv(t, code, 200, "current build")
+		code, _, _ = withVersion("GET", "/b/apitest/api/v1/me", "")
+		eqv(t, code, 200, "no header (PCs, scripts)")
+	})
+
+	t.Run("app error reports", func(t *testing.T) {
+		report := `{"message":"Null check operator","stack":"#0 main","app_version":"1.0.0+3","platform":"android","flavor":"owner"}`
+		code, _ := send("POST", "/b/apitest/api/v1/client-errors", token(ownerB), report)
+		eqv(t, code, 204, "report")
+		code, _ = send("POST", "/b/apitest/api/v1/client-errors", "", report)
+		eqv(t, code, 401, "signed-in users only")
+		code, _ = send("POST", "/b/apitest/api/v1/client-errors", token(ownerB), `{"message":"`+strings.Repeat("x", 17<<10)+`"}`)
+		eqv(t, code, 400, "too big")
+		for i := 0; i < 20; i++ {
+			code, _ = send("POST", "/b/apitest/api/v1/client-errors", token(ownerB), report)
+		}
+		eqv(t, code, 429, "20 an hour")
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

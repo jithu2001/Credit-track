@@ -190,7 +190,11 @@ func (s *Server) createLogin(r *request, email, password string, meta map[string
 }
 
 func (s *Server) changeLogin(r *request, id string, up authn.Update) error {
-	return inAuthTx(r.Context(), r.tenant, func(tx pgx.Tx) error { return authn.AdminUpdate(r.Context(), tx, id, up, s.Now()) })
+	err := inAuthTx(r.Context(), r.tenant, func(tx pgx.Tx) error { return authn.AdminUpdate(r.Context(), tx, id, up, s.Now()) })
+	if err == nil && (up.Password != nil || up.Ban != nil) {
+		r.tenant.forgetSessions() // their sessions may have just ended
+	}
+	return err
 }
 
 // ---------------------------------------------------------------- handlers
@@ -352,15 +356,24 @@ func (s *Server) setStaffActive(r *request) (any, error) {
 		if in.Active == nil {
 			return nil, fail(http.StatusBadRequest, "INVALID_INPUT", "active must be true or false.")
 		}
-		if _, err := r.tx.Exec(r.Context(), `update public.users set is_active = $2 where id = $1::uuid and role = 'STAFF'`, id, *in.Active); err != nil {
+		var was bool
+		if err := r.tx.QueryRow(r.Context(), `update public.users u set is_active = $2 from public.users old
+				where u.id = $1::uuid and u.role = 'STAFF' and old.id = u.id returning old.is_active`, id, *in.Active).Scan(&was); err != nil {
 			return nil, err
 		}
-		ban := banForever
+		// The login is blocked (or unblocked) in the login tables, which commit
+		// first; if this request's data change then fails, that is undone.
+		ban, undo := banForever, time.Duration(0)
 		if *in.Active {
-			ban = 0
+			ban, undo = 0, banForever
 		}
 		if err := s.changeLogin(r, id, authn.Update{Ban: &ban}); err != nil {
 			return nil, err
+		}
+		if was != *in.Active {
+			r.onRollback(func(ctx context.Context) error {
+				return inAuthTx(ctx, r.tenant, func(tx pgx.Tx) error { return authn.AdminUpdate(ctx, tx, id, authn.Update{Ban: &undo}, s.Now()) })
+			})
 		}
 		return map[string]any{"id": id, "is_active": *in.Active}, nil
 	})
@@ -377,6 +390,7 @@ func (s *Server) resetStaffPassword(r *request) (any, error) {
 		if err := requirePassword(in.Password); err != nil {
 			return nil, err
 		}
+		// A new password also signs them out on every phone (authn.AdminUpdate).
 		if err := s.changeLogin(r, id, authn.Update{Password: &in.Password,
 			Metadata: map[string]any{"must_change_password": true}}); err != nil {
 			return nil, err

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"net"
 	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,17 +27,20 @@ type Server struct {
 	InternalToken string // shared with the staff service on this machine
 	MonitorDir    string // scripts/monitor.sh's logs; empty = MonitorDir
 
-	sessions *auth.Sessions
-	limiter  *auth.Limiter
-	ipMu     sync.Mutex
-	ipHits   map[string][]time.Time
+	limiter      *auth.Limiter // wrong passwords/codes per email and address
+	emailLimiter *auth.Limiter // per email from anywhere
+	ipMu         sync.Mutex
+	ipHits       map[string][]time.Time
+	minAppBuild  settingCache
 }
 
 func NewServer(svc *Service, log *slog.Logger, internalToken string) *Server {
-	return &Server{Svc: svc, Log: log, InternalToken: internalToken,
-		sessions: auth.NewSessions(12 * time.Hour),
-		limiter:  auth.NewLimiter(5, 15*time.Minute, 15*time.Minute),
-		ipHits:   map[string][]time.Time{}}
+	s := &Server{Svc: svc, Log: log, InternalToken: internalToken,
+		limiter:      auth.NewLimiter(8, 15*time.Minute, 15*time.Minute),
+		emailLimiter: auth.NewLimiter(30, 15*time.Minute, 15*time.Minute),
+		ipHits:       map[string][]time.Time{}}
+	s.minAppBuild.load = func(ctx context.Context) (int, error) { return svc.Store.IntSetting(ctx, "min_app_build") }
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -59,8 +64,10 @@ func (s *Server) Routes() http.Handler {
 
 	// Admin app.
 	mux.HandleFunc("POST /control/admin/login", s.adminLogin)
-	mux.HandleFunc("POST /control/admin/logout", s.admin(s.adminLogout))
-	mux.HandleFunc("GET /control/admin/me", s.admin(s.adminMe))
+	mux.HandleFunc("POST /control/admin/logout", s.adminOrEnrol(s.adminLogout))
+	mux.HandleFunc("GET /control/admin/me", s.adminOrEnrol(s.adminMe))
+	mux.HandleFunc("POST /control/admin/2fa/setup", s.adminOrEnrol(s.totpSetup))
+	mux.HandleFunc("POST /control/admin/2fa/confirm", s.adminOrEnrol(s.totpConfirm))
 	mux.HandleFunc("GET /control/admin/businesses", s.admin(s.listBusinesses))
 	mux.HandleFunc("POST /control/admin/businesses", s.admin(s.createBusiness))
 	mux.HandleFunc("GET /control/admin/businesses/{id}", s.admin(s.getBusiness))
@@ -77,6 +84,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /control/admin/migrate-all", s.admin(s.migrateAll))
 	mux.HandleFunc("GET /control/admin/admins", s.admin(s.listAdmins))
 	mux.HandleFunc("POST /control/admin/admins", s.admin(s.createAdmin))
+	mux.HandleFunc("POST /control/admin/admins/{id}/reset-2fa", s.admin(s.resetAdminTOTP))
+	mux.HandleFunc("POST /control/admin/admins/{id}/disabled", s.admin(s.setAdminDisabled))
+	mux.HandleFunc("POST /control/admin/password", s.admin(s.changePassword))
 	s.webRoutes(mux)
 	s.deleteRoutes(mux)
 	s.leadRoutes(mux)
@@ -93,25 +103,8 @@ type adminInfo struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Name  string `json:"name"`
-}
-
-func (s *Server) admin(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		id, ok := s.sessions.Validate(strings.TrimSpace(tok))
-		if !ok {
-			writeErr(w, userErr(401, "UNAUTHENTICATED", "Sign in again."))
-			return
-		}
-		var a adminInfo
-		err := s.Svc.Store.DB.QueryRow(r.Context(), `select id, email, name from admins where id = $1 and not disabled`, id).Scan(&a.ID, &a.Email, &a.Name)
-		if err != nil {
-			s.sessions.Revoke(tok)
-			writeErr(w, userErr(401, "UNAUTHENTICATED", "Sign in again."))
-			return
-		}
-		h(w, r.WithContext(context.WithValue(r.Context(), adminKey{}, a)))
-	}
+	Role  string `json:"role"`
+	Stage string `json:"-"`
 }
 
 func adminOf(r *http.Request) adminInfo { a, _ := r.Context().Value(adminKey{}).(adminInfo); return a }
@@ -129,17 +122,9 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
-// clientIP: nginx sets X-Real-IP; the service only listens on localhost.
-func clientIP(r *http.Request) string {
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
-	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return host
-}
-
 // allowIP: at most n requests per IP per minute for a public endpoint.
 func (s *Server) allowIP(ip string, n int) bool {
+	ip = auth.IPKey(ip)
 	s.ipMu.Lock()
 	defer s.ipMu.Unlock()
 	now := time.Now()
@@ -201,8 +186,29 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 
 // ---------------------------------------------------------------- phones and PCs
 
+// TooOld: the phone app is older than the setting min_app_build allows.
+func (s *Server) TooOld(r *http.Request) bool {
+	return TooOld(r, s.minAppBuild.get(r.Context()))
+}
+
+// writeUpgrade answers an outdated phone app (426: it shows "please update").
+func writeUpgrade(w http.ResponseWriter) {
+	writeJSON(w, http.StatusUpgradeRequired, errBody("UPGRADE_REQUIRED", UpgradeMessage))
+}
+
+// longRequest lets an admin request that runs a script (creating a business,
+// updating every database, a backup) write its answer after the server's
+// usual write timeout.
+func longRequest(w http.ResponseWriter, d time.Duration) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+}
+
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	if s.TooOld(r) {
+		writeUpgrade(w)
+		return
+	}
+	ip := auth.ClientIP(r)
 	if !s.allowIP(ip, 20) || s.Svc.RecentFailedLookups(r.Context(), ip) >= 20 {
 		writeErr(w, userErr(429, "TOO_MANY", "Too many attempts. Try again in an hour."))
 		return
@@ -221,7 +227,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) activate(w http.ResponseWriter, r *http.Request) {
-	if !s.allowIP(clientIP(r), 10) {
+	if !s.allowIP(auth.ClientIP(r), 10) {
 		writeErr(w, userErr(429, "TOO_MANY", "Too many attempts. Try again in a minute."))
 		return
 	}
@@ -252,17 +258,6 @@ func (s *Server) heartbeat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
-// pcLogin: the Tally PC's local page signs in with an admin account.
-func (s *Server) pcLogin(w http.ResponseWriter, r *http.Request) {
-	a, err := s.checkLogin(r)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"ok": true, "name": a.Name, "email": a.Email,
-		"offline_until": time.Now().Add(7 * 24 * time.Hour).UTC().Format(time.RFC3339)})
-}
-
 func (s *Server) internalTenant(w http.ResponseWriter, r *http.Request) {
 	if s.InternalToken == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Internal-Token")), []byte(s.InternalToken)) != 1 {
 		writeErr(w, userErr(403, "FORBIDDEN", "Forbidden."))
@@ -275,56 +270,6 @@ func (s *Server) internalTenant(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]string{"base_url": base, "service_key": key})
 }
-
-// ---------------------------------------------------------------- admin: sessions
-
-func (s *Server) checkLogin(r *http.Request) (*adminInfo, error) {
-	var in struct{ Email, Password string }
-	if err := readJSON(r, &in); err != nil {
-		return nil, err
-	}
-	email := strings.ToLower(strings.TrimSpace(in.Email))
-	if err := s.limiter.Allow(email); err != nil {
-		return nil, userErr(429, "LOCKED", "Too many failed sign-ins. Try again in 15 minutes.")
-	}
-	if !s.allowIP(clientIP(r), 30) {
-		return nil, userErr(429, "TOO_MANY", "Too many attempts. Try again in a minute.")
-	}
-	var a adminInfo
-	var hash string
-	err := s.Svc.Store.DB.QueryRow(r.Context(), `select id, email, name, password_hash from admins where email = $1 and not disabled`, email).
-		Scan(&a.ID, &a.Email, &a.Name, &hash)
-	if err != nil || !auth.VerifyPassword(hash, in.Password) {
-		s.limiter.Failure(email)
-		return nil, userErr(401, "BAD_LOGIN", "Wrong email or password.")
-	}
-	s.limiter.Success(email)
-	_, _ = s.Svc.Store.DB.Exec(r.Context(), `update admins set last_login_at = now() where id = $1`, a.ID)
-	return &a, nil
-}
-
-func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
-	a, err := s.checkLogin(r)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	tok, err := s.sessions.Create(a.ID)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	s.Svc.Store.Audit(r.Context(), &a.ID, nil, "admin.login", map[string]any{"ip": clientIP(r)})
-	writeJSON(w, 200, map[string]any{"token": tok, "name": a.Name, "email": a.Email})
-}
-
-func (s *Server) adminLogout(w http.ResponseWriter, r *http.Request) {
-	tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	s.sessions.Revoke(strings.TrimSpace(tok))
-	writeJSON(w, 200, map[string]any{"ok": true})
-}
-
-func (s *Server) adminMe(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, adminOf(r)) }
 
 // ---------------------------------------------------------------- admin: businesses
 
@@ -389,6 +334,7 @@ func (s *Server) listBusinesses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createBusiness(w http.ResponseWriter, r *http.Request) {
+	longRequest(w, 15*time.Minute) // runs the provisioning script
 	var in CreateBusiness
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, err)
@@ -481,6 +427,7 @@ func (s *Server) getBusiness(w http.ResponseWriter, r *http.Request) {
 		rows.Close()
 	}
 	out["events"] = events
+	out["latest_pc_version"] = s.Svc.Store.Setting(ctx, "latest_pc_version")
 	writeJSON(w, 200, out)
 }
 
@@ -663,111 +610,111 @@ func (s *Server) resyncPlan(ctx context.Context, code string) {
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]string{
-		"renew_message": s.Svc.Store.Setting(r.Context(), "renew_message"),
-		"contact":       s.Svc.Store.Setting(r.Context(), "contact"),
+	ctx := r.Context()
+	minBuild, _ := s.Svc.Store.IntSetting(ctx, "min_app_build")
+	writeJSON(w, 200, map[string]any{
+		"renew_message":     s.Svc.Store.Setting(ctx, "renew_message"),
+		"contact":           s.Svc.Store.Setting(ctx, "contact"),
+		"min_app_build":     minBuild,
+		"latest_pc_version": s.Svc.Store.Setting(ctx, "latest_pc_version"),
 	})
 }
 
+var pcVersionRE = regexp.MustCompile(`^[0-9]{1,4}(\.[0-9]{1,4}){0,3}$`)
+
+// putSettings saves any of renew_message, contact (texts), min_app_build
+// (whole number, 0 = no minimum) and latest_pc_version ("0.6.0" or empty).
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
-	var in map[string]string
+	var in map[string]any
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, err)
 		return
 	}
-	ctx, a := r.Context(), adminOf(r)
-	for _, k := range []string{"renew_message", "contact"} {
+	values := map[string]string{}
+	for _, k := range []string{"renew_message", "contact", "latest_pc_version"} {
 		if v, ok := in[k]; ok {
-			if _, err := s.Svc.Store.DB.Exec(ctx, `insert into settings (key, value) values ($1, $2)
-				on conflict (key) do update set value = excluded.value`, k, strings.TrimSpace(v)); err != nil {
-				s.fail(w, r, err)
+			str, isStr := v.(string)
+			if !isStr {
+				writeErr(w, userErr(400, "INVALID_INPUT", k+" must be text."))
 				return
 			}
+			values[k] = strings.TrimSpace(str)
 		}
 	}
-	s.Svc.Store.Audit(ctx, &a.ID, nil, "settings.save", nil)
-	// Every business shows the new text and contact.
-	rows, err := s.Svc.Store.DB.Query(ctx, `select id::text from businesses where status <> 'closed'`)
-	if err == nil {
-		var ids []string
-		for rows.Next() {
-			var id string
-			if rows.Scan(&id) == nil {
-				ids = append(ids, id)
+	if v := values["latest_pc_version"]; v != "" && !pcVersionRE.MatchString(v) {
+		writeErr(w, userErr(400, "INVALID_INPUT", "Latest PC version: numbers and dots, like 0.6.0 (or empty)."))
+		return
+	}
+	if v, ok := in["min_app_build"]; ok {
+		var n float64
+		switch x := v.(type) {
+		case float64:
+			n = x
+		case string:
+			f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+			if err != nil && strings.TrimSpace(x) != "" {
+				writeErr(w, userErr(400, "INVALID_INPUT", "Minimum app build: a whole number (0 = no minimum)."))
+				return
 			}
+			n = f
+		default:
+			writeErr(w, userErr(400, "INVALID_INPUT", "Minimum app build: a whole number (0 = no minimum)."))
+			return
 		}
-		rows.Close()
-		for _, id := range ids {
-			_ = s.Svc.SyncStatus(ctx, id)
+		if n < 0 || n > 1_000_000_000 || n != float64(int64(n)) {
+			writeErr(w, userErr(400, "INVALID_INPUT", "Minimum app build: a whole number (0 = no minimum)."))
+			return
+		}
+		values["min_app_build"] = strconv.FormatInt(int64(n), 10)
+	}
+	ctx, a := r.Context(), adminOf(r)
+	for k, v := range values {
+		if _, err := s.Svc.Store.DB.Exec(ctx, `insert into settings (key, value) values ($1, $2)
+			on conflict (key) do update set value = excluded.value`, k, v); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	s.Svc.Store.Audit(ctx, &a.ID, nil, "settings.save", map[string]any{"keys": keysOf(values)})
+	_, msg := values["renew_message"]
+	_, contact := values["contact"]
+	if msg || contact {
+		// Every business shows the new text and contact.
+		rows, err := s.Svc.Store.DB.Query(ctx, `select id::text from businesses where status <> 'closed'`)
+		if err == nil {
+			var ids []string
+			for rows.Next() {
+				var id string
+				if rows.Scan(&id) == nil {
+					ids = append(ids, id)
+				}
+			}
+			rows.Close()
+			for _, id := range ids {
+				_ = s.Svc.SyncStatus(ctx, id)
+			}
 		}
 	}
 	s.getSettings(w, r)
 }
 
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (s *Server) migrateAll(w http.ResponseWriter, r *http.Request) {
+	longRequest(w, 31*time.Minute) // MigrateAll allows the script 30 minutes
 	out, err := s.Svc.MigrateAll(r.Context(), adminOf(r).ID)
 	status := 200
 	if err != nil {
 		status = 500
 	}
 	writeJSON(w, status, map[string]any{"ok": err == nil, "output": out})
-}
-
-func (s *Server) listAdmins(w http.ResponseWriter, r *http.Request) {
-	type admin struct {
-		ID          string     `json:"id"`
-		Email       string     `json:"email"`
-		Name        string     `json:"name"`
-		Disabled    bool       `json:"disabled"`
-		LastLoginAt *time.Time `json:"last_login_at"`
-	}
-	rows, err := s.Svc.Store.DB.Query(r.Context(), `select id, email, name, disabled, last_login_at from admins order by email`)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	defer rows.Close()
-	out := []admin{}
-	for rows.Next() {
-		var a admin
-		if rows.Scan(&a.ID, &a.Email, &a.Name, &a.Disabled, &a.LastLoginAt) == nil {
-			out = append(out, a)
-		}
-	}
-	writeJSON(w, 200, out)
-}
-
-func (s *Server) createAdmin(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Email, Name, Password string }
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, err)
-		return
-	}
-	id, err := CreateAdmin(r.Context(), s.Svc.Store, in.Email, in.Name, in.Password)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	a := adminOf(r)
-	s.Svc.Store.Audit(r.Context(), &a.ID, nil, "admin.create", map[string]any{"email": in.Email})
-	writeJSON(w, 201, map[string]string{"id": id})
-}
-
-// CreateAdmin is used by the API and by `wholeflow-control create-admin`.
-func CreateAdmin(ctx context.Context, store *Store, email, name, password string) (string, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
-	if !strings.Contains(email, "@") {
-		return "", userErr(400, "INVALID_INPUT", "Enter a valid email.")
-	}
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return "", userErr(400, "INVALID_INPUT", err.Error())
-	}
-	var id string
-	err = store.DB.QueryRow(ctx, `insert into admins (email, name, password_hash) values ($1, $2, $3)
-		on conflict (email) do update set password_hash = excluded.password_hash, name = excluded.name, disabled = false
-		returning id`, email, strings.TrimSpace(name), hash).Scan(&id)
-	return id, err
 }
 
 func trimPtr(p *string) *string {

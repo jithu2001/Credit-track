@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-
-	"wholeflow/internal/auth"
 )
 
 // Deleting data: one Tally company of a business, or a whole business.
@@ -147,23 +145,6 @@ func (s *Server) deleteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /control/admin/businesses/{id}/delete", s.admin(s.deleteBusiness))
 }
 
-// checkOwnPassword: deleting data and resetting a login need the signed-in admin's password again.
-// Failures count towards the same lockout as signing in.
-func (s *Server) checkOwnPassword(r *http.Request, password string) error {
-	a := adminOf(r)
-	if err := s.limiter.Allow(a.Email); err != nil {
-		return userErr(http.StatusTooManyRequests, "LOCKED", "Too many wrong passwords. Try again in 15 minutes.")
-	}
-	var hash string
-	if err := s.Svc.Store.DB.QueryRow(r.Context(), `select password_hash from admins where id = $1`, a.ID).Scan(&hash); err != nil ||
-		!auth.VerifyPassword(hash, password) {
-		s.limiter.Failure(a.Email)
-		return userErr(http.StatusForbidden, "BAD_PASSWORD", "Your password is wrong. Nothing was changed.")
-	}
-	s.limiter.Success(a.Email)
-	return nil
-}
-
 func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
 	out, err := s.Svc.Companies(r.Context(), r.PathValue("id"))
 	if err != nil {
@@ -174,6 +155,7 @@ func (s *Server) listCompanies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
+	longRequest(w, 15*time.Minute) // a big company's rows take a while to delete
 	var in struct {
 		Password string `json:"password"`
 		Confirm  string `json:"confirm"`
@@ -201,6 +183,7 @@ func (s *Server) deleteCompany(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteBusiness(w http.ResponseWriter, r *http.Request) {
+	longRequest(w, 15*time.Minute) // runs the delete script
 	var in struct {
 		Password      string `json:"password"`
 		Confirm       string `json:"confirm"`

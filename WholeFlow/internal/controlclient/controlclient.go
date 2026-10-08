@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -123,6 +124,50 @@ type HeartbeatResult struct {
 	SubscriptionState string `json:"subscription_state"` // active | renewal_due | grace | ended
 	MaxCompanies      int    `json:"max_companies"`
 	Revoked           bool   `json:"revoked"`
+	LatestPCVersion   string `json:"latest_pc_version"` // newest WholeFlow PC release; "" when the server doesn't say
+}
+
+// Outdated reports whether version current is older than latest (dotted
+// numbers, "0.5.1" < "0.6.0" < "0.10.0"; a leading "v" and anything after
+// "-" or "+" are ignored). Unreadable versions are never outdated.
+func Outdated(current, latest string) bool {
+	a, okA := versionParts(current)
+	b, okB := versionParts(latest)
+	if !okA || !okB {
+		return false
+	}
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y int
+		if i < len(a) {
+			x = a[i]
+		}
+		if i < len(b) {
+			y = b[i]
+		}
+		if x != y {
+			return x < y
+		}
+	}
+	return false
+}
+
+func versionParts(v string) ([]int, bool) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if i := strings.IndexAny(v, "-+ "); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return nil, false
+	}
+	var out []int
+	for _, p := range strings.Split(v, ".") {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out = append(out, n)
+	}
+	return out, true
 }
 
 func (c *Client) Heartbeat(ctx context.Context, deviceKey, appVersion string) (HeartbeatResult, error) {

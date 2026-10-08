@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"wholeflow/internal/authn"
 	"wholeflow/internal/control"
 )
 
@@ -39,9 +41,39 @@ type Server struct {
 	// nil means control_db + businesses/<slug>/env (tests set their own).
 	Resolve func(ctx context.Context, slug string) (TenantInfo, error)
 
-	mu      sync.Mutex
-	tenants map[string]*tenant
+	// MinAppBuild is the lowest phone-app build allowed (0 = any); nil reads
+	// the control_db setting min_app_build (cached for a minute).
+	MinAppBuild func(ctx context.Context) int
+
+	// Connections per business: TenantMaxConns as its data role, AuthMaxConns
+	// as its login role (0 = DefaultTenantMaxConns / DefaultAuthMaxConns).
+	TenantMaxConns int32
+	AuthMaxConns   int32
+	// ExpectedMigration is the newest business-database migration this
+	// build knows (e.g. "0009_lockdown.sql"); a business whose
+	// schema_migrations is behind is logged as a warning. "" = no check.
+	ExpectedMigration string
+
+	mu        sync.Mutex
+	tenants   map[string]*tenant
+	lastEvict time.Time
+
+	minBuildMu sync.Mutex
+	minBuild   int
+	minBuildAt time.Time
 }
+
+const (
+	DefaultTenantMaxConns = 3
+	DefaultAuthMaxConns   = 2
+	// tenantIdle: a business without requests for this long has its
+	// connection pools closed (they are opened again on the next request).
+	tenantIdle = 15 * time.Minute
+	// sessionCacheTTL: an open session is re-checked at most this often; a
+	// sign-out through this API is seen at once, one elsewhere (the admin
+	// app's owner reset) within this time.
+	sessionCacheTTL = 15 * time.Second
+)
 
 // tenant is one business: its token secret and a small connection pool as
 // its data API role (<slug>_api), refreshed every few minutes.
@@ -51,6 +83,43 @@ type tenant struct {
 	pool     *pgxpool.Pool
 	authPool *pgxpool.Pool // the login tables, as the business's login role
 	loadedAt time.Time
+	usedAt   time.Time // wall clock, guarded by Server.mu
+
+	sessMu   sync.Mutex
+	sessions map[string]time.Time // open sessions → checked until
+}
+
+// sessionOpen reports whether an access token's session is still open (cached briefly).
+func (s *Server) sessionOpen(ctx context.Context, t *tenant, sessionID string) (bool, error) {
+	now := time.Now()
+	t.sessMu.Lock()
+	until, ok := t.sessions[sessionID]
+	t.sessMu.Unlock()
+	if ok && now.Before(until) {
+		return true, nil
+	}
+	if t.authPool == nil {
+		return false, errors.New("no login database configured for " + t.slug)
+	}
+	open, err := authn.SessionExists(ctx, t.authPool, sessionID, s.Now())
+	if err != nil || !open {
+		return false, err
+	}
+	t.sessMu.Lock()
+	defer t.sessMu.Unlock()
+	if t.sessions == nil || len(t.sessions) > 10000 {
+		t.sessions = map[string]time.Time{}
+	}
+	t.sessions[sessionID] = now.Add(sessionCacheTTL)
+	return true, nil
+}
+
+// forgetSessions drops the cached sessions (after a sign-out, password change,
+// reset or ban through this API), so they are checked again at once.
+func (t *tenant) forgetSessions() {
+	t.sessMu.Lock()
+	defer t.sessMu.Unlock()
+	t.sessions = nil
 }
 
 // TenantInfo is what the API needs to serve one business.
@@ -136,7 +205,59 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/check-in", s.handleWrite(s.setStaffCheckIn))
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/active", s.handleWrite(s.setStaffActive))
 	mux.HandleFunc("POST /b/{slug}/api/v1/staff/{id}/password", s.handleWrite(s.resetStaffPassword))
-	return mux
+	mux.HandleFunc("POST /b/{slug}/api/v1/client-errors", s.clientError)
+	return s.versionGate(mux)
+}
+
+// ---------------------------------------------------------------- app version
+
+// versionGate answers 426 to a phone app older than min_app_build (its
+// X-App-Version build number). Requests without the header (Tally PCs,
+// scripts) pass.
+func (s *Server) versionGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/b/") && (strings.Contains(p, "/api/v1/") || strings.Contains(p, "/auth/v1/")) &&
+			r.Header.Get("X-App-Version") != "" && control.TooOld(r, s.minAppBuild(r.Context())) {
+			if strings.Contains(p, "/auth/v1/") {
+				authError(w, http.StatusUpgradeRequired, "upgrade_required", control.UpgradeMessage)
+			} else {
+				writeJSON(w, http.StatusUpgradeRequired, map[string]any{"error": fail(http.StatusUpgradeRequired, "UPGRADE_REQUIRED", control.UpgradeMessage)})
+			}
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// minAppBuild reads control_db's settings.min_app_build (SELECT only), at most once a minute.
+func (s *Server) minAppBuild(ctx context.Context) int {
+	if s.MinAppBuild != nil {
+		return s.MinAppBuild(ctx)
+	}
+	if s.Control == nil {
+		return 0
+	}
+	s.minBuildMu.Lock()
+	defer s.minBuildMu.Unlock()
+	if !s.minBuildAt.IsZero() && time.Since(s.minBuildAt) < time.Minute {
+		return s.minBuild
+	}
+	s.minBuildAt = time.Now() // on an error: keep the last value, try again in a minute
+	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var v string
+	err := s.Control.QueryRow(qctx, `select value from settings where key = 'min_app_build'`).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		s.minBuild = 0
+	} else if err != nil {
+		s.Log.Warn("min_app_build unreadable", "error", err.Error())
+	} else if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+		s.minBuild = n
+	} else if strings.TrimSpace(v) == "" {
+		s.minBuild = 0
+	}
+	return s.minBuild
 }
 
 // Close releases every business's connections.
@@ -192,7 +313,8 @@ func toAPIError(err error) *apiError {
 		case "22P02":
 			return fail(http.StatusBadRequest, "INVALID_INPUT", "Invalid id.")
 		case "23502", "23503", "23514": // not null, foreign key, check: the data sent breaks a rule
-			return fail(http.StatusBadRequest, "INVALID_INPUT", pg.Message)
+			// The database's own wording names tables and columns: logged, not sent.
+			return fail(http.StatusBadRequest, "INVALID_INPUT", "Some of the data sent is not valid.")
 		case "22023": // invalid input raised by our SQL functions: "fn_name: message"
 			msg := pg.Message
 			if _, after, ok := strings.Cut(msg, ": "); ok {
@@ -214,6 +336,23 @@ type request struct {
 	claims map[string]any
 	tx     pgx.Tx
 	today  time.Time
+	// undo: changes made outside tx (in the login tables) to reverse when tx
+	// does not commit, so the two databases' views stay the same.
+	undo []func(ctx context.Context) error
+}
+
+// onRollback registers fn to run if the request's transaction is not committed.
+func (r *request) onRollback(fn func(ctx context.Context) error) { r.undo = append(r.undo, fn) }
+
+// rollback runs the registered undo steps (newest first).
+func (s *Server) rollback(r *request) {
+	ctx := context.WithoutCancel(r.Context())
+	for i := len(r.undo) - 1; i >= 0; i-- {
+		if err := r.undo[i](ctx); err != nil {
+			s.Log.Error("undo after a failed request failed: login and data may disagree", "path", r.URL.Path, "error", err.Error())
+		}
+	}
+	r.undo = nil
 }
 
 // handle wraps a handler: finds the business, checks the token, and runs fn
@@ -229,10 +368,21 @@ func (s *Server) handleWrite(fn func(*request) (any, error)) http.HandlerFunc {
 	return s.handleTx(fn, pgx.ReadWrite)
 }
 
+// logRule logs a request the database refused for breaking a rule (the
+// client only gets a general message).
+func (s *Server) logRule(r *http.Request, err error) {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "23") {
+		s.Log.Warn("request breaks a database rule", "path", r.URL.Path, "code", pg.Code, "constraint", pg.ConstraintName,
+			"table", pg.TableName, "column", pg.ColumnName, "message", pg.Message)
+	}
+}
+
 func (s *Server) handleTx(fn func(*request) (any, error), mode pgx.TxAccessMode) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out, err := s.serve(r, fn, mode)
 		if err != nil {
+			s.logRule(r, err)
 			ae := toAPIError(err)
 			if ae == nil {
 				s.Log.Error("request failed", "path", r.URL.Path, "error", err.Error())
@@ -263,6 +413,18 @@ func (s *Server) serve(r *http.Request, fn func(*request) (any, error), mode pgx
 	if claims["role"] != "authenticated" {
 		return nil, fail(http.StatusForbidden, "FORBIDDEN", "This key can't use the app API.")
 	}
+	// A token whose session has ended (signed out, password reset, disabled)
+	// stops working now, not when it expires. Every sign-in token carries
+	// session_id (ours and GoTrue's).
+	if sid, _ := claims["session_id"].(string); sid != "" {
+		open, err := s.sessionOpen(ctx, t, sid)
+		if err != nil {
+			return nil, err
+		}
+		if !open {
+			return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
+		}
+	}
 	claimsJSON, _ := json.Marshal(claims)
 
 	tx, err := t.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: mode})
@@ -279,12 +441,15 @@ func (s *Server) serve(r *http.Request, fn func(*request) (any, error), mode pgx
 	if _, err := tx.Exec(ctx, `select public.check_request()`); err != nil {
 		return nil, err
 	}
-	out, err := fn(&request{Request: r, tenant: t, claims: claims, tx: tx, today: control.Today(s.Now())})
+	req := &request{Request: r, tenant: t, claims: claims, tx: tx, today: control.Today(s.Now())}
+	out, err := fn(req)
 	if err != nil {
+		s.rollback(req)
 		return nil, err
 	}
 	if mode == pgx.ReadWrite {
 		if err := tx.Commit(ctx); err != nil {
+			s.rollback(req)
 			return nil, err
 		}
 	}
@@ -310,7 +475,11 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	if s.tenants == nil {
 		s.tenants = map[string]*tenant{}
 	}
+	s.evictIdleLocked()
 	cached := s.tenants[slug]
+	if cached != nil {
+		cached.usedAt = time.Now()
+	}
 	s.mu.Unlock()
 	if cached != nil && s.Now().Sub(cached.loadedAt) < tenantTTL {
 		return cached, nil
@@ -332,14 +501,14 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cur := s.tenants[slug]; cur != nil && cur.DBURL == info.DBURL && cur.AuthDBURL == info.AuthDBURL {
-		cur.TenantInfo, cur.loadedAt = info, s.Now()
+		cur.TenantInfo, cur.loadedAt, cur.usedAt = info, s.Now(), time.Now()
 		return cur, nil
 	}
 	cfg, err := pgxpool.ParseConfig(info.DBURL)
 	if err != nil {
 		return nil, err
 	}
-	cfg.MaxConns = 4
+	cfg.MaxConns = orDefault(s.TenantMaxConns, DefaultTenantMaxConns)
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -352,7 +521,7 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 			pool.Close()
 			return nil, err
 		}
-		acfg.MaxConns = 2
+		acfg.MaxConns = orDefault(s.AuthMaxConns, DefaultAuthMaxConns)
 		acfg.MaxConnIdleTime = 5 * time.Minute
 		if authPool, err = pgxpool.NewWithConfig(ctx, acfg); err != nil {
 			pool.Close()
@@ -362,9 +531,57 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	if old := s.tenants[slug]; old != nil {
 		old.close()
 	}
-	t := &tenant{TenantInfo: info, slug: slug, pool: pool, authPool: authPool, loadedAt: s.Now()}
+	t := &tenant{TenantInfo: info, slug: slug, pool: pool, authPool: authPool, loadedAt: s.Now(), usedAt: time.Now()}
 	s.tenants[slug] = t
+	if s.ExpectedMigration != "" {
+		go s.checkMigrations(t)
+	}
 	return t, nil
+}
+
+func orDefault(n, def int32) int32 {
+	if n > 0 {
+		return n
+	}
+	return def
+}
+
+// evictIdleLocked closes the pools of businesses unused for tenantIdle
+// (looked at no more than once a minute). s.mu must be held.
+func (s *Server) evictIdleLocked() {
+	now := time.Now()
+	if now.Sub(s.lastEvict) < time.Minute {
+		return
+	}
+	s.lastEvict = now
+	for slug, t := range s.tenants {
+		if now.Sub(t.usedAt) > tenantIdle {
+			t.close()
+			delete(s.tenants, slug)
+		}
+	}
+}
+
+// checkMigrations warns when a business database is behind the newest
+// migration this build knows (it still serves it).
+func (s *Server) checkMigrations(t *tenant) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var latest string
+	err := pgx.BeginTxFunc(ctx, t.pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `set local role service_role`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `select coalesce(max(name), '') from public.schema_migrations`).Scan(&latest)
+	})
+	if err != nil {
+		s.Log.Warn("business migrations unreadable", "business", t.slug, "error", err.Error())
+		return
+	}
+	if latest < s.ExpectedMigration {
+		s.Log.Warn("business database is behind this API: run scripts/migrate.sh", "business", t.slug,
+			"latest", latest, "expected", s.ExpectedMigration)
+	}
 }
 
 // fromControl looks a business up in control_db (closed ones don't exist

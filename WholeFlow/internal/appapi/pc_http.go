@@ -46,6 +46,7 @@ func (s *Server) handlePC(fn func(*request) (any, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		out, err := s.servePC(r, fn)
 		if err != nil {
+			s.logRule(r, err)
 			ae := toAPIError(err)
 			if ae == nil {
 				s.Log.Error("PC request failed", "path", r.URL.Path, "error", err.Error())
@@ -104,7 +105,7 @@ func (s *Server) servePC(r *http.Request, fn func(*request) (any, error)) (any, 
 // readPC decodes a PC request body (unknown fields allowed: newer PCs may send more).
 func readPC(r *request, v any) error {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return fail(http.StatusBadRequest, "INVALID_INPUT", "The request body is not valid JSON: "+err.Error())
+		return fail(http.StatusBadRequest, "INVALID_INPUT", "The request body is not valid JSON.")
 	}
 	return nil
 }

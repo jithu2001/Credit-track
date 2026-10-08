@@ -2,11 +2,13 @@ package control
 
 import (
 	"bufio"
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Server health in the admin app: what scripts/monitor.sh logged on this
@@ -28,6 +30,39 @@ type monitorReport struct {
 	Daily    string   `json:"daily"`    // the latest daily summary
 	DailyDay string   `json:"daily_day"`
 	Missing  bool     `json:"missing"` // the monitor has not written anything yet
+
+	LatestPCVersion string       `json:"latest_pc_version"` // setting; "" = not set
+	OutdatedPCs     []outdatedPC `json:"outdated_pcs"`      // active PCs older than that
+}
+
+type outdatedPC struct {
+	BusinessID   string     `json:"business_id"`
+	BusinessName string     `json:"business_name"`
+	Machine      string     `json:"machine"`
+	AppVersion   string     `json:"app_version"`
+	LastSeenAt   *time.Time `json:"last_seen_at"`
+}
+
+// outdatedPCs lists the PCs (not revoked, of open businesses) whose version is below latest.
+func (s *Server) outdatedPCs(ctx context.Context, latest string) []outdatedPC {
+	out := []outdatedPC{}
+	if latest == "" {
+		return out
+	}
+	rows, err := s.Svc.Store.DB.Query(ctx, `select b.id::text, b.name, d.machine, d.app_version, d.last_seen_at
+		from devices d join businesses b on b.id = d.business_id
+		where d.revoked_at is null and b.status <> 'closed' order by b.name, d.machine`)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p outdatedPC
+		if rows.Scan(&p.BusinessID, &p.BusinessName, &p.Machine, &p.AppVersion, &p.LastSeenAt) == nil && VersionLess(p.AppVersion, latest) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func readLines(path string) []string {
@@ -86,6 +121,9 @@ func (s *Server) monitorRoutes(mux *http.ServeMux) {
 		if dir == "" {
 			dir = MonitorDir
 		}
-		writeJSON(w, http.StatusOK, MonitorReport(dir))
+		rep := MonitorReport(dir)
+		rep.LatestPCVersion = s.Svc.Store.Setting(r.Context(), "latest_pc_version")
+		rep.OutdatedPCs = s.outdatedPCs(r.Context(), rep.LatestPCVersion)
+		writeJSON(w, http.StatusOK, rep)
 	}))
 }
