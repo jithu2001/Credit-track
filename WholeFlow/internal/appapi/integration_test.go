@@ -1004,6 +1004,20 @@ func TestIntegration(t *testing.T) {
 		code, _ = get(authPath+"user", "")
 		eqv(t, code, 401, "no token")
 
+		// A session GoTrue made before the switch (rows shaped like the server's:
+		// 12-character token, zero instance, no refreshed_at) keeps working.
+		mustExec(t, db, `insert into auth.sessions (id, user_id, created_at, updated_at, aal)
+			values ('5e55a000-0000-0000-0000-000000000001', $1, now(), now(), 'aal1')`, ownerA)
+		mustExec(t, db, `insert into auth.refresh_tokens (instance_id, token, user_id, revoked, created_at, updated_at, parent, session_id)
+			values ('00000000-0000-0000-0000-000000000000', 'gotruetok12A', $1, false, now(), now(), null,
+				'5e55a000-0000-0000-0000-000000000001')`, ownerA)
+		code, out, _ = post("token?grant_type=refresh_token", "", `{"refresh_token":"gotruetok12A"}`)
+		if code != 200 {
+			t.Fatalf("GoTrue's token: %d %v", code, out)
+		}
+		code, _ = get("/b/apitest/api/v1/me", out["access_token"].(string))
+		eqv(t, code, 200, "signed-in phone keeps working after the switch")
+
 		// Ten wrong passwords lock that email for 15 minutes.
 		for i := 0; i < 10; i++ {
 			post("token?grant_type=password", "", `{"email":"locked@a.test","password":"guess"}`)

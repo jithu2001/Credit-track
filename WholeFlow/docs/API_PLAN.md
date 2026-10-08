@@ -153,8 +153,13 @@ Each step can be undone on its own (in brackets).
      && printf 'KIT_DIR=/opt/wholeflow\nPG_HOST=127.0.0.1:5432\nLISTEN=127.0.0.1:8300\n' >> api.env && chmod 600 api.env
    systemctl daemon-reload && systemctl enable --now wholeflow-api && systemctl restart wholeflow-control
    curl -s 127.0.0.1:8300/health        # {"ok":true}
+   # Sign-in reaches the login tables (wrong password on purpose), before nginx sends anyone there:
+   curl -s -X POST '127.0.0.1:8300/b/demo/auth/v1/token?grant_type=password' -d '{"email":"check@example.com","password":"x"}'
+   # → {"code":"invalid_credentials",…}
    ```
    [undo: `systemctl stop wholeflow-api`; old control from `.prev`]
+   **Create no new business from here until step 7 is confirmed:** a business made now
+   has no GoTrue container, so it could not sign in if you had to roll back.
 5. `nginx -t && systemctl reload nginx`. **From here sign-in and the app API are live** for every
    business: `/b/<slug>/auth/v1/` and `/api/v1/` go to the API. Phones already signed in stay signed
    in (same tokens and sessions). Old app versions keep working (PostgREST is untouched).
