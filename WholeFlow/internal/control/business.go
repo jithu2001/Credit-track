@@ -570,6 +570,9 @@ func (s *Service) runScript(ctx context.Context, timeout time.Duration, script s
 	return buf.String(), err
 }
 
+// ReadEnvFile reads a KEY=VALUE file such as businesses/<slug>/env.
+func ReadEnvFile(path string) (map[string]string, error) { return readEnvFile(path) }
+
 func readEnvFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -127,38 +127,90 @@ final _overdueShops = [
 
 /// Unpaid bills older than 30 days for the same shops as the Overdue view.
 class _Analytics implements AnalyticsRepository {
+  // (shop, days ago, rupees): unpaid sales bills, no payments yet.
+  static const _bills = [
+    ('s2', 82, 51200),
+    ('s2', 64, 37200),
+    ('s2', 12, 64500),
+    ('s1', 67, 62750),
+    ('s1', 20, 121600),
+    ('s5', 49, 24900),
+    ('s5', 9, 36300),
+    ('s7', 38, 18210),
+    ('s7', 6, 15550),
+    ('s3', 15, 96420),
+    ('s4', 11, 74880),
+    ('s6', 8, 48315),
+  ];
+
   @override
-  Future<AnalyticsData> load(String companyId) async {
-    PaymentTxn sale(String shop, int daysAgo, int rupees, String no) => PaymentTxn(
-      shopId: shop,
-      date: _ago(daysAgo),
-      category: TxnCategory.sales,
-      debit: Money(rupees * 100),
-      credit: Money.zero,
-      voucher: 'Sales · $no',
-    );
-    return AnalyticsData(
-      booksFrom: _ago(365),
-      shops: [
-        for (final s in _shops.take(7))
-          ShopOpening(id: s.id, name: s.name, siteName: s.siteName, opening: Money.zero, receivable: s.receivable),
-      ],
-      txns: [
-        sale('s2', 82, 51200, 'PT/1183'),
-        sale('s2', 64, 37200, 'PT/1246'),
-        sale('s2', 12, 64500, 'PT/1440'),
-        sale('s1', 67, 62750, 'PT/1209'),
-        sale('s1', 20, 121600, 'PT/1411'),
-        sale('s5', 49, 24900, 'PT/1301'),
-        sale('s5', 9, 36300, 'PT/1458'),
-        sale('s7', 38, 18210, 'PT/1352'),
-        sale('s7', 6, 15550, 'PT/1466'),
-        sale('s3', 15, 96420, 'PT/1425'),
-        sale('s4', 11, 74880, 'PT/1437'),
-        sale('s6', 8, 48315, 'PT/1461'),
-      ],
-    );
+  Future<BusinessPaymentSummary> summary(String companyId, {required int creditDays}) async {
+    String rs(int r) => '$r.00';
+    String bucket(int daysAgo) => switch (daysAgo - creditDays) {
+      <= 0 => 'not_due',
+      <= 30 => 'd1_30',
+      <= 60 => 'd31_60',
+      <= 90 => 'd61_90',
+      _ => 'd90_plus',
+    };
+    Map<String, String> ageing(Iterable<(String, int, int)> bills) {
+      final out = {for (final k in AgeBucket.values) k.code: 0};
+      for (final b in bills) {
+        out[bucket(b.$2)] = out[bucket(b.$2)]! + b.$3;
+      }
+      return out.map((k, v) => MapEntry(k, rs(v)));
+    }
+
+    var overdueTotal = 0, openTotal = 0, overdueShops = 0;
+    final shops = <Map<String, dynamic>>[];
+    for (final s in _shops.take(7)) {
+      final mine = [
+        for (final b in _bills)
+          if (b.$1 == s.id) b,
+      ];
+      if (mine.isEmpty) continue;
+      final open = mine.fold(0, (t, b) => t + b.$3);
+      final late = [
+        for (final b in mine)
+          if (b.$2 > creditDays) b,
+      ];
+      final overdue = late.fold(0, (t, b) => t + b.$3);
+      final maxLate = late.fold(0, (m, b) => b.$2 - creditDays > m ? b.$2 - creditDays : m);
+      overdueTotal += overdue;
+      openTotal += open;
+      if (overdue > 0) overdueShops++;
+      shops.add({
+        'shop': {'id': s.id, 'name': s.name, 'site_name': s.siteName, 'opening': '0.00', 'receivable': rs(open)},
+        'advance': '0.00',
+        'overdue': rs(overdue),
+        'open_amount': rs(open),
+        'open_bills': mine.length,
+        'max_days_overdue': maxLate,
+        'oldest_open_bill_date': _d(mine.map((b) => b.$2).reduce((a, b) => a > b ? a : b)),
+        'ageing': ageing(mine),
+        'paid_bills': 0,
+        'on_time_bills': 0,
+        'last_payment_amount': '0.00',
+        'computed_balance': rs(open),
+        'reconciled': true,
+      });
+    }
+    return BusinessPaymentSummary.fromJson({
+      'credit_days': creditDays,
+      'today': _d(0),
+      'overdue': rs(overdueTotal),
+      'overdue_shops': overdueShops,
+      'open_amount': rs(openTotal),
+      'ageing': ageing([
+        for (final b in _bills)
+          if (_shops.take(7).any((s) => s.id == b.$1)) b,
+      ]),
+      'shops': shops,
+    });
   }
+
+  @override
+  Future<ShopPayments> shop(String shopId, {required int creditDays}) => throw UnimplementedError();
 }
 
 class _Dashboard implements DashboardRepository {

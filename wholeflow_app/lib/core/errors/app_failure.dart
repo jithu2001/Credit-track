@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../api/api_client.dart';
+
 enum FailureKind {
   network,
   unauthenticated,
@@ -60,6 +62,7 @@ class AppFailure implements Exception {
     }
     if (error is AuthException) return _fromAuth(error);
     if (error is PostgrestException) return _fromPostgrest(error);
+    if (error is ApiException) return _fromApi(error);
     if (error is FunctionException) return _fromFunction(error);
     final text = error.toString();
     if (text.contains('SocketException') ||
@@ -115,6 +118,25 @@ class AppFailure implements Exception {
     if (code == 'PGRST116') return const AppFailure(FailureKind.notFound);
     if (code.startsWith('5') || code.startsWith('XX')) return const AppFailure(FailureKind.server);
     return const AppFailure(FailureKind.unknown);
+  }
+
+  /// The WholeFlow app API (core/api/api_client.dart).
+  static AppFailure _fromApi(ApiException e) {
+    switch (e.status) {
+      case 402:
+        final f = AppFailure(FailureKind.subscriptionEnded, _text(e.details), _text(e.hint));
+        onSubscriptionEnded?.call(f);
+        return f;
+      case 401:
+        return const AppFailure(FailureKind.unauthenticated);
+      case 403:
+        return AppFailure(FailureKind.forbidden, e.code == 'FORBIDDEN' ? null : _text(e.message));
+      case 404:
+        return const AppFailure(FailureKind.notFound);
+      case 400:
+        return AppFailure(FailureKind.invalidInput, _text(e.message));
+    }
+    return e.status >= 500 ? const AppFailure(FailureKind.server) : const AppFailure(FailureKind.unknown);
   }
 
   static String? _text(Object? v) => v is String && v.trim().isNotEmpty ? v.trim() : null;

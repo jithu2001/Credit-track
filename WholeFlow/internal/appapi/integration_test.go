@@ -1,0 +1,230 @@
+package appapi
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"wholeflow/internal/control"
+)
+
+// Runs the API against a real, fully migrated business database:
+//
+//	db/tests/run_local.sh                 # throwaway Postgres (Docker) with every migration
+//	WF_TEST_PG=postgres://postgres:pw@127.0.0.1:55432/wf go test ./internal/appapi -run Integration
+//
+// Seeds two businesses, then checks the numbers and that the database's rules
+// still decide who sees what. Removes its rows afterwards.
+
+const (
+	bizA    = "b0000000-0000-0000-0000-00000000a001"
+	bizB    = "b0000000-0000-0000-0000-00000000a002"
+	ownerA  = "a0000000-0000-0000-0000-00000000a001"
+	staffA  = "a0000000-0000-0000-0000-00000000a002"
+	ownerB  = "a0000000-0000-0000-0000-00000000a003"
+	companA = "c0000000-0000-0000-0000-00000000a001"
+	shopA1  = "d0000000-0000-0000-0000-00000000a001"
+	shopA2  = "d0000000-0000-0000-0000-00000000a002"
+	siteA   = "e0000000-0000-0000-0000-00000000a001"
+	secret  = "test-secret-test-secret-test-secret-32"
+)
+
+func TestIntegrationPayments(t *testing.T) {
+	admin := os.Getenv("WF_TEST_PG")
+	if admin == "" {
+		t.Skip("set WF_TEST_PG (see the comment at the top of this file)")
+	}
+	ctx := context.Background()
+	db, err := pgx.Connect(ctx, admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close(ctx) }) // runs after the row cleanup below
+
+	// The business data API's role, as scripts/new-business.sh makes it.
+	mustExec(t, db, `do $$ begin
+		if not exists (select 1 from pg_roles where rolname = 'wftest_api') then
+			create role wftest_api login noinherit password 'pw';
+		end if; end $$`)
+	mustExec(t, db, `grant anon, authenticated, service_role to wftest_api`)
+	cleanup := func() {
+		mustExec(t, db, `delete from public.businesses where id in ($1, $2)`, bizA, bizB)
+		mustExec(t, db, `delete from auth.users where id in ($1, $2, $3)`, ownerA, staffA, ownerB)
+		mustExec(t, db, `delete from public.service_status`)
+	}
+	cleanup()
+	t.Cleanup(cleanup)
+
+	mustExec(t, db, `insert into public.businesses (id, name) values ($1, 'API Biz'), ($2, 'Other Biz')`, bizA, bizB)
+	mustExec(t, db, `insert into auth.users (id, email) values ($1, 'o@a.test'), ($2, 's@a.test'), ($3, 'o@b.test')`, ownerA, staffA, ownerB)
+	mustExec(t, db, `insert into public.users (id, business_id, role, name, email) values
+		($1, $4, 'OWNER', 'Owner', 'o@a.test'), ($2, $4, 'STAFF', 'Staff', 's@a.test'), ($3, $5, 'OWNER', 'Other', 'o@b.test')`,
+		ownerA, staffA, ownerB, bizA, bizB)
+	mustExec(t, db, `insert into public.tally_companies (id, business_id, tally_company_id, company_name, books_from, period_from)
+		values ($1, $2, 'g-api', 'API Co', '2025-04-01', '2026-04-01')`, companA, bizA)
+	mustExec(t, db, `insert into public.sites (id, business_id, company_id, name) values ($1, $2, $3, 'Town')`, siteA, bizA, companA)
+	// Shop 1: ₹1,000 opening (Dr), bills 1 May ₹500 and 15 Jun ₹800, ₹1,200 paid 10 Jul → owes ₹1,100.
+	// Shop 2: ₹200 advance (Cr opening), bill 1 Jul ₹150 → ₹50 advance.
+	mustExec(t, db, `insert into public.shops (id, business_id, company_id, tally_ledger_id, name, phone, opening_balance_amount,
+			opening_balance_type, receivable, site_id, synced_at) values
+		($1, $3, $4, 'l1', 'Alpha Stores', '9800000001', 1000, 'DR', 1100, $5, now()),
+		($2, $3, $4, 'l2', 'Beta Traders', null, 200, 'CR', -50, null, now())`, shopA1, shopA2, bizA, companA, siteA)
+	mustExec(t, db, `insert into public.transactions (business_id, company_id, shop_id, tally_voucher_id, tally_ledger_id,
+			transaction_date, voucher_type, voucher_number, category, debit, credit, amount, synced_at) values
+		($1, $2, $3, 'v1', 'l1', '2026-05-01', 'Sales', '1', 'sales', 500, 0, 500, now()),
+		($1, $2, $3, 'v2', 'l1', '2026-06-15', 'Sales', '2', 'sales', 800, 0, 800, now()),
+		($1, $2, $3, 'v3', 'l1', '2026-07-10', 'Receipt', 'R1', 'receipts', 0, 1200, -1200, now()),
+		($1, $2, $4, 'v4', 'l2', '2026-07-01', 'Sales', '3', 'sales', 150, 0, 150, now())`, bizA, companA, shopA1, shopA2)
+
+	u, _ := url.Parse(admin)
+	u.User = url.UserPassword("wftest_api", "pw")
+	srv := &Server{
+		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Now: func() time.Time { return time.Date(2026, 7, 20, 6, 0, 0, 0, time.UTC) },
+		Resolve: func(_ context.Context, slug string) (string, string, error) {
+			if slug != "apitest" {
+				return "", "", fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
+			}
+			return secret, u.String(), nil
+		},
+	}
+	defer srv.Close()
+	ts := httptest.NewServer(srv.Routes())
+	defer ts.Close()
+
+	token := func(sub string) string {
+		tok, err := control.SignJWT(secret, map[string]any{"sub": sub, "role": "authenticated", "aud": "authenticated",
+			"exp": time.Now().Add(time.Hour).Unix()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	get := func(path, tok string) (int, map[string]any) {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+path, nil)
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var body map[string]any
+		_ = json.NewDecoder(res.Body).Decode(&body)
+		return res.StatusCode, body
+	}
+	summaryPath := "/b/apitest/api/v1/payments?company=" + companA
+
+	t.Run("owner gets the summary", func(t *testing.T) {
+		code, body := get(summaryPath, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		// Opening dated at the period start (1 Apr); 30 days credit; today 20 Jul.
+		// FIFO: ₹1,200 settles the opening (₹1,000) and ₹200 of the May bill → May ₹300 (due 31 May)
+		// and June ₹800 (due 15 Jul) are overdue.
+		eqv(t, body["books_from"], "2026-04-01", "books_from")
+		eqv(t, body["overdue"], "1100.00", "overdue")
+		eqv(t, body["overdue_shops"], 1.0, "overdue shops")
+		eqv(t, body["open_amount"], "1100.00", "open amount")
+		shops := body["shops"].([]any)
+		if len(shops) != 2 {
+			t.Fatalf("shops = %d", len(shops))
+		}
+		alpha := shops[0].(map[string]any)
+		eqv(t, alpha["shop"].(map[string]any)["site_name"], "Town", "site")
+		eqv(t, alpha["max_days_overdue"], 50.0, "max days overdue") // May bill due 31 May
+		eqv(t, alpha["reconciled"], true, "alpha reconciled")
+		eqv(t, alpha["last_payment_date"], "2026-07-10", "last payment")
+		beta := shops[1].(map[string]any)
+		eqv(t, beta["advance"], "50.00", "beta advance")
+		eqv(t, beta["reconciled"], true, "beta reconciled")
+		// 30 days ago (20 Jun): opening (due 1 May) and May bill (due 31 May) unpaid.
+		eqv(t, body["overdue_month_ago"], "1500.00", "overdue a month ago")
+	})
+
+	t.Run("credit days change what is late", func(t *testing.T) {
+		_, body := get(summaryPath+"&credit_days=60", token(ownerA))
+		eqv(t, body["overdue"], "300.00", "overdue at 60 days") // only the May bill is past 60 days
+	})
+
+	t.Run("shop view has the bills", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/payments/shops/"+shopA1, token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		bills := body["bills"].([]any)
+		if len(bills) != 3 {
+			t.Fatalf("bills = %d", len(bills))
+		}
+		first := bills[0].(map[string]any)
+		eqv(t, first["is_opening"], true, "opening bill")
+		eqv(t, first["settled_on"], "2026-07-10", "opening settled")
+		eqv(t, first["allocations"].([]any)[0].(map[string]any)["kind"], "payment", "allocation kind")
+		eqv(t, bills[1].(map[string]any)["remaining"], "300.00", "May bill remaining")
+		eqv(t, body["closed_bills"], 1.0, "closed bills")
+	})
+
+	t.Run("staff are refused", func(t *testing.T) {
+		code, body := get(summaryPath, token(staffA))
+		eqv(t, code, 403, "status")
+		eqv(t, body["error"].(map[string]any)["code"], "NOT_OWNER", "code")
+	})
+
+	t.Run("another business's owner sees nothing", func(t *testing.T) {
+		code, _ := get(summaryPath, token(ownerB))
+		eqv(t, code, 404, "summary status") // the company is invisible to them
+		code, _ = get("/b/apitest/api/v1/payments/shops/"+shopA1, token(ownerB))
+		eqv(t, code, 404, "shop status")
+	})
+
+	t.Run("no token, bad token, a PC key", func(t *testing.T) {
+		code, _ := get(summaryPath, "")
+		eqv(t, code, 401, "no token")
+		bad, _ := control.SignJWT("another-secret-another-secret-another", map[string]any{"sub": ownerA, "role": "authenticated"})
+		code, _ = get(summaryPath, bad)
+		eqv(t, code, 401, "wrong secret")
+		pc, _ := control.SignJWT(secret, map[string]any{"role": "service_role", "device_id": "x"})
+		code, _ = get(summaryPath, pc)
+		eqv(t, code, 403, "PC key")
+		code, _ = get("/b/nobody/api/v1/payments?company="+companA, token(ownerA))
+		eqv(t, code, 404, "unknown business")
+		code, _ = get("/b/apitest/api/v1/payments?company=not-a-uuid", token(ownerA))
+		eqv(t, code, 400, "malformed id")
+	})
+
+	t.Run("a paused business gets 402", func(t *testing.T) {
+		mustExec(t, db, `insert into public.service_status (status, message, contact) values ('suspended', 'Paused for testing', '98000 00000')`)
+		defer mustExec(t, db, `delete from public.service_status`)
+		code, body := get(summaryPath, token(ownerA))
+		eqv(t, code, 402, "status")
+		e := body["error"].(map[string]any)
+		eqv(t, e["code"], "SUBSCRIPTION_ENDED", "code")
+		eqv(t, e["details"], "Paused for testing", "details")
+		eqv(t, e["hint"], "98000 00000", "hint")
+	})
+}
+
+func mustExec(t *testing.T, db *pgx.Conn, sql string, args ...any) {
+	t.Helper()
+	if _, err := db.Exec(context.Background(), sql, args...); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+}
+
+func eqv(t *testing.T, got, want any, what string) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("%s = %v (%T), want %v (%T)", what, got, got, want, want)
+	}
+}

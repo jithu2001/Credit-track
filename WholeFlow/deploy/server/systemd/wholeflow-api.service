@@ -1,0 +1,20 @@
+[Unit]
+Description=WholeFlow app API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/opt/wholeflow/api.env
+ExecStart=/opt/wholeflow/bin/wholeflow-api
+WorkingDirectory=/opt/wholeflow
+Restart=on-failure
+RestartSec=3
+# Reads businesses/<slug>/env (root only). Listens on 127.0.0.1 only (nginx
+# forwards /b/<slug>/api/v1/); writes nothing to disk.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

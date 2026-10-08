@@ -35,25 +35,24 @@ class AnalyticsSortController extends _$AnalyticsSortController {
   void set(AnalyticsSort s) => state = s;
 }
 
-/// Raw data for a company; kept while the app runs, reloaded on refresh.
+/// Payment figures of a company with the current credit days, worked out on
+/// the server; fetched again when the credit days change.
 @Riverpod(keepAlive: true)
-Future<AnalyticsData> analyticsData(Ref ref, String companyId) => ref.watch(analyticsRepositoryProvider).load(companyId);
-
-/// FIFO analysis with the current credit days. Recomputed on the device when
-/// the filter changes; the data is not fetched again.
-@riverpod
-Future<BusinessPaymentSummary> paymentSummary(Ref ref, String companyId) async {
-  final data = await ref.watch(analyticsDataProvider(companyId).future);
+Future<BusinessPaymentSummary> paymentSummary(Ref ref, String companyId) {
   final days = ref.watch(creditDaysProvider);
-  return analyseBusiness(shops: data.shops, txns: data.txns, creditDays: days, booksFrom: data.booksFrom, today: DateTime.now());
+  return ref.watch(analyticsRepositoryProvider).summary(companyId, creditDays: days);
 }
 
 /// Overdue 30 days ago with the same credit period, for the trend line.
 @riverpod
-Future<Money?> overdueMonthAgo(Ref ref, String companyId) async {
-  final data = await ref.watch(analyticsDataProvider(companyId).future);
+Future<Money?> overdueMonthAgo(Ref ref, String companyId) async =>
+    (await ref.watch(paymentSummaryProvider(companyId).future)).overdueMonthAgo;
+
+/// One shop's bills under FIFO (the shop's Payments view).
+@riverpod
+Future<ShopPayments> shopPayments(Ref ref, String shopId) {
   final days = ref.watch(creditDaysProvider);
-  return overdueDaysAgo(shops: data.shops, txns: data.txns, creditDays: days, booksFrom: data.booksFrom, today: DateTime.now());
+  return ref.watch(analyticsRepositoryProvider).shop(shopId, creditDays: days);
 }
 
 List<ShopPaymentProfile> sortProfiles(List<ShopPaymentProfile> shops, AnalyticsSort sort) {

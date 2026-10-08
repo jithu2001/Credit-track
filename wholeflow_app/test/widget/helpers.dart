@@ -317,48 +317,100 @@ class FakeDashboardRepository implements DashboardRepository {
       MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12);
 }
 
-/// Two shops relative to today: one 20 days overdue, one paid on time.
+/// Two shops relative to today, as the app API answers: one with a ₹10,000
+/// bill from 50 days ago (unpaid), one that paid its bill 10 days after it.
 class FakeAnalyticsRepository implements AnalyticsRepository {
-  @override
-  Future<AnalyticsData> load(String companyId) async {
-    final today = DateTime.now();
-    final d = DateTime(today.year, today.month, today.day);
-    return AnalyticsData(
-      booksFrom: d.subtract(const Duration(days: 365)),
-      shops: const [
-        ShopOpening(
-          id: 's1',
-          name: 'PRINCE TYRES -- RAJAKKAD',
-          siteName: 'Rajakkad',
-          opening: Money.zero,
-          receivable: Money(1000000),
-        ),
-        ShopOpening(id: 's2', name: 'KERALA AUTO -- PALA', siteName: 'Pala', opening: Money.zero, receivable: Money.zero),
-      ],
-      txns: [
-        PaymentTxn(
-          shopId: 's1',
-          date: d.subtract(const Duration(days: 50)),
-          category: TxnCategory.sales,
-          debit: const Money(1000000),
-          credit: Money.zero,
-          voucher: 'Sales · 101',
-        ),
-        PaymentTxn(
-          shopId: 's2',
-          date: d.subtract(const Duration(days: 40)),
-          category: TxnCategory.sales,
-          debit: const Money(500000),
-          credit: Money.zero,
-        ),
-        PaymentTxn(
-          shopId: 's2',
-          date: d.subtract(const Duration(days: 30)),
-          category: TxnCategory.receipts,
-          debit: Money.zero,
-          credit: const Money(500000),
-        ),
-      ],
-    );
+  final calls = <int>[];
+
+  static String _day(int daysAgo) {
+    final t = DateTime.now().subtract(Duration(days: daysAgo));
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
+
+  static Map<String, dynamic> _ageing([String? bucket, String amount = '0.00']) => {
+    for (final k in AgeBucket.values) k.code: k.code == bucket ? amount : '0.00',
+  };
+
+  static Map<String, dynamic> _prince(int days) {
+    final late = 50 - days;
+    return {
+      'shop': {
+        'id': 's1',
+        'name': 'PRINCE TYRES -- RAJAKKAD',
+        'site_name': 'Rajakkad',
+        'opening': '0.00',
+        'receivable': '10000.00',
+      },
+      'advance': '0.00',
+      'overdue': late > 0 ? '10000.00' : '0.00',
+      'open_amount': '10000.00',
+      'open_bills': 1,
+      'max_days_overdue': late > 0 ? late : 0,
+      'oldest_open_bill_date': _day(50),
+      'ageing': _ageing(late > 0 ? (late <= 30 ? 'd1_30' : 'd31_60') : 'not_due', '10000.00'),
+      'paid_bills': 0,
+      'on_time_bills': 0,
+      'last_payment_amount': '0.00',
+      'computed_balance': '10000.00',
+      'reconciled': true,
+    };
+  }
+
+  @override
+  Future<BusinessPaymentSummary> summary(String companyId, {required int creditDays}) async {
+    calls.add(creditDays);
+    final prince = _prince(creditDays);
+    final overdue = prince['overdue'] as String;
+    return BusinessPaymentSummary.fromJson({
+      'credit_days': creditDays,
+      'today': _day(0),
+      'overdue': overdue,
+      'overdue_shops': overdue == '0.00' ? 0 : 1,
+      'open_amount': '10000.00',
+      'ageing': prince['ageing'],
+      'on_time_rate': creditDays >= 10 ? 1.0 : 0.0,
+      'avg_days_to_pay': 10.0,
+      // A month ago the bill was 20 days old: not past 30 or 60 days.
+      'overdue_month_ago': '0.00',
+      'shops': [
+        prince,
+        {
+          'shop': {'id': 's2', 'name': 'KERALA AUTO -- PALA', 'site_name': 'Pala', 'opening': '0.00', 'receivable': '0.00'},
+          'advance': '0.00',
+          'overdue': '0.00',
+          'open_amount': '0.00',
+          'open_bills': 0,
+          'max_days_overdue': 0,
+          'ageing': _ageing(),
+          'paid_bills': 1,
+          'on_time_bills': creditDays >= 10 ? 1 : 0,
+          'on_time_rate': creditDays >= 10 ? 1.0 : 0.0,
+          'avg_days_to_pay': 10.0,
+          'avg_days_late': 0.0,
+          'last_payment_date': _day(30),
+          'last_payment_amount': '5000.00',
+          'computed_balance': '0.00',
+          'reconciled': true,
+        },
+      ],
+    });
+  }
+
+  @override
+  Future<ShopPayments> shop(String shopId, {required int creditDays}) async => ShopPayments.fromJson({
+    ..._prince(creditDays),
+    'credit_days': creditDays,
+    'today': _day(0),
+    'closed_bills': 0,
+    'bills': [
+      {
+        'date': _day(50),
+        'due': _day(50 - creditDays),
+        'amount': '10000.00',
+        'remaining': '10000.00',
+        'voucher': 'Sales · 101',
+        'allocations': [],
+      },
+    ],
+  });
 }

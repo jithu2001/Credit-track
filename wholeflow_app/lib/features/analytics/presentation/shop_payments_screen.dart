@@ -6,7 +6,6 @@ import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
-import '../../company/presentation/company_providers.dart';
 import '../domain/payment_analysis.dart';
 import 'analytics_providers.dart';
 import 'analytics_widgets.dart';
@@ -19,9 +18,7 @@ class ShopPaymentsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final company = ref.watch(activeCompanyProvider).value;
-    final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
-    final profile = summary?.value?.shops.where((p) => p.shop.id == shopId).firstOrNull;
+    final profile = ref.watch(shopPaymentsProvider(shopId)).value?.profile;
     return Scaffold(
       appBar: AppBar(
         title: Text(profile?.shop.name ?? 'Payments', maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -46,31 +43,27 @@ class ShopPaymentsView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final company = ref.watch(activeCompanyProvider).value;
-    final summary = company == null ? null : ref.watch(paymentSummaryProvider(company.id));
-    final profile = summary?.value?.shops.where((p) => p.shop.id == shopId).firstOrNull;
-    return switch (summary) {
-      null => const SizedBox.shrink(),
-      AsyncValue(hasValue: true) when profile == null => const EmptyState(
+    return switch (ref.watch(shopPaymentsProvider(shopId))) {
+      AsyncValue(:final value?) when value.profile.bills.isEmpty && !value.profile.advance.isPositive => const EmptyState(
         icon: Icons.receipt_long_outlined,
         title: 'No bills for this shop',
       ),
-      AsyncValue(hasValue: true) => _Body(profile: profile!, creditDays: summary.value!.creditDays),
-      AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company!.id))),
+      AsyncValue(:final value?) => _Body(payments: value),
+      AsyncValue(:final error?) => ErrorState(error: error, onRetry: () => ref.invalidate(shopPaymentsProvider(shopId))),
       _ => const SkeletonList(),
     };
   }
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.profile, required this.creditDays});
+  const _Body({required this.payments});
 
-  final ShopPaymentProfile profile;
-  final int creditDays;
+  final ShopPayments payments;
 
   @override
   Widget build(BuildContext context) {
-    final p = profile;
+    final p = payments.profile;
+    final creditDays = payments.creditDays;
     final open = p.openBills;
     final paid = p.bills.where((b) => !b.isOpen).toList().reversed.toList();
     final s = context.semantic;
@@ -124,9 +117,9 @@ class _Body extends StatelessWidget {
                 ),
                 const SizedBox(height: Insets.m),
                 Text(usuallyPays(p), style: context.text.bodyMedium),
-                if (p.paidBills.isNotEmpty)
+                if (p.paidBillCount > 0)
                   Text(
-                    '${p.onTimeCount} of ${plural(p.paidBills.length, 'paid bill')} were paid within ${plural(creditDays, 'day')}.',
+                    '${p.onTimeCount} of ${plural(p.paidBillCount, 'paid bill')} were paid within ${plural(creditDays, 'day')}.',
                     style: context.text.bodyMedium,
                   ),
                 if (!p.reconciled) ...[
@@ -144,9 +137,9 @@ class _Body extends StatelessWidget {
             for (final b in open) _OpenBillTile(bill: b, today: p.today),
           ],
           if (paid.isNotEmpty) ...[
-            _Header('Paid bills (${paid.length})'),
-            for (final b in paid.take(100)) _PaidBillTile(bill: b),
-            if (paid.length > 100)
+            _Header('Paid bills (${payments.closedBills})'),
+            for (final b in paid) _PaidBillTile(bill: b),
+            if (payments.closedBills > paid.length)
               Padding(
                 padding: const EdgeInsets.all(Insets.l),
                 child: Text('Showing the latest 100 paid bills.', style: context.text.bodySmall, textAlign: TextAlign.center),

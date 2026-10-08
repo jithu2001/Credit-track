@@ -118,98 +118,14 @@ abstract class _$AnalyticsSortController extends $Notifier<AnalyticsSort> {
   }
 }
 
-/// Raw data for a company; kept while the app runs, reloaded on refresh.
-
-@ProviderFor(analyticsData)
-final analyticsDataProvider = AnalyticsDataFamily._();
-
-/// Raw data for a company; kept while the app runs, reloaded on refresh.
-
-final class AnalyticsDataProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<AnalyticsData>,
-          AnalyticsData,
-          FutureOr<AnalyticsData>
-        >
-    with $FutureModifier<AnalyticsData>, $FutureProvider<AnalyticsData> {
-  /// Raw data for a company; kept while the app runs, reloaded on refresh.
-  AnalyticsDataProvider._({
-    required AnalyticsDataFamily super.from,
-    required String super.argument,
-  }) : super(
-         retry: null,
-         name: r'analyticsDataProvider',
-         isAutoDispose: false,
-         dependencies: null,
-         $allTransitiveDependencies: null,
-       );
-
-  @override
-  String debugGetCreateSourceHash() => _$analyticsDataHash();
-
-  @override
-  String toString() {
-    return r'analyticsDataProvider'
-        ''
-        '($argument)';
-  }
-
-  @$internal
-  @override
-  $FutureProviderElement<AnalyticsData> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
-
-  @override
-  FutureOr<AnalyticsData> create(Ref ref) {
-    final argument = this.argument as String;
-    return analyticsData(ref, argument);
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is AnalyticsDataProvider && other.argument == argument;
-  }
-
-  @override
-  int get hashCode {
-    return argument.hashCode;
-  }
-}
-
-String _$analyticsDataHash() => r'b714d1fc6f25ace6f10e8534ee12e64223b3d00d';
-
-/// Raw data for a company; kept while the app runs, reloaded on refresh.
-
-final class AnalyticsDataFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<AnalyticsData>, String> {
-  AnalyticsDataFamily._()
-    : super(
-        retry: null,
-        name: r'analyticsDataProvider',
-        dependencies: null,
-        $allTransitiveDependencies: null,
-        isAutoDispose: false,
-      );
-
-  /// Raw data for a company; kept while the app runs, reloaded on refresh.
-
-  AnalyticsDataProvider call(String companyId) =>
-      AnalyticsDataProvider._(argument: companyId, from: this);
-
-  @override
-  String toString() => r'analyticsDataProvider';
-}
-
-/// FIFO analysis with the current credit days. Recomputed on the device when
-/// the filter changes; the data is not fetched again.
+/// Payment figures of a company with the current credit days, worked out on
+/// the server; fetched again when the credit days change.
 
 @ProviderFor(paymentSummary)
 final paymentSummaryProvider = PaymentSummaryFamily._();
 
-/// FIFO analysis with the current credit days. Recomputed on the device when
-/// the filter changes; the data is not fetched again.
+/// Payment figures of a company with the current credit days, worked out on
+/// the server; fetched again when the credit days change.
 
 final class PaymentSummaryProvider
     extends
@@ -221,15 +137,15 @@ final class PaymentSummaryProvider
     with
         $FutureModifier<BusinessPaymentSummary>,
         $FutureProvider<BusinessPaymentSummary> {
-  /// FIFO analysis with the current credit days. Recomputed on the device when
-  /// the filter changes; the data is not fetched again.
+  /// Payment figures of a company with the current credit days, worked out on
+  /// the server; fetched again when the credit days change.
   PaymentSummaryProvider._({
     required PaymentSummaryFamily super.from,
     required String super.argument,
   }) : super(
          retry: null,
          name: r'paymentSummaryProvider',
-         isAutoDispose: true,
+         isAutoDispose: false,
          dependencies: null,
          $allTransitiveDependencies: null,
        );
@@ -267,10 +183,10 @@ final class PaymentSummaryProvider
   }
 }
 
-String _$paymentSummaryHash() => r'402c4757a54ff1360499434f3a9b7780de93d0d6';
+String _$paymentSummaryHash() => r'c180e939e5a3c4d4af47ae4f5ee51cd3bad12068';
 
-/// FIFO analysis with the current credit days. Recomputed on the device when
-/// the filter changes; the data is not fetched again.
+/// Payment figures of a company with the current credit days, worked out on
+/// the server; fetched again when the credit days change.
 
 final class PaymentSummaryFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<BusinessPaymentSummary>, String> {
@@ -280,11 +196,11 @@ final class PaymentSummaryFamily extends $Family
         name: r'paymentSummaryProvider',
         dependencies: null,
         $allTransitiveDependencies: null,
-        isAutoDispose: true,
+        isAutoDispose: false,
       );
 
-  /// FIFO analysis with the current credit days. Recomputed on the device when
-  /// the filter changes; the data is not fetched again.
+  /// Payment figures of a company with the current credit days, worked out on
+  /// the server; fetched again when the credit days change.
 
   PaymentSummaryProvider call(String companyId) =>
       PaymentSummaryProvider._(argument: companyId, from: this);
@@ -347,7 +263,7 @@ final class OverdueMonthAgoProvider
   }
 }
 
-String _$overdueMonthAgoHash() => r'0d696dd66cf8ff5c171718dccb1bbdba821d5657';
+String _$overdueMonthAgoHash() => r'f4692e3b73066ceea43223da99bb0f12f10246a4';
 
 /// Overdue 30 days ago with the same credit period, for the trend line.
 
@@ -369,4 +285,88 @@ final class OverdueMonthAgoFamily extends $Family
 
   @override
   String toString() => r'overdueMonthAgoProvider';
+}
+
+/// One shop's bills under FIFO (the shop's Payments view).
+
+@ProviderFor(shopPayments)
+final shopPaymentsProvider = ShopPaymentsFamily._();
+
+/// One shop's bills under FIFO (the shop's Payments view).
+
+final class ShopPaymentsProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<ShopPayments>,
+          ShopPayments,
+          FutureOr<ShopPayments>
+        >
+    with $FutureModifier<ShopPayments>, $FutureProvider<ShopPayments> {
+  /// One shop's bills under FIFO (the shop's Payments view).
+  ShopPaymentsProvider._({
+    required ShopPaymentsFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'shopPaymentsProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
+
+  @override
+  String debugGetCreateSourceHash() => _$shopPaymentsHash();
+
+  @override
+  String toString() {
+    return r'shopPaymentsProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  $FutureProviderElement<ShopPayments> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<ShopPayments> create(Ref ref) {
+    final argument = this.argument as String;
+    return shopPayments(ref, argument);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is ShopPaymentsProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$shopPaymentsHash() => r'fbd6005ee255e87dee433608fdf095538ddd4229';
+
+/// One shop's bills under FIFO (the shop's Payments view).
+
+final class ShopPaymentsFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<ShopPayments>, String> {
+  ShopPaymentsFamily._()
+    : super(
+        retry: null,
+        name: r'shopPaymentsProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  /// One shop's bills under FIFO (the shop's Payments view).
+
+  ShopPaymentsProvider call(String shopId) =>
+      ShopPaymentsProvider._(argument: shopId, from: this);
+
+  @override
+  String toString() => r'shopPaymentsProvider';
 }
