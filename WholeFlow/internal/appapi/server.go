@@ -34,10 +34,11 @@ type Server struct {
 	PGHost  string          // host:port of PostgreSQL as seen from this process
 	Log     *slog.Logger
 	Now     func() time.Time
+	HTTP    *http.Client // calls to the businesses' login services
 
-	// Resolve finds a business's token secret and database URL; nil means
-	// control_db + businesses/<slug>/env (tests set their own).
-	Resolve func(ctx context.Context, slug string) (secret, dbURL string, err error)
+	// Resolve finds a business's token secret, database URL and login service;
+	// nil means control_db + businesses/<slug>/env (tests set their own).
+	Resolve func(ctx context.Context, slug string) (TenantInfo, error)
 
 	mu      sync.Mutex
 	tenants map[string]*tenant
@@ -46,11 +47,18 @@ type Server struct {
 // tenant is one business: its token secret and a small connection pool as
 // its data API role (<slug>_api), refreshed every few minutes.
 type tenant struct {
+	TenantInfo
 	slug     string
-	secret   string
 	pool     *pgxpool.Pool
-	dbURL    string
 	loadedAt time.Time
+}
+
+// TenantInfo is what the API needs to serve one business.
+type TenantInfo struct {
+	Secret     string // signs the business's login tokens
+	DBURL      string // its data API role (<slug>_api) on biz_<slug>
+	AuthURL    string // its login service, e.g. http://127.0.0.1:9101 (admin API)
+	ServiceKey string // service_role key for the login service's admin API
 }
 
 const tenantTTL = 5 * time.Minute
@@ -107,6 +115,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("DELETE /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.deletePlan))
 	mux.HandleFunc("GET /b/{slug}/api/v1/visits/{id}", s.handle(s.visitDetail))
 	mux.HandleFunc("POST /b/{slug}/api/v1/visits/{id}/note", s.handleWrite(s.addVisitNote))
+	mux.HandleFunc("GET /b/{slug}/api/v1/staff", s.handle(s.staffList))
+	mux.HandleFunc("POST /b/{slug}/api/v1/staff", s.handleWrite(s.createStaff))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.renameStaff))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/companies", s.handleWrite(s.setStaffCompanies))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/check-in", s.handleWrite(s.setStaffCheckIn))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/active", s.handleWrite(s.setStaffActive))
+	mux.HandleFunc("POST /b/{slug}/api/v1/staff/{id}/password", s.handleWrite(s.resetStaffPassword))
 	return mux
 }
 
@@ -224,7 +239,7 @@ func (s *Server) serve(r *http.Request, fn func(*request) (any, error), mode pgx
 	if !ok || token == "" {
 		return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
 	}
-	claims, err := control.VerifyJWT(t.secret, token, s.Now())
+	claims, err := control.VerifyJWT(t.Secret, token, s.Now())
 	if err != nil {
 		return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
 	}
@@ -289,7 +304,7 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	if resolve == nil {
 		resolve = s.fromControl
 	}
-	secret, dbURL, err := resolve(ctx, slug)
+	info, err := resolve(ctx, slug)
 	if err != nil {
 		var ae *apiError
 		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
@@ -300,11 +315,11 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cur := s.tenants[slug]; cur != nil && cur.dbURL == dbURL {
-		cur.secret, cur.loadedAt = secret, s.Now()
+	if cur := s.tenants[slug]; cur != nil && cur.DBURL == info.DBURL {
+		cur.TenantInfo, cur.loadedAt = info, s.Now()
 		return cur, nil
 	}
-	cfg, err := pgxpool.ParseConfig(dbURL)
+	cfg, err := pgxpool.ParseConfig(info.DBURL)
 	if err != nil {
 		return nil, err
 	}
@@ -317,34 +332,39 @@ func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
 	if old := s.tenants[slug]; old != nil {
 		old.pool.Close()
 	}
-	t := &tenant{slug: slug, secret: secret, pool: pool, dbURL: dbURL, loadedAt: s.Now()}
+	t := &tenant{TenantInfo: info, slug: slug, pool: pool, loadedAt: s.Now()}
 	s.tenants[slug] = t
 	return t, nil
 }
 
 // fromControl looks a business up in control_db (closed ones don't exist
 // here) and reads its data role's login from businesses/<slug>/env.
-func (s *Server) fromControl(ctx context.Context, slug string) (string, string, error) {
-	var sealed, status string
-	err := s.Control.QueryRow(ctx, `select jwt_secret_sealed, status from businesses where slug = $1`, slug).Scan(&sealed, &status)
+func (s *Server) fromControl(ctx context.Context, slug string) (TenantInfo, error) {
+	var sealedSecret, sealedKey, status string
+	var authPort int
+	err := s.Control.QueryRow(ctx, `select jwt_secret_sealed, service_key_sealed, auth_port, status from businesses where slug = $1`, slug).
+		Scan(&sealedSecret, &sealedKey, &authPort, &status)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status == "closed") {
-		return "", "", fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
+		return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
 	} else if err != nil {
-		return "", "", err
+		return TenantInfo{}, err
 	}
-	secret, err := s.Sealer.Open(sealed)
-	if err != nil {
-		return "", "", err
+	var info TenantInfo
+	if info.Secret, err = s.Sealer.Open(sealedSecret); err != nil {
+		return TenantInfo{}, err
 	}
+	if info.ServiceKey, err = s.Sealer.Open(sealedKey); err != nil {
+		return TenantInfo{}, err
+	}
+	info.AuthURL = fmt.Sprintf("http://127.0.0.1:%d", authPort)
 	env, err := control.ReadEnvFile(filepath.Join(s.KitDir, "businesses", slug, "env"))
 	if err != nil {
-		return "", "", fmt.Errorf("business %s env: %w", slug, err)
+		return TenantInfo{}, fmt.Errorf("business %s env: %w", slug, err)
 	}
-	dbURL, err := s.localURL(env["API_DB_URL"])
-	if err != nil {
-		return "", "", fmt.Errorf("business %s API_DB_URL: %w", slug, err)
+	if info.DBURL, err = s.localURL(env["API_DB_URL"]); err != nil {
+		return TenantInfo{}, fmt.Errorf("business %s API_DB_URL: %w", slug, err)
 	}
-	return secret, dbURL, nil
+	return info, nil
 }
 
 func (s *Server) drop(slug string) {

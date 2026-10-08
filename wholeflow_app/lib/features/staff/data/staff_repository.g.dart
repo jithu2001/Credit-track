@@ -43,4 +43,4 @@ final class StaffRepositoryProvider extends $FunctionalProvider<StaffRepository,
   }
 }
 
-String _$staffRepositoryHash() => r'85d87cf7e2f59a99d5efd76de64a2e544d4a3978';
+String _$staffRepositoryHash() => r'3a6ce1d04cbd07ff9c435932ef251f2068941e9a';

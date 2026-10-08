@@ -1,7 +1,7 @@
 # WholeFlow app API plan (moving the apps' work to the server)
 
-Status (2026-10-08), branch `api-layer`: phase 1 built and tested locally, not
-deployed yet. That covers the `wholeflow-api` service and payment insights (`GET /payments`,
+Status (2026-10-08), branch `api-layer`: phases 1–6 built and tested locally,
+not deployed yet (to be deployed once, after all features; see section 7). That covers the `wholeflow-api` service and payment insights (`GET /payments`,
 `GET /payments/shops/{id}`). The app's insights screen, shop Payments tab and
 dashboard overdue card now use it, and the phone no longer downloads every voucher.
 Parity check on the demo business's real data (2 companies, 462 shops, 5,170 vouchers):
@@ -34,6 +34,19 @@ first write: read-write transaction, `set_stock_minimum()` still decides),
 `GET /purchases/months`, `GET /suppliers`, `GET /suppliers/{id}`. Purchases
 and suppliers are owner only (403 for staff). The app still searches and
 filters the loaded stock and supplier lists on screen.
+
+Phase 6 (the rest) built: profile, companies, own access, areas, service
+status and sync health (`/me`, `/me/access`, `/companies`, …); sites and shop
+locations; visits (tasks, check-in, plans, notes); and staff management, which
+moves from the Deno service into the API (`/staff`: the owner check, company
+and site checks, logins through the business login service's admin API, and
+changes as the business's service role). **The phone apps no longer read or
+write the database directly.** They use the app API for data and the login
+service only to sign in and change passwords.
+
+What is left after deploying (see "After the move"): retire the Deno staff
+service (its container and the `functions/v1` nginx rule) once every phone has
+the new app; PostgREST stays for the Tally PC until it moves to the API too.
 
 ## 1. Goal
 

@@ -86,16 +86,57 @@ func TestIntegration(t *testing.T) {
 		($1, $2, $3, 'v3', 'l1', '2026-07-10', 'Receipt', 'R1', 'receipts', 0, 1200, -1200, now()),
 		($1, $2, $4, 'v4', 'l2', '2026-07-01', 'Sales', '3', 'sales', 150, 0, 150, now())`, bizA, companA, shopA1, shopA2)
 
+	// A stand-in for the business's login service (GoTrue admin API): logins
+	// go into auth.users so the users rows can refer to them.
+	logins := map[string]map[string]any{} // id → last attributes sent
+	gotrue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") != "Bearer service-key" {
+			w.WriteHeader(401)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(req.Body).Decode(&body)
+		id := strings.TrimPrefix(req.URL.Path, "/admin/users/")
+		switch {
+		case req.Method == "POST" && req.URL.Path == "/admin/users":
+			var newID string
+			err := db.QueryRow(context.Background(), `insert into auth.users (id, email) values (gen_random_uuid(), $1)
+				on conflict do nothing returning id::text`, body["email"]).Scan(&newID)
+			var exists bool
+			_ = db.QueryRow(context.Background(), `select count(*) > 1 from auth.users where email = $1`, body["email"]).Scan(&exists)
+			if err != nil || exists {
+				if newID != "" {
+					_, _ = db.Exec(context.Background(), `delete from auth.users where id = $1`, newID)
+				}
+				w.WriteHeader(422)
+				_, _ = w.Write([]byte(`{"code":"email_exists","msg":"A user with this email address has already been registered"}`))
+				return
+			}
+			logins[newID] = body
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": newID})
+		case req.Method == "GET":
+			meta := map[string]any{"name": "x", "must_change_password": false}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id, "user_metadata": meta})
+		case req.Method == "PUT":
+			logins[id] = body
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
+		case req.Method == "DELETE":
+			_, _ = db.Exec(context.Background(), `delete from auth.users where id::text = $1`, id)
+			w.WriteHeader(200)
+		}
+	}))
+	defer gotrue.Close()
+
 	u, _ := url.Parse(admin)
 	u.User = url.UserPassword("wftest_api", "pw")
 	srv := &Server{
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Now: func() time.Time { return time.Date(2026, 7, 20, 6, 0, 0, 0, time.UTC) },
-		Resolve: func(_ context.Context, slug string) (string, string, error) {
+		Resolve: func(_ context.Context, slug string) (TenantInfo, error) {
 			if slug != "apitest" {
-				return "", "", fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
+				return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
 			}
-			return secret, u.String(), nil
+			return TenantInfo{Secret: secret, DBURL: u.String(), AuthURL: gotrue.URL, ServiceKey: "service-key"}, nil
 		},
 	}
 	defer srv.Close()
@@ -641,6 +682,79 @@ func TestIntegration(t *testing.T) {
 		eqv(t, code, 200, "delete plan")
 		code, _ = get("/b/apitest/api/v1/visits/tasks?from="+today, token(staffA))
 		eqv(t, code, 400, "to is required")
+	})
+
+	t.Run("staff management", func(t *testing.T) {
+		defer mustExec(t, db, `delete from auth.users where email like '%@new.test'`)
+		body := `{"name":"New Staff","email":"New@New.test","password":"secret123","requires_check_in":true,
+			"companies":[{"company_id":"` + companA + `","full_company":false,"site_ids":["` + siteA + `"],"can_view_transactions":false}]}`
+		code, out := send("POST", "/b/apitest/api/v1/staff", token(ownerA), body)
+		if code != 200 {
+			t.Fatalf("create: %d %v", code, out)
+		}
+		newID := out["id"].(string)
+		eqv(t, out["email"], "new@new.test", "email normalised")
+		eqv(t, logins[newID]["user_metadata"].(map[string]any)["must_change_password"], true, "must change password")
+
+		code, out = send("POST", "/b/apitest/api/v1/staff", token(ownerA), body)
+		eqv(t, code, 409, "same email again")
+		eqv(t, out["error"].(map[string]any)["code"], "EMAIL_TAKEN", "code")
+		code, _ = send("POST", "/b/apitest/api/v1/staff", token(staffA), body)
+		eqv(t, code, 403, "staff can't add staff")
+		for _, bad := range []string{
+			`{"name":"","email":"a@new.test","password":"secret123","companies":[{"company_id":"` + companA + `"}]}`,
+			`{"name":"A","email":"not-an-email","password":"secret123","companies":[{"company_id":"` + companA + `"}]}`,
+			`{"name":"A","email":"a@new.test","password":"short","companies":[{"company_id":"` + companA + `"}]}`,
+			`{"name":"A","email":"a@new.test","password":"secret123","companies":[]}`,
+			`{"name":"A","email":"a@new.test","password":"secret123","companies":[{"company_id":"c0000000-0000-0000-0000-00000000dead"}]}`,
+			`{"name":"A","email":"a@new.test","password":"secret123","companies":[{"company_id":"` + companA + `","full_company":false,"site_ids":[]}]}`,
+		} {
+			code, _ = send("POST", "/b/apitest/api/v1/staff", token(ownerA), bad)
+			eqv(t, code, 400, "invalid: "+bad)
+		}
+
+		code, out = get("/b/apitest/api/v1/staff", token(ownerA))
+		if code != 200 {
+			t.Fatalf("list: %d %v", code, out)
+		}
+		list := out["staff"].([]any)
+		eqv(t, list[0].(map[string]any)["role"], "OWNER", "owner first")
+		var created map[string]any
+		for _, m := range list {
+			if m.(map[string]any)["id"] == newID {
+				created = m.(map[string]any)
+			}
+		}
+		comp := created["companies"].([]any)[0].(map[string]any)
+		eqv(t, comp["full_company"], false, "site-limited")
+		eqv(t, comp["site_ids"].([]any)[0], siteA, "site kept")
+		eqv(t, created["requires_check_in"], true, "check-in on")
+		code, _ = get("/b/apitest/api/v1/staff", token(staffA))
+		eqv(t, code, 403, "staff can't list staff")
+
+		staffPath := "/b/apitest/api/v1/staff/" + newID
+		code, _ = send("PATCH", staffPath, token(ownerA), `{"name":"Renamed"}`)
+		eqv(t, code, 200, "rename")
+		code, _ = send("PUT", staffPath+"/companies", token(ownerA), `{"companies":[{"company_id":"`+companA+`"}]}`)
+		eqv(t, code, 200, "full company")
+		code, _ = send("PUT", staffPath+"/check-in", token(ownerA), `{"required":false}`)
+		eqv(t, code, 200, "check-in off")
+		code, _ = send("PUT", staffPath+"/active", token(ownerA), `{"active":false}`)
+		eqv(t, code, 200, "disable")
+		eqv(t, logins[newID]["ban_duration"], banForever, "login blocked")
+		code, _ = send("PUT", staffPath+"/active", token(ownerA), `{"active":true}`)
+		eqv(t, code, 200, "enable")
+		eqv(t, logins[newID]["ban_duration"], "none", "login unblocked")
+		code, _ = send("POST", staffPath+"/password", token(ownerA), `{"password":"another123"}`)
+		eqv(t, code, 200, "reset password")
+		eqv(t, logins[newID]["user_metadata"].(map[string]any)["must_change_password"], true, "must change again")
+		code, _ = send("PATCH", "/b/apitest/api/v1/staff/"+ownerA, token(ownerA), `{"name":"Me"}`)
+		eqv(t, code, 403, "owner accounts not here")
+		code, _ = send("PATCH", "/b/apitest/api/v1/staff/"+ownerB, token(ownerA), `{"name":"Them"}`)
+		eqv(t, code, 404, "other business's user")
+		var name string
+		_ = db.QueryRow(context.Background(), `select name from public.users where id = $1`, newID).Scan(&name)
+		eqv(t, name, "Renamed", "renamed in the database")
 	})
 
 	t.Run("a paused business gets 402", func(t *testing.T) {

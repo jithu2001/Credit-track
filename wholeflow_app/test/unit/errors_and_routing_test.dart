@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:wholeflow_app/core/api/api_client.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/features/auth/domain/app_user.dart';
 import 'package:wholeflow_app/features/home/home_shell.dart';
@@ -23,27 +24,25 @@ void main() {
       );
     });
 
-    test('postgrest', () {
-      expect(
-        AppFailure.from(const PostgrestException(message: 'JWT expired', code: 'PGRST301')).kind,
-        FailureKind.unauthenticated,
-      );
-      expect(AppFailure.from(const PostgrestException(message: 'denied', code: '42501')).kind, FailureKind.forbidden);
+    test('app API errors', () {
+      expect(AppFailure.from(const ApiException(401, 'UNAUTHENTICATED', 'Sign in again.')).kind, FailureKind.unauthenticated);
+      expect(AppFailure.from(const ApiException(403, 'FORBIDDEN', 'x')).kind, FailureKind.forbidden);
+      expect(AppFailure.from(const ApiException(404, 'NOT_FOUND', 'x')).kind, FailureKind.notFound);
     });
 
-    test('manage-staff error codes', () {
-      FunctionException fx(int status, String code, [String message = 'm']) => FunctionException(
-        status: status,
-        details: {
-          'error': {'code': code, 'message': message},
-        },
-      );
-      expect(AppFailure.from(fx(409, 'EMAIL_TAKEN')).kind, FailureKind.emailTaken);
-      final invalid = AppFailure.from(fx(400, 'INVALID_INPUT', 'Assign at least one company.'));
+    test('staff management errors', () {
+      expect(AppFailure.from(const ApiException(409, 'EMAIL_TAKEN', 'm')).kind, FailureKind.emailTaken);
+      final invalid = AppFailure.from(const ApiException(400, 'INVALID_INPUT', 'Assign at least one company.'));
       expect(invalid.kind, FailureKind.invalidInput);
       expect(invalid.message, 'Assign at least one company.');
-      expect(AppFailure.from(fx(403, 'NOT_OWNER')).kind, FailureKind.forbidden);
-      expect(AppFailure.from(const FunctionException(status: 502)).kind, FailureKind.server);
+      final notOwner = AppFailure.from(const ApiException(403, 'NOT_OWNER', 'Only the business owner can manage staff.'));
+      expect(notOwner.kind, FailureKind.forbidden);
+      expect(notOwner.message, 'Only the business owner can manage staff.');
+      expect(
+        AppFailure.from(const ApiException(409, 'NAME_TAKEN', 'There is already a site with this name.')).message,
+        'There is already a site with this name.',
+      );
+      expect(AppFailure.from(const ApiException(502, 'HTTP_502', 'm')).kind, FailureKind.server);
     });
   });
 
