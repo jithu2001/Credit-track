@@ -31,6 +31,14 @@ void main() {
     }),
   );
 
+  testWidgets('someone without a key is pointed to the website', (tester) async {
+    await tester.pumpWidget(ConnectApp(title: 'WholeFlow Owner', api: api(), onConnected: (_) async {}));
+    expect(find.text("Don't have a key?"), findsOneWidget);
+    expect(find.byKey(const Key('connect-website')), findsOneWidget);
+    expect(find.text('wholeflow.jitsuji.xyz'), findsOneWidget);
+    expect(wholeflowWebsite, 'https://wholeflow.jitsuji.xyz/');
+  });
+
   testWidgets('a reference key finds the business, Connect saves it', (tester) async {
     BusinessConnection? connected;
     await tester.pumpWidget(ConnectApp(title: 'WholeFlow Owner', api: api(), onConnected: (c) async => connected = c));

@@ -1,10 +1,14 @@
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../errors/app_failure.dart';
 import '../theme/app_theme.dart';
 import 'business_connection.dart';
+
+/// The WholeFlow website: what it is, plans, and how to get started.
+const wholeflowWebsite = 'https://wholeflow.jitsuji.xyz/';
 
 /// The app before a business is chosen: one screen that turns a reference key
 /// into a saved connection.
@@ -53,6 +57,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void dispose() {
     _key.dispose();
     super.dispose();
+  }
+
+  Future<void> _openWebsite() async {
+    var opened = false;
+    try {
+      opened = await launchUrl(Uri.parse(wholeflowWebsite), mode: LaunchMode.externalApplication);
+    } catch (_) {}
+    if (!opened && mounted) setState(() => _error = 'Could not open the browser. Visit $wholeflowWebsite');
   }
 
   Future<void> _lookUp() async {
@@ -147,6 +159,20 @@ class _ConnectScreenState extends State<ConnectScreen> {
                       onPressed: _busy ? null : _scan,
                       icon: const Icon(Icons.qr_code_scanner_rounded),
                       label: const Text('Scan QR code'),
+                    ),
+                    const SizedBox(height: Insets.xxl),
+                    Text("Don't have a key?", style: context.text.titleSmall, textAlign: TextAlign.center),
+                    const SizedBox(height: Insets.xs),
+                    Text(
+                      'Staff: ask your business owner for it. Business owners: see how to get started with WholeFlow at',
+                      style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant),
+                      textAlign: TextAlign.center,
+                    ),
+                    TextButton.icon(
+                      key: const Key('connect-website'),
+                      onPressed: _openWebsite,
+                      icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                      label: const Text('wholeflow.jitsuji.xyz'),
                     ),
                   ] else ...[
                     Text('Connect to', style: context.text.titleMedium, textAlign: TextAlign.center),
