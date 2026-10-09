@@ -51,11 +51,12 @@ The contact section is a form (name, business, mobile, email, number of Tally co
 
 ## Screenshots
 
-These are the real app screens, rendered by a Flutter test with **invented** data: no real shop, phone number or key.
+These are the real app screens, rendered by a Flutter test with **invented** data: a made-up business (Sunrise Distributors), made-up shops in fictional towns (Riverbend, Hillview, Lakeside…), no real place, shop, person, phone number or key.
 
 ```bash
 cd wholeflow_app
-WF_SCREENSHOTS=1 flutter test test/marketing --update-goldens   # → test/marketing/out/*.png (1080×2400)
+WF_SCREENSHOTS=1 flutter test test/marketing      # → test/marketing/out/*.png (1080×2400)
+WF_SCREENSHOTS=play flutter test test/marketing   # → test/marketing/out/play/*.png (1080×1920, Google Play)
 ```
 
 Then convert them to WebP at 720×1600 and 360×800 into `assets/img/` with the same names: the 720 px version as `<name>.webp`, the 360 px version as `<name>-360.webp`. To re-render the share image, open `tools/og.html` at 1200×630 in a browser and screenshot it (Playwright: `page.screenshot`).

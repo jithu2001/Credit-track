@@ -1,9 +1,9 @@
 // Renders real app screens with invented data for the product website
 // (website/img). Skipped in the normal test run; to regenerate:
 //
-//   WF_SCREENSHOTS=1 flutter test test/marketing --update-goldens
+//   WF_SCREENSHOTS=1 flutter test test/marketing
 //
-// Output: test/marketing/out/*.png at 360×800 (the website scales them).
+// Output: test/marketing/out/*.png at 1080×2400 (360×800 logical, captured at ×3).
 //
 // Google Play phone screenshots (9:16, 1080×1920, captured at ×3):
 //
@@ -68,8 +68,8 @@ final _skip = Platform.environment['WF_SCREENSHOTS'] == null;
 /// Play Store mode: 9:16 screens written at full resolution.
 final _play = Platform.environment['WF_SCREENSHOTS'] == 'play';
 
-const _company = Company(id: 'co', companyName: 'Periyar Traders (FY 2026-27)', syncStatus: 'SYNCED');
-const _staff = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Anand', requiresCheckIn: true);
+const _company = Company(id: 'co', companyName: 'Sunrise Distributors (FY 2026-27)', syncStatus: 'SYNCED');
+const _staff = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Sam', requiresCheckIn: true);
 
 ShopSummary _shop(String id, String name, String site, int rupees, {int paise = 0}) => ShopSummary(
   id: id,
@@ -81,21 +81,21 @@ ShopSummary _shop(String id, String name, String site, int rupees, {int paise = 
 );
 
 final _shops = [
-  _shop('s1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', 184850),
-  _shop('s2', 'HIGHRANGE TYRE HOUSE -- KATTAPPANA', 'Kattappana', 152900),
-  _shop('s3', 'GREENVALLEY MOTORS -- NEDUMKANDAM', 'Kattappana', 96420, paise: 50),
-  _shop('s4', 'CARDAMOM HILLS AGENCIES -- VANDANMEDU', 'Kumily', 74880),
-  _shop('s5', 'RIVERSIDE LUBES -- ADIMALI', 'Adimali', 61200),
-  _shop('s6', 'TEAVALLEY AUTO CENTRE -- THODUPUZHA', 'Thodupuzha', 48315),
-  _shop('s7', 'MISTY PEAK MOTOR WORKS -- MUNNAR', 'Adimali', 33760),
-  _shop('s8', 'KAILAS TYRES -- KUMILY', 'Kumily', -12500),
+  _shop('s1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', 184850),
+  _shop('s2', 'NORTHSTAR TYRE HOUSE -- HILLVIEW', 'Hillview', 152900),
+  _shop('s3', 'EVERGREEN MOTORS -- MAPLE JUNCTION', 'Hillview', 96420, paise: 50),
+  _shop('s4', 'BRIGHT STAR AGENCIES -- SILVER OAK', 'Riverbend', 74880),
+  _shop('s5', 'COMET LUBES -- LAKESIDE', 'Lakeside', 61200),
+  _shop('s6', 'ZENITH AUTO CENTRE -- GREENFIELD', 'Greenfield', 48315),
+  _shop('s7', 'ORBIT MOTOR WORKS -- CORAL BAY', 'Lakeside', 33760),
+  _shop('s8', 'NOVA TYRES -- RIVERBEND', 'Riverbend', -12500),
 ];
 
 const _sites = [
-  Site(id: 'site-kumily', companyId: 'co', name: 'Kumily'),
-  Site(id: 'site-kattappana', companyId: 'co', name: 'Kattappana'),
-  Site(id: 'site-adimali', companyId: 'co', name: 'Adimali'),
-  Site(id: 'site-thodupuzha', companyId: 'co', name: 'Thodupuzha'),
+  Site(id: 'site-riverbend', companyId: 'co', name: 'Riverbend'),
+  Site(id: 'site-hillview', companyId: 'co', name: 'Hillview'),
+  Site(id: 'site-lakeside', companyId: 'co', name: 'Lakeside'),
+  Site(id: 'site-greenfield', companyId: 'co', name: 'Greenfield'),
 ];
 
 final _today = DateTime.now();
@@ -129,13 +129,13 @@ OverdueShop _overdue(
 });
 
 final _overdueShops = [
-  _overdue('s2', 'HIGHRANGE TYRE HOUSE -- KATTAPPANA', 'Kattappana', 152900, 88400, 52, [
+  _overdue('s2', 'NORTHSTAR TYRE HOUSE -- HILLVIEW', 'Hillview', 152900, 88400, 52, [
     (82, 'Sales · PT/1183', 51200),
     (64, 'Sales · PT/1246', 37200),
   ]),
-  _overdue('s1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', 184850, 62750, 37, [(67, 'Sales · PT/1209', 62750)]),
-  _overdue('s5', 'RIVERSIDE LUBES -- ADIMALI', 'Adimali', 61200, 24900, 19, [(49, 'Sales · PT/1301', 24900)]),
-  _overdue('s7', 'MISTY PEAK MOTOR WORKS -- MUNNAR', 'Adimali', 33760, 18210, 8, [(38, 'Sales · PT/1352', 18210)]),
+  _overdue('s1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', 184850, 62750, 37, [(67, 'Sales · PT/1209', 62750)]),
+  _overdue('s5', 'COMET LUBES -- LAKESIDE', 'Lakeside', 61200, 24900, 19, [(49, 'Sales · PT/1301', 24900)]),
+  _overdue('s7', 'ORBIT MOTOR WORKS -- CORAL BAY', 'Lakeside', 33760, 18210, 8, [(38, 'Sales · PT/1352', 18210)]),
 ];
 
 /// Unpaid bills older than 30 days for the same shops as the Overdue view.
@@ -233,7 +233,7 @@ class _Dashboard implements DashboardRepository {
     return Dashboard(
       summary: const CompanySummary(
         companyId: 'co',
-        companyName: 'Periyar Traders (FY 2026-27)',
+        companyName: 'Sunrise Distributors (FY 2026-27)',
         shops: 214,
         shopsWithDues: 96,
         totalOutstanding: Money(248641250),
@@ -314,7 +314,7 @@ VisitTask _task(String id, String shop, String site, VisitState state) => VisitT
   taskId: id,
   companyId: 'co',
   staffId: 'staff-1',
-  staffName: 'Anand',
+  staffName: 'Sam',
   shopId: 's-$id',
   shopName: shop,
   siteName: site,
@@ -336,27 +336,27 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     ),
     shopRepositoryProvider.overrideWithValue(
       FakeShopRepository(
-        companyName: 'Periyar Traders (FY 2026-27)',
+        companyName: 'Sunrise Distributors (FY 2026-27)',
         shops: _shops,
         detailShop: const ShopDetail(
           id: 's1',
           companyId: 'co',
-          name: 'MALABAR AUTO SPARES -- KUMILY',
-          area: 'Kumily',
+          name: 'BLUEWAVE AUTO SPARES -- RIVERBEND',
+          area: 'Riverbend',
           receivable: Money(18485000),
         ),
       ),
     ),
     dashboardRepositoryProvider.overrideWithValue(_Dashboard()),
     analyticsRepositoryProvider.overrideWithValue(_Analytics()),
-    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops, 'Periyar Traders (FY 2026-27)')),
+    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops, 'Sunrise Distributors (FY 2026-27)')),
     siteRepositoryProvider.overrideWithValue(
       FakeSiteRepository(
         sitesList: _sites,
         reportRows: const [
           SiteReportRow(
-            siteId: 'site-kumily',
-            siteName: 'Kumily',
+            siteId: 'site-riverbend',
+            siteName: 'Riverbend',
             shops: 58,
             shopsWithDues: 31,
             outstanding: Money(84213000),
@@ -366,8 +366,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(161520000),
           ),
           SiteReportRow(
-            siteId: 'site-kattappana',
-            siteName: 'Kattappana',
+            siteId: 'site-hillview',
+            siteName: 'Hillview',
             shops: 64,
             shopsWithDues: 29,
             outstanding: Money(76054250),
@@ -377,8 +377,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(198410000),
           ),
           SiteReportRow(
-            siteId: 'site-adimali',
-            siteName: 'Adimali',
+            siteId: 'site-lakeside',
+            siteName: 'Lakeside',
             shops: 47,
             shopsWithDues: 22,
             outstanding: Money(52896000),
@@ -388,8 +388,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(127250000),
           ),
           SiteReportRow(
-            siteId: 'site-thodupuzha',
-            siteName: 'Thodupuzha',
+            siteId: 'site-greenfield',
+            siteName: 'Greenfield',
             shops: 45,
             shopsWithDues: 14,
             outstanding: Money(35478000),
@@ -405,12 +405,12 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     visitRepositoryProvider.overrideWithValue(
       FakeVisitRepository(
         taskList: [
-          _task('1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', VisitState.verified),
-          _task('2', 'CARDAMOM HILLS AGENCIES -- VANDANMEDU', 'Kumily', VisitState.verified),
-          _task('3', 'KAILAS TYRES -- KUMILY', 'Kumily', VisitState.verified),
-          _task('4', 'THEKKADY MOTOR STORES -- KUMILY', 'Kumily', VisitState.pending),
-          _task('5', 'SPICE ROUTE AUTOMOBILES -- KUMILY', 'Kumily', VisitState.pending),
-          _task('6', 'HILLVIEW TYRE POINT -- CHELIMADA', 'Kumily', VisitState.pending),
+          _task('1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', VisitState.verified),
+          _task('2', 'BRIGHT STAR AGENCIES -- SILVER OAK', 'Riverbend', VisitState.verified),
+          _task('3', 'NOVA TYRES -- RIVERBEND', 'Riverbend', VisitState.verified),
+          _task('4', 'PIONEER MOTOR STORES -- RIVERBEND', 'Riverbend', VisitState.pending),
+          _task('5', 'GALAXY AUTOMOBILES -- RIVERBEND', 'Riverbend', VisitState.pending),
+          _task('6', 'SUMMIT TYRE POINT -- PALM GROVE', 'Riverbend', VisitState.pending),
         ],
       ),
     ),
@@ -478,18 +478,15 @@ Future<void> _shot(
     await then();
     await tester.pumpAndSettle();
   }
-  if (_play) {
-    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(const Key('shot')));
-    await tester.runAsync(() async {
-      final image = await boundary.toImage(pixelRatio: 3);
-      final png = await image.toByteData(format: ui.ImageByteFormat.png);
-      File('test/marketing/out/play/$name.png')
-        ..createSync(recursive: true)
-        ..writeAsBytesSync(png!.buffer.asUint8List());
-    });
-  } else {
-    await expectLater(find.byKey(const Key('shot')), matchesGoldenFile('out/$name.png'));
-  }
+  // Captured at ×3 (full phone resolution); a golden file would be 1×.
+  final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(const Key('shot')));
+  await tester.runAsync(() async {
+    final image = await boundary.toImage(pixelRatio: 3);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    File('test/marketing/out/${_play ? 'play/' : ''}$name.png')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(png!.buffer.asUint8List());
+  });
   debugDisableShadows = true; // the test framework checks it is back to its default
 }
 
