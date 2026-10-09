@@ -26,7 +26,7 @@ class AppInfo {
   Map<String, String> get headers => {'X-App-Version': version, 'X-App-Platform': platform};
 
   /// The store listing to update from.
-  String get packageId => flavor == 'staff' ? 'com.wholeflow.staff' : 'com.wholeflow.wholeflow_app';
+  String get packageId => flavor == 'staff' ? 'com.wholeflow.staff' : 'com.wholeflow.owner';
 
   static Future<AppInfo> load({required String flavor}) async {
     var version = unknown.version;

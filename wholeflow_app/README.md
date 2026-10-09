@@ -36,7 +36,7 @@ flutter run --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/ho
 flutter run --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
 ```
 
-Both apps can be installed side by side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). Owner is the default flavor, so a plain `flutter run` builds it. `env/*.json` is git-ignored except `hosted.json`, which holds no secrets.
+Both apps can be installed side by side on the same phone (`com.wholeflow.owner` and `com.wholeflow.staff`). Owner is the default flavor, so a plain `flutter run` builds it. `env/*.json` is git-ignored except `hosted.json`, which holds no secrets.
 
 The app talks to the server's login (GoTrue) and data API (PostgREST) through the `supabase_flutter` package, which is only the client library for those open-source servers. There is no Supabase account or project.
 
@@ -53,7 +53,7 @@ keytool -genkey -v -keystore ~/keys/wholeflow-upload.jks -storetype JKS \
 cp android/key.properties.example android/key.properties   # then fill in the path and passwords
 ```
 
-**Play App Signing:** when creating each app in Play Console (Owner `com.wholeflow.wholeflow_app`, Staff `com.wholeflow.staff`), keep "Let Google manage and protect your app signing key" (the default). Google signs what users install; your key above is only the upload key, so it can be reset through Play Console if it is ever lost. Use the same upload key for both apps.
+**Play App Signing:** when creating each app in Play Console (Owner `com.wholeflow.owner`, Staff `com.wholeflow.staff`), keep "Let Google manage and protect your app signing key" (the default). Google signs what users install; your key above is only the upload key, so it can be reset through Play Console if it is ever lost. Use the same upload key for both apps.
 
 **Each release:**
 

@@ -48,7 +48,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.wholeflow.wholeflow_app"
+        applicationId = "com.wholeflow.owner"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -70,8 +70,8 @@ android {
     productFlavors {
         create("owner") {
             dimension = "role"
-            // Keeps the v0.3.0 id so existing installs update in place to the Owner app.
-            applicationId = "com.wholeflow.wholeflow_app"
+            // The Play Store id: permanent once the first build is uploaded.
+            applicationId = "com.wholeflow.owner"
             manifestPlaceholders["appName"] = if (local) "WF Local Owner" else "WholeFlow Owner"
         }
         create("staff") {

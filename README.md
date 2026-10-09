@@ -353,7 +353,7 @@ On the phone:
 3. Sign in. The owner uses the email and temporary password from Step 4.3 and is asked to choose a new password.
 4. The owner adds staff in **Settings → Staff**: email, temporary password, companies or sites, and optional check-in. Staff install the **Staff** app, connect with the **same reference key** and sign in.
 
-Settings → **Switch business** connects to another business. Owner and Staff can be installed side by side (`com.wholeflow.wholeflow_app`, `com.wholeflow.staff`).
+Settings → **Switch business** connects to another business. Owner and Staff can be installed side by side (`com.wholeflow.owner`, `com.wholeflow.staff`).
 
 > Release APKs are currently signed with the debug key ([android/app/build.gradle.kts](wholeflow_app/android/app/build.gradle.kts)). Create a real upload key before publishing on the Play Store.
 

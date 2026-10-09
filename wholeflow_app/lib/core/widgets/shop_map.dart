@@ -5,7 +5,7 @@ import 'package:latlong2/latlong.dart' as ll;
 /// The only widgets that know the map is flutter_map with OpenStreetMap tiles
 /// (no API key); switching providers only touches this file.
 TileLayer _tiles() =>
-    TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.wholeflow.wholeflow_app');
+    TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.wholeflow.owner');
 
 CircleLayer _radius(BuildContext context, ll.LatLng point, double meters) {
   final c = Theme.of(context).colorScheme.primary;
