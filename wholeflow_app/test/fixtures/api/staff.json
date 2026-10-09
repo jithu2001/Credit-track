@@ -1,0 +1,53 @@
+{
+  "staff": [
+    {
+      "id": "a0000000-0000-0000-0000-00000000a001",
+      "role": "OWNER",
+      "name": "Owner",
+      "email": "o@a.test",
+      "is_active": true,
+      "requires_check_in": false,
+      "created_at": "2026-10-08T08:18:34.5899+00:00",
+      "companies": []
+    },
+    {
+      "id": "1f53a653-169d-457b-9949-b2dfd97cf4e5",
+      "role": "STAFF",
+      "name": "New Staff",
+      "email": "new@new.test",
+      "is_active": true,
+      "requires_check_in": true,
+      "created_at": "2026-10-08T08:18:34.836873+00:00",
+      "companies": [
+        {
+          "user_id": "1f53a653-169d-457b-9949-b2dfd97cf4e5",
+          "company_id": "c0000000-0000-0000-0000-00000000a001",
+          "full_company": false,
+          "can_view_transactions": false,
+          "site_ids": [
+            "e0000000-0000-0000-0000-00000000a001"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a0000000-0000-0000-0000-00000000a002",
+      "role": "STAFF",
+      "name": "Staff",
+      "email": "s@a.test",
+      "is_active": true,
+      "requires_check_in": true,
+      "created_at": "2026-10-08T08:18:34.5899+00:00",
+      "companies": [
+        {
+          "user_id": "a0000000-0000-0000-0000-00000000a002",
+          "company_id": "c0000000-0000-0000-0000-00000000a001",
+          "full_company": true,
+          "can_view_transactions": false,
+          "site_ids": []
+        }
+      ]
+    }
+  ]
+}
+

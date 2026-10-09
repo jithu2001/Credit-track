@@ -13,12 +13,7 @@ part of 'transaction_repository.dart';
 final transactionRepositoryProvider = TransactionRepositoryProvider._();
 
 final class TransactionRepositoryProvider
-    extends
-        $FunctionalProvider<
-          TransactionRepository,
-          TransactionRepository,
-          TransactionRepository
-        >
+    extends $FunctionalProvider<TransactionRepository, TransactionRepository, TransactionRepository>
     with $Provider<TransactionRepository> {
   TransactionRepositoryProvider._()
     : super(
@@ -36,9 +31,7 @@ final class TransactionRepositoryProvider
 
   @$internal
   @override
-  $ProviderElement<TransactionRepository> $createElement(
-    $ProviderPointer pointer,
-  ) => $ProviderElement(pointer);
+  $ProviderElement<TransactionRepository> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
 
   @override
   TransactionRepository create(Ref ref) {
@@ -47,12 +40,8 @@ final class TransactionRepositoryProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(TransactionRepository value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<TransactionRepository>(value),
-    );
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<TransactionRepository>(value));
   }
 }
 
-String _$transactionRepositoryHash() =>
-    r'bc5110a044be06307954f80a7370fdb6885bebe9';
+String _$transactionRepositoryHash() => r'470507b65436cdd9e50b1c6f4d602d1b53478457';

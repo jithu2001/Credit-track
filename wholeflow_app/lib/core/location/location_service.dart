@@ -64,6 +64,17 @@ class LocationService {
     }
   }
 
+  /// True when reading the location would show the phone's permission
+  /// prompt (not asked yet, or denied once). The app explains first
+  /// (location_disclosure.dart).
+  Future<bool> willAskPermission() async {
+    try {
+      return await Geolocator.checkPermission() == LocationPermission.denied;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> openSettings() => Geolocator.openAppSettings();
 
   /// Android's Developer options page, so staff can turn them off.

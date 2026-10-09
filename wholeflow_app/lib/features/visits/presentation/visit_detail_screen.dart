@@ -69,7 +69,12 @@ class VisitDetailScreen extends ConsumerWidget {
             if (v != null || pin != null)
               Padding(
                 padding: const EdgeInsets.only(top: Insets.s),
-                child: Text('Pin and radius: the shop. Dot: where the phone was at check-in.', style: muted),
+                child: Text(
+                  v != null && v.locationRemoved
+                      ? 'Pin and radius: the shop. Where the phone was is removed 12 months after the check-in.'
+                      : 'Pin and radius: the shop. Dot: where the phone was at check-in.',
+                  style: muted,
+                ),
               ),
             const SizedBox(height: Insets.l),
             if (visit case AsyncValue(:final error?))
@@ -90,7 +95,13 @@ class VisitDetailScreen extends ConsumerWidget {
                             ? 'No pin yet: waiting for the owner'
                             : '${v.distanceM!.round()} m from the shop (allowed ${v.radiusM} m)',
                       ),
-                      subtitle: Text('GPS accuracy ±${v.accuracyM.round()} m'),
+                      subtitle: Text(
+                        v.locationRemoved
+                            ? 'Location removed after 12 months'
+                            : v.accuracyM == null
+                            ? 'GPS accuracy unknown'
+                            : 'GPS accuracy ±${v.accuracyM!.round()} m',
+                      ),
                     ),
                     if (v.note != null && v.note!.isNotEmpty)
                       ListTile(leading: const Icon(Icons.notes_rounded), title: Text(v.note!), subtitle: const Text('Note')),

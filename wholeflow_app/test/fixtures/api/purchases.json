@@ -1,0 +1,20 @@
+{
+  "has_more": false,
+  "page": 0,
+  "page_size": 50,
+  "purchases": [
+    {
+      "id": "f0000000-0000-0000-0000-00000000c001",
+      "purchase_date": "2026-07-05",
+      "supplier_id": "f0000000-0000-0000-0000-00000000b001",
+      "supplier_name": "Supplier One",
+      "voucher_number": "PB/1",
+      "voucher_type": null,
+      "supplier_bill_number": null,
+      "taxable_amount": 0.00,
+      "total_amount": 1180.00,
+      "line_count": 1
+    }
+  ]
+}
+

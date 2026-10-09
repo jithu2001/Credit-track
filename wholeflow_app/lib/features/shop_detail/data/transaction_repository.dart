@@ -1,35 +1,37 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/errors/app_failure.dart';
-import '../../../core/providers.dart';
 import '../domain/statement.dart';
 
 part 'transaction_repository.g.dart';
 
+/// A shop's statement from the WholeFlow app API. The server refuses staff
+/// who may not see the company's transactions.
 class TransactionRepository {
-  TransactionRepository(this._client);
+  TransactionRepository(this._api);
 
-  final SupabaseClient _client;
+  final ApiClient _api;
 
-  /// All active transactions of a shop, fetched in pages. The full set is
-  /// needed for running balances and the reconciliation check; a shop has
-  /// hundreds of vouchers at most. RLS returns none when the staff member may
-  /// not view transactions for this company.
-  Future<List<ShopTransaction>> forShop(String shopId) async {
+  /// The whole ledger, newest first, with the balance after each voucher.
+  Future<Statement> statement(String shopId) async {
     try {
-      final rows = await fetchAll(
-        (from, to) => _client
-            .from('transactions')
-            .select(ShopTransaction.columns)
-            .eq('shop_id', shopId)
-            .isFilter('deleted_at', null)
-            .order('transaction_date', ascending: false)
-            .order('created_at', ascending: false)
-            .order('id', ascending: true)
-            .range(from, to),
+      return Statement.fromJson(await _api.get('shops/$shopId/statement'));
+    } catch (e) {
+      throw AppFailure.from(e);
+    }
+  }
+
+  /// The ledger between two days (null = open end), with the balance brought forward.
+  Future<PeriodStatement> period(String shopId, {DateTime? from, DateTime? to}) async {
+    String day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    try {
+      return PeriodStatement.fromJson(
+        await _api.get('shops/$shopId/statement', {
+          'from': ?(from == null ? null : day(from)),
+          'to': ?(to == null ? null : day(to)),
+        }),
       );
-      return rows.map(ShopTransaction.fromJson).toList();
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -37,4 +39,4 @@ class TransactionRepository {
 }
 
 @Riverpod(keepAlive: true)
-TransactionRepository transactionRepository(Ref ref) => TransactionRepository(ref.watch(supabaseProvider));
+TransactionRepository transactionRepository(Ref ref) => TransactionRepository(ref.watch(apiClientProvider));

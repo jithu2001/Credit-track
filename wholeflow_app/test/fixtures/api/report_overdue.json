@@ -1,0 +1,48 @@
+{
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "company_name": "API Co",
+  "credit_days": 30,
+  "generated_at": "2026-07-20T06:00:00Z",
+  "groups": [
+    {
+      "shops": [
+        {
+          "area": null,
+          "bills": [
+            {
+              "date": "2026-05-01",
+              "amount": 500.00,
+              "voucher": "Sales · 1",
+              "remaining": 300.00,
+              "days_overdue": 50
+            },
+            {
+              "date": "2026-06-15",
+              "amount": 800.00,
+              "voucher": "Sales · 2",
+              "remaining": 800.00,
+              "days_overdue": 5
+            }
+          ],
+          "bills_visible": true,
+          "max_days_overdue": 50,
+          "name": "Alpha Stores",
+          "overdue": "1100.00",
+          "overdue_bills": 2,
+          "phone": "9800000001",
+          "receivable": "1100.00",
+          "shop_id": "d0000000-0000-0000-0000-00000000a001",
+          "site_id": "e0000000-0000-0000-0000-00000000a001",
+          "site_name": "Town"
+        }
+      ],
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town",
+      "subtotal": "1100.00"
+    }
+  ],
+  "shop_count": 1,
+  "today": "2026-07-20",
+  "total": "1100.00"
+}
+

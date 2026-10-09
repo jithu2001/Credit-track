@@ -1,8 +1,10 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../api/api_client.dart';
+import '../upgrade/upgrade_gate.dart';
 
 enum FailureKind {
   network,
@@ -14,6 +16,14 @@ enum FailureKind {
   emailTaken,
   server,
   subscriptionEnded,
+
+  /// This app version is too old for the server (HTTP 426); the app shows
+  /// only the "Update required" screen.
+  upgradeRequired,
+
+  /// Changing the password needs a fresh sign-in (the server's
+  /// `reauthentication_needed`).
+  reauthenticationNeeded,
   unknown,
 }
 
@@ -36,6 +46,11 @@ class AppFailure implements Exception {
   /// controller uses it to switch to the "paused" screen at once.
   static void Function(AppFailure failure)? onSubscriptionEnded;
 
+  /// Called whenever the app API refuses the access token (HTTP 401: signed
+  /// out elsewhere, password reset, account disabled). The session controller
+  /// uses it to go back to the sign-in screen at once.
+  static void Function()? onSessionEnded;
+
   String get message => switch (kind) {
     FailureKind.network => 'No internet connection. Check your network and try again.',
     FailureKind.unauthenticated => 'Your session has ended. Please sign in again.',
@@ -46,6 +61,8 @@ class AppFailure implements Exception {
     FailureKind.emailTaken => 'An account with this email already exists.',
     FailureKind.server => 'The server had a problem. Please try again in a moment.',
     FailureKind.subscriptionEnded => 'WholeFlow is paused for this business.',
+    FailureKind.upgradeRequired => detail ?? UpgradeGate.defaultMessage,
+    FailureKind.reauthenticationNeeded => 'For your security, please sign in again, then change your password.',
     FailureKind.unknown => 'Something went wrong. Please try again.',
   };
 
@@ -59,8 +76,7 @@ class AppFailure implements Exception {
       return const AppFailure(FailureKind.network);
     }
     if (error is AuthException) return _fromAuth(error);
-    if (error is PostgrestException) return _fromPostgrest(error);
-    if (error is FunctionException) return _fromFunction(error);
+    if (error is ApiException) return _fromApi(error);
     final text = error.toString();
     if (text.contains('SocketException') ||
         text.contains('ClientException') ||
@@ -73,6 +89,12 @@ class AppFailure implements Exception {
 
   static AppFailure _fromAuth(AuthException e) {
     final code = e.code ?? '';
+    if (code == 'upgrade_required' || e.statusCode == '426') {
+      final f = AppFailure(FailureKind.upgradeRequired, _text(e.message));
+      UpgradeGate.trigger(f.detail);
+      return f;
+    }
+    if (code == 'reauthentication_needed') return const AppFailure(FailureKind.reauthenticationNeeded);
     if (e is AuthRetryableFetchException) return const AppFailure(FailureKind.network);
     if (code == 'invalid_credentials' || e.message.toLowerCase().contains('invalid login credentials')) {
       return const AppFailure(FailureKind.invalidCredentials);
@@ -92,61 +114,32 @@ class AppFailure implements Exception {
     return const AppFailure(FailureKind.unknown);
   }
 
-  static AppFailure _fromPostgrest(PostgrestException e) {
-    final code = e.code ?? '';
-    if (code == 'PT402' || code == '402' || e.message.contains('subscription_ended')) {
-      var details = e.details, hint = e.hint;
-      // `.maybeSingle()` re-wraps errors: code becomes the HTTP status and the
-      // server's JSON is left as text in the message.
-      if (code == '402') {
-        try {
-          final body = jsonDecode(e.message);
-          if (body is Map) (details, hint) = (body['details'], body['hint']);
-        } catch (_) {}
-      }
-      final f = AppFailure(FailureKind.subscriptionEnded, _text(details), _text(hint));
-      onSubscriptionEnded?.call(f);
-      return f;
+  /// The WholeFlow app API (core/api/api_client.dart).
+  static AppFailure _fromApi(ApiException e) {
+    switch (e.status) {
+      case 402:
+        final f = AppFailure(FailureKind.subscriptionEnded, _text(e.details), _text(e.hint));
+        onSubscriptionEnded?.call(f);
+        return f;
+      case 426:
+        final f = AppFailure(FailureKind.upgradeRequired, _text(e.message));
+        UpgradeGate.trigger(f.detail);
+        return f;
+      case 401:
+        onSessionEnded?.call();
+        return const AppFailure(FailureKind.unauthenticated);
+      case 403:
+        return AppFailure(FailureKind.forbidden, e.code == 'FORBIDDEN' ? null : _text(e.message));
+      case 404:
+        return const AppFailure(FailureKind.notFound);
+      case 409 when e.code == 'EMAIL_TAKEN':
+        return const AppFailure(FailureKind.emailTaken);
+      case 400:
+      case 409:
+        return AppFailure(FailureKind.invalidInput, _text(e.message));
     }
-    if (code == 'PGRST301' || code == 'PGRST303' || e.message.contains('JWT expired')) {
-      return const AppFailure(FailureKind.unauthenticated);
-    }
-    if (code == '42501') return const AppFailure(FailureKind.forbidden);
-    if (code == 'PGRST116') return const AppFailure(FailureKind.notFound);
-    if (code.startsWith('5') || code.startsWith('XX')) return const AppFailure(FailureKind.server);
-    return const AppFailure(FailureKind.unknown);
+    return e.status >= 500 ? const AppFailure(FailureKind.server) : const AppFailure(FailureKind.unknown);
   }
 
   static String? _text(Object? v) => v is String && v.trim().isNotEmpty ? v.trim() : null;
-
-  /// manage-staff returns `{ "error": { "code", "message" } }`.
-  static AppFailure _fromFunction(FunctionException e) {
-    final details = e.details;
-    String? code;
-    String? message;
-    if (details is Map && details['error'] is Map) {
-      code = details['error']['code'] as String?;
-      message = details['error']['message'] as String?;
-    }
-    switch (code) {
-      case 'UNAUTHENTICATED':
-        return const AppFailure(FailureKind.unauthenticated);
-      case 'NOT_OWNER':
-        return AppFailure(FailureKind.forbidden, message);
-      case 'INVALID_INPUT':
-        return AppFailure(FailureKind.invalidInput, message);
-      case 'EMAIL_TAKEN':
-        return const AppFailure(FailureKind.emailTaken);
-      case 'NOT_FOUND':
-        return AppFailure(FailureKind.notFound, message);
-    }
-    if (e.status == 401) return const AppFailure(FailureKind.unauthenticated);
-    if (e.status == 402) {
-      const f = AppFailure(FailureKind.subscriptionEnded);
-      onSubscriptionEnded?.call(f);
-      return f;
-    }
-    if (e.status >= 500) return const AppFailure(FailureKind.server);
-    return const AppFailure(FailureKind.unknown);
-  }
 }

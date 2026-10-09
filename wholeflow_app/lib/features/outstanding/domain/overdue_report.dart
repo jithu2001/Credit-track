@@ -59,9 +59,6 @@ class OverdueShop {
     siteName: json['site_name'] as String?,
   );
 
-  static const columns =
-      'shop_id,name,area,phone,receivable,overdue,max_days_overdue,overdue_bills,bills_visible,bills,site_id,site_name';
-
   final String id;
   final String name;
   final String? area;
@@ -95,7 +92,8 @@ class OverdueSiteGroup {
   final Money subtotal;
 }
 
-/// Shops past the credit period, grouped by site with subtotals.
+/// Shops past the credit period, grouped by site with subtotals
+/// (`GET /api/v1/reports/overdue`, aged and grouped on the server).
 class OverdueReport {
   const OverdueReport({
     required this.companyName,
@@ -104,6 +102,19 @@ class OverdueReport {
     required this.groups,
     required this.total,
   });
+
+  factory OverdueReport.fromJson(Map<String, dynamic> j) => OverdueReport(
+    companyName: (j['company_name'] as String?) ?? '',
+    creditDays: (j['credit_days'] as num).toInt(),
+    generatedAt: DateTime.parse(j['generated_at'] as String).toLocal(),
+    groups: [
+      for (final g in (j['groups'] as List? ?? const []).cast<Map<String, dynamic>>())
+        OverdueSiteGroup(g['site_id'] as String?, siteLabel(g['site_name'] as String?), [
+          for (final s in (g['shops'] as List).cast<Map<String, dynamic>>()) OverdueShop.fromJson(s),
+        ], Money.parse(g['subtotal'])),
+    ],
+    total: Money.parse(j['total']),
+  );
 
   final String companyName;
   final int creditDays;
@@ -117,28 +128,22 @@ class OverdueReport {
 
   /// Whether bill details came back (owner, or staff allowed to see transactions).
   bool get showsBills => groups.any((g) => g.shops.any((s) => s.bills != null));
-}
 
-OverdueReport buildOverdueReport({
-  required String companyName,
-  required int creditDays,
-  required List<OverdueShop> shops,
-  required DateTime generatedAt,
-}) {
-  final groups = [
-    for (final (id, name, list) in groupBySite(shops.where((s) => s.overdue.isPositive), (s) => s.siteId, (s) => s.siteName))
-      OverdueSiteGroup(
-        id,
-        name,
-        list..sort((a, b) {
-          final c = b.overdue.compareTo(a.overdue);
-          return c != 0 ? c : b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
-        }),
-        list.fold(Money.zero, (sum, s) => sum + s.overdue),
-      ),
-  ];
-  final total = groups.fold(Money.zero, (sum, g) => sum + g.subtotal);
-  return OverdueReport(companyName: companyName, creditDays: creditDays, generatedAt: generatedAt, groups: groups, total: total);
+  /// Only the shops passing [keep] (the on-screen search), with totals recomputed.
+  OverdueReport narrowed(bool Function(OverdueShop) keep) {
+    final kept = [
+      for (final g in groups)
+        if (g.shops.where(keep).toList() case final shops when shops.isNotEmpty)
+          OverdueSiteGroup(g.siteId, g.site, shops, shops.fold(Money.zero, (sum, s) => sum + s.overdue)),
+    ];
+    return OverdueReport(
+      companyName: companyName,
+      creditDays: creditDays,
+      generatedAt: generatedAt,
+      groups: kept,
+      total: kept.fold(Money.zero, (sum, g) => sum + g.subtotal),
+    );
+  }
 }
 
 /// "20 days past limit".

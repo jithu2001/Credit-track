@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
+import 'package:wholeflow_app/features/outstanding/domain/outstanding_report.dart';
 import 'package:wholeflow_app/core/theme/app_theme.dart';
 import 'package:wholeflow_app/features/analytics/data/analytics_repository.dart';
 import 'package:wholeflow_app/features/analytics/domain/payment_analysis.dart';
@@ -112,8 +113,19 @@ class FakeAuthRepository implements AuthRepository {
   Future<void> signOut() async => signedIn = false;
   @override
   Future<AppUser?> loadProfile() async => profile;
+
+  /// Password changes made: (new, current).
+  final List<(String, String?)> passwordChanges = [];
+
+  /// Thrown by [changePassword] when set.
+  AppFailure? changePasswordError;
+
   @override
-  Future<void> changePassword(String newPassword) async {}
+  Future<void> changePassword(String newPassword, {String? currentPassword}) async {
+    if (changePasswordError != null) throw changePasswordError!;
+    passwordChanges.add((newPassword, currentPassword));
+  }
+
   @override
   Future<String?> businessName(String businessId) async => 'Test Business';
 }
@@ -135,9 +147,16 @@ class FakeCompanyRepository implements CompanyRepository {
 
 /// Returns canned pages; [pending] keeps the first page loading forever.
 class FakeShopRepository implements ShopRepository {
-  FakeShopRepository({this.shops = const [], this.error, this.pending = false, this.detailShop});
+  FakeShopRepository({
+    this.shops = const [],
+    this.error,
+    this.pending = false,
+    this.detailShop,
+    this.companyName = 'JMJ Marketing',
+  });
 
   final List<ShopSummary> shops;
+  final String companyName;
   final Object? error;
   final bool pending;
   final ShopDetail? detailShop;
@@ -154,9 +173,33 @@ class FakeShopRepository implements ShopRepository {
   @override
   Future<ShopDetail> detail(String shopId) async => detailShop!;
   @override
-  Future<List<ShopSummary>> topDues(String companyId, {int limit = 10}) async => shops.take(limit).toList();
-  @override
-  Future<List<ShopSummary>> outstanding(String companyId) async => shops;
+  Future<OutstandingReport> outstandingReport(String companyId) async {
+    final owing = [...shops.where((s) => s.receivable.isPositive)]..sort((a, b) => b.receivable.compareTo(a.receivable));
+    final groups = [
+      for (final (id, name, list) in groupLikeServer(owing, (s) => s.siteId, (s) => s.siteName))
+        SiteGroup(id, name, list, list.fold(Money.zero, (t, s) => t + s.receivable)),
+    ];
+    return OutstandingReport(
+      companyName: companyName,
+      generatedAt: DateTime.now(),
+      groups: groups,
+      total: groups.fold(Money.zero, (t, g) => t + g.subtotal),
+    );
+  }
+}
+
+/// Groups like the app API's reports: sites A–Z by name, shops in no site last,
+/// keeping the order of [items] inside each site.
+List<(String?, String, List<T>)> groupLikeServer<T>(Iterable<T> items, String? Function(T) siteId, String? Function(T) siteName) {
+  final byId = <String?, List<T>>{};
+  final names = <String?, String>{};
+  for (final item in items) {
+    byId.putIfAbsent(siteId(item), () => []).add(item);
+    names[siteId(item)] = siteLabel(siteId(item) == null ? null : siteName(item));
+  }
+  final ids = byId.keys.toList()
+    ..sort((a, b) => a == null ? 1 : (b == null ? -1 : names[a]!.toLowerCase().compareTo(names[b]!.toLowerCase())));
+  return [for (final id in ids) (id, names[id]!, byId[id]!)];
 }
 
 /// Sites in memory; records what the editor saves.
@@ -198,10 +241,16 @@ class FakeSiteRepository implements SiteRepository {
 
 /// A phone that is always at [reading].
 class FakeLocationService implements LocationService {
-  const FakeLocationService(this.reading, {this.devMode = false});
+  const FakeLocationService(this.reading, {this.devMode = false, this.askPermission = false});
 
   final LocationReading reading;
   final bool devMode;
+
+  /// The phone would still show its permission prompt.
+  final bool askPermission;
+
+  @override
+  Future<bool> willAskPermission() async => askPermission;
 
   @override
   Future<LocationReading> current({Duration timeout = const Duration(seconds: 20)}) async => reading;
@@ -222,8 +271,6 @@ class FakeVisitRepository implements VisitRepository {
   final List<(String, String?)> checkIns = [];
   final List<Map<String, Object?>> created = [];
 
-  @override
-  Future<void> ensureTasks(DateTime from, DateTime to) async {}
   @override
   Future<List<VisitTask>> tasks(DateTime from, DateTime to, {String? companyId, String? staffId}) async => taskList;
   @override
@@ -281,84 +328,202 @@ class FakeShopLocationRepository implements ShopLocationRepository {
 
 /// Returns [shops] for every credit period and records the periods asked for.
 class FakeOverdueRepository implements OverdueRepository {
-  FakeOverdueRepository([this.shops = const []]);
+  FakeOverdueRepository([this.shops = const [], this.companyName = 'JMJ Marketing']);
 
   final List<OverdueShop> shops;
+  final String companyName;
   final List<int> requestedDays = [];
 
   @override
-  Future<List<OverdueShop>> overdue(String companyId, {required int creditDays, required DateTime today}) async {
+  Future<OverdueReport> report(String companyId, {required int creditDays}) async {
     requestedDays.add(creditDays);
-    return shops;
+    final late = [...shops.where((s) => s.overdue.isPositive)]
+      ..sort((a, b) {
+        final c = b.overdue.compareTo(a.overdue);
+        return c != 0 ? c : b.maxDaysOverdue.compareTo(a.maxDaysOverdue);
+      });
+    final groups = [
+      for (final (id, name, list) in groupLikeServer(late, (s) => s.siteId, (s) => s.siteName))
+        OverdueSiteGroup(id, name, list, list.fold(Money.zero, (t, s) => t + s.overdue)),
+    ];
+    return OverdueReport(
+      companyName: companyName,
+      creditDays: creditDays,
+      generatedAt: DateTime.now(),
+      groups: groups,
+      total: groups.fold(Money.zero, (t, g) => t + g.subtotal),
+    );
   }
 }
 
+/// Answers like `GET /shops/{id}/statement`: running balances from
+/// [opening]; the Tally balance is the computed one unless [tally] is given.
 class FakeTransactionRepository implements TransactionRepository {
-  FakeTransactionRepository([this.txns = const []]);
+  FakeTransactionRepository([this.txns = const [], this.opening = Money.zero, this.tally]);
 
   final List<ShopTransaction> txns;
+  final Money opening;
+  final Money? tally;
+
+  Map<String, dynamic> _json({DateTime? from, DateTime? to}) {
+    String day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    String rs(Money m) => (m.paise / 100).toStringAsFixed(2);
+    final ordered = [...txns]..sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+    var running = opening, periodOpening = opening;
+    final lines = <Map<String, dynamic>>[];
+    for (final t in ordered) {
+      running += t.amount;
+      if (from != null && t.transactionDate.isBefore(from)) {
+        periodOpening = running;
+      } else if (to == null || !t.transactionDate.isAfter(to)) {
+        lines.insert(0, {
+          'id': t.id,
+          'transaction_date': day(t.transactionDate),
+          'voucher_type': t.voucherType,
+          'voucher_number': t.voucherNumber,
+          'category': t.category.name,
+          'narration': t.narration,
+          'debit': rs(t.debit),
+          'credit': rs(t.credit),
+          'amount': rs(t.amount),
+          'balance_after': rs(running),
+        });
+      }
+    }
+    return {
+      'from': from == null ? null : day(from),
+      'to': to == null ? null : day(to),
+      'opening': rs(periodOpening),
+      'closing': lines.isEmpty ? rs(periodOpening) : lines.first['balance_after'],
+      'ledger_opening': rs(opening),
+      'tally_balance': rs(tally ?? running),
+      'computed_balance': rs(running),
+      'reconciled': (tally ?? running) == running,
+      'lines': lines,
+    };
+  }
 
   @override
-  Future<List<ShopTransaction>> forShop(String shopId) async => txns;
+  Future<Statement> statement(String shopId) async => Statement.fromJson(_json());
+
+  @override
+  Future<PeriodStatement> period(String shopId, {DateTime? from, DateTime? to}) async =>
+      PeriodStatement.fromJson(_json(from: from, to: to));
 }
 
 class FakeDashboardRepository implements DashboardRepository {
-  FakeDashboardRepository({this.summaryRow, this.state});
+  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const []});
 
   final CompanySummary? summaryRow;
   final SyncState? state;
+  final List<ShopSummary> topDues;
 
   @override
-  Future<CompanySummary?> summary(String companyId) async => summaryRow;
-  @override
-  Future<SyncState?> syncState(String companyId) async => state;
-  @override
-  Future<MonthSales> monthSales(String companyId, DateTime now) async =>
-      MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12);
-}
-
-/// Two shops relative to today: one 20 days overdue, one paid on time.
-class FakeAnalyticsRepository implements AnalyticsRepository {
-  @override
-  Future<AnalyticsData> load(String companyId) async {
-    final today = DateTime.now();
-    final d = DateTime(today.year, today.month, today.day);
-    return AnalyticsData(
-      booksFrom: d.subtract(const Duration(days: 365)),
-      shops: const [
-        ShopOpening(
-          id: 's1',
-          name: 'PRINCE TYRES -- RAJAKKAD',
-          siteName: 'Rajakkad',
-          opening: Money.zero,
-          receivable: Money(1000000),
-        ),
-        ShopOpening(id: 's2', name: 'KERALA AUTO -- PALA', siteName: 'Pala', opening: Money.zero, receivable: Money.zero),
-      ],
-      txns: [
-        PaymentTxn(
-          shopId: 's1',
-          date: d.subtract(const Duration(days: 50)),
-          category: TxnCategory.sales,
-          debit: const Money(1000000),
-          credit: Money.zero,
-          voucher: 'Sales · 101',
-        ),
-        PaymentTxn(
-          shopId: 's2',
-          date: d.subtract(const Duration(days: 40)),
-          category: TxnCategory.sales,
-          debit: const Money(500000),
-          credit: Money.zero,
-        ),
-        PaymentTxn(
-          shopId: 's2',
-          date: d.subtract(const Duration(days: 30)),
-          category: TxnCategory.receipts,
-          debit: Money.zero,
-          credit: const Money(500000),
-        ),
-      ],
+  Future<Dashboard> load(String companyId) async {
+    final now = DateTime.now();
+    return Dashboard(
+      summary: summaryRow,
+      syncState: state,
+      monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12),
+      topDues: topDues,
     );
   }
+}
+
+/// Two shops relative to today, as the app API answers: one with a ₹10,000
+/// bill from 50 days ago (unpaid), one that paid its bill 10 days after it.
+class FakeAnalyticsRepository implements AnalyticsRepository {
+  final calls = <int>[];
+
+  static String _day(int daysAgo) {
+    final t = DateTime.now().subtract(Duration(days: daysAgo));
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
+  }
+
+  static Map<String, dynamic> _ageing([String? bucket, String amount = '0.00']) => {
+    for (final k in AgeBucket.values) k.code: k.code == bucket ? amount : '0.00',
+  };
+
+  static Map<String, dynamic> _prince(int days) {
+    final late = 50 - days;
+    return {
+      'shop': {
+        'id': 's1',
+        'name': 'PRINCE TYRES -- RAJAKKAD',
+        'site_name': 'Rajakkad',
+        'opening': '0.00',
+        'receivable': '10000.00',
+      },
+      'advance': '0.00',
+      'overdue': late > 0 ? '10000.00' : '0.00',
+      'open_amount': '10000.00',
+      'open_bills': 1,
+      'max_days_overdue': late > 0 ? late : 0,
+      'oldest_open_bill_date': _day(50),
+      'ageing': _ageing(late > 0 ? (late <= 30 ? 'd1_30' : 'd31_60') : 'not_due', '10000.00'),
+      'paid_bills': 0,
+      'on_time_bills': 0,
+      'last_payment_amount': '0.00',
+      'computed_balance': '10000.00',
+      'reconciled': true,
+    };
+  }
+
+  @override
+  Future<BusinessPaymentSummary> summary(String companyId, {required int creditDays}) async {
+    calls.add(creditDays);
+    final prince = _prince(creditDays);
+    final overdue = prince['overdue'] as String;
+    return BusinessPaymentSummary.fromJson({
+      'credit_days': creditDays,
+      'today': _day(0),
+      'overdue': overdue,
+      'overdue_shops': overdue == '0.00' ? 0 : 1,
+      'open_amount': '10000.00',
+      'ageing': prince['ageing'],
+      'on_time_rate': creditDays >= 10 ? 1.0 : 0.0,
+      'avg_days_to_pay': 10.0,
+      // A month ago the bill was 20 days old: not past 30 or 60 days.
+      'overdue_month_ago': '0.00',
+      'shops': [
+        prince,
+        {
+          'shop': {'id': 's2', 'name': 'KERALA AUTO -- PALA', 'site_name': 'Pala', 'opening': '0.00', 'receivable': '0.00'},
+          'advance': '0.00',
+          'overdue': '0.00',
+          'open_amount': '0.00',
+          'open_bills': 0,
+          'max_days_overdue': 0,
+          'ageing': _ageing(),
+          'paid_bills': 1,
+          'on_time_bills': creditDays >= 10 ? 1 : 0,
+          'on_time_rate': creditDays >= 10 ? 1.0 : 0.0,
+          'avg_days_to_pay': 10.0,
+          'avg_days_late': 0.0,
+          'last_payment_date': _day(30),
+          'last_payment_amount': '5000.00',
+          'computed_balance': '0.00',
+          'reconciled': true,
+        },
+      ],
+    });
+  }
+
+  @override
+  Future<ShopPayments> shop(String shopId, {required int creditDays}) async => ShopPayments.fromJson({
+    ..._prince(creditDays),
+    'credit_days': creditDays,
+    'today': _day(0),
+    'closed_bills': 0,
+    'bills': [
+      {
+        'date': _day(50),
+        'due': _day(50 - creditDays),
+        'amount': '10000.00',
+        'remaining': '10000.00',
+        'voucher': 'Sales · 101',
+        'allocations': [],
+      },
+    ],
+  });
 }

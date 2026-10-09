@@ -9,10 +9,30 @@ ExecStart=/opt/wholeflow/bin/wholeflow-control serve
 WorkingDirectory=/opt/wholeflow
 Restart=on-failure
 RestartSec=3
-# Runs as root: creating a business starts containers and writes nginx routes.
-# It only listens on 127.0.0.1 (nginx forwards /control/).
+
+# Runs as root on purpose: the admin app's actions run the kit's scripts
+# (new-business.sh, migrate.sh, delete-business.sh), which use the docker CLI
+# (root-equivalent anyway), write /opt/wholeflow/businesses and
+# /opt/wholeflow/backup, edit /etc/nginx/wholeflow-businesses and reload
+# nginx. So no User=, no capability limits and no ProtectSystem=strict/full
+# (they would break those scripts). It listens on 127.0.0.1:8100 only; nginx
+# exposes the admin API on admin.<domain> only.
+#
+# What is safe for those scripts:
 NoNewPrivileges=true
 PrivateTmp=true
+# /usr and /boot read-only (=true does not cover /etc, which the scripts need).
+ProtectSystem=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

@@ -2,14 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/app_theme.dart';
 
-/// New password + confirmation fields with validation. Calls [onSubmit] with
-/// the new password when valid.
-class NewPasswordForm extends StatefulWidget {
-  const NewPasswordForm({super.key, required this.onSubmit, required this.submitLabel, this.busy = false});
+/// Minimum password length, the same as the server's.
+const minPasswordLength = 8;
 
-  final Future<void> Function(String password) onSubmit;
+/// New password + confirmation fields with validation, and with
+/// [askCurrentPassword] the current password first. Calls [onSubmit] with the
+/// new password (and the current one, when asked) when valid.
+class NewPasswordForm extends StatefulWidget {
+  const NewPasswordForm({
+    super.key,
+    required this.onSubmit,
+    required this.submitLabel,
+    this.busy = false,
+    this.askCurrentPassword = false,
+  });
+
+  final Future<void> Function(String password, String? currentPassword) onSubmit;
   final String submitLabel;
   final bool busy;
+  final bool askCurrentPassword;
 
   @override
   State<NewPasswordForm> createState() => _NewPasswordFormState();
@@ -17,19 +28,23 @@ class NewPasswordForm extends StatefulWidget {
 
 class _NewPasswordFormState extends State<NewPasswordForm> {
   final _formKey = GlobalKey<FormState>();
+  final _current = TextEditingController();
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   bool _obscure = true;
 
   @override
   void dispose() {
+    _current.dispose();
     _password.dispose();
     _confirm.dispose();
     super.dispose();
   }
 
   void _submit() {
-    if (_formKey.currentState!.validate()) widget.onSubmit(_password.text);
+    if (_formKey.currentState!.validate()) {
+      widget.onSubmit(_password.text, widget.askCurrentPassword ? _current.text : null);
+    }
   }
 
   @override
@@ -39,6 +54,18 @@ class _NewPasswordFormState extends State<NewPasswordForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (widget.askCurrentPassword) ...[
+            TextFormField(
+              key: const Key('current-password'),
+              controller: _current,
+              obscureText: _obscure,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.password],
+              decoration: const InputDecoration(labelText: 'Current password'),
+              validator: (v) => (v ?? '').isEmpty ? 'Enter your current password' : null,
+            ),
+            const SizedBox(height: Insets.l),
+          ],
           TextFormField(
             key: const Key('new-password'),
             controller: _password,
@@ -47,14 +74,14 @@ class _NewPasswordFormState extends State<NewPasswordForm> {
             autofillHints: const [AutofillHints.newPassword],
             decoration: InputDecoration(
               labelText: 'New password',
-              helperText: 'At least 8 characters',
+              helperText: 'At least $minPasswordLength characters',
               suffixIcon: IconButton(
                 tooltip: _obscure ? 'Show password' : 'Hide password',
                 icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
             ),
-            validator: (v) => (v ?? '').length < 8 ? 'Use at least 8 characters' : null,
+            validator: (v) => (v ?? '').length < minPasswordLength ? 'Use at least $minPasswordLength characters' : null,
           ),
           const SizedBox(height: Insets.l),
           TextFormField(

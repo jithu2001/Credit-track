@@ -18,7 +18,7 @@ import (
 )
 
 // Version of the sync service, reported to the cloud and the status page.
-const Version = "0.5.1"
+const Version = "0.1.0"
 
 const (
 	// ProviderWholeFlow is the WholeFlow server, connected with a reference

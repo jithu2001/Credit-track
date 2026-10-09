@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"wholeflow/internal/cloud"
+	"wholeflow/internal/cloud/hosted"
 	"wholeflow/internal/cloud/memory"
-	"wholeflow/internal/cloud/rest"
 )
 
 // ProviderFactory builds a cloud.Provider from settings. The engine calls it
@@ -21,7 +21,7 @@ func NewProviderFactory(log *slog.Logger, cloudTimeout time.Duration) ProviderFa
 	return func(s Settings) (cloud.Provider, error) {
 		switch s.Cloud.Provider {
 		case ProviderWholeFlow:
-			// The business's data API on the WholeFlow server, reached with
+			// The business's app API on the WholeFlow server, reached with
 			// this PC's key from the activation.
 			l := s.Cloud.Link
 			switch {
@@ -32,7 +32,7 @@ func NewProviderFactory(log *slog.Logger, cloudTimeout time.Duration) ProviderFa
 			case l.BaseURL == "" || l.DeviceKey == "":
 				return nil, &cloud.Error{Kind: cloud.KindConfig, Op: "config", Msg: "not connected: enter the reference key and activation code on the Cloud Sync page"}
 			}
-			return rest.New(rest.Config{URL: l.BaseURL, Key: l.DeviceKey,
+			return hosted.New(hosted.Config{URL: l.BaseURL, Key: l.DeviceKey,
 				BusinessID: s.Business.ID, Timeout: cloudTimeout}, log)
 		case ProviderMemory:
 			if mem == nil || mem.BusinessID != s.Business.ID {

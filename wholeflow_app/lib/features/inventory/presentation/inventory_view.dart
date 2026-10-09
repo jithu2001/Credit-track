@@ -95,9 +95,9 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
   Widget build(BuildContext context) {
     super.build(context);
     final isOwner = ref.watch(currentUserProvider)?.isOwner ?? false;
-    final items = ref.watch(stockItemsProvider(widget.companyId));
-    final all = items.value ?? const <StockItem>[];
-    final summary = StockSummary.of(all);
+    final items = ref.watch(stockListProvider(widget.companyId));
+    final all = items.value?.items ?? const <StockItem>[];
+    final summary = items.value?.summary ?? const StockSummary(items: 0, value: Money.zero, byStatus: {});
     final status = ref.watch(inventoryStatusFilterProvider);
     if (_filter.status != status) _filter = _filter.copyWith(status: () => status);
     final belowMinimum = ref.watch(inventoryBelowMinimumProvider);
@@ -182,9 +182,9 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
             child: RefreshIndicator(
               onRefresh: () => refreshCompanyData(ref),
               child: switch (items) {
-                AsyncValue(:final value?) => _list(context, value, summary, isOwner),
+                AsyncValue(:final value?) => _list(context, value.items, summary, isOwner),
                 AsyncValue(:final error?) => _fill(
-                  ErrorState(error: error, onRetry: () => ref.invalidate(stockItemsProvider(widget.companyId))),
+                  ErrorState(error: error, onRetry: () => ref.invalidate(stockListProvider(widget.companyId))),
                 ),
                 _ => const SkeletonList(),
               },

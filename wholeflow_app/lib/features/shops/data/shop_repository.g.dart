@@ -12,8 +12,7 @@ part of 'shop_repository.dart';
 @ProviderFor(shopRepository)
 final shopRepositoryProvider = ShopRepositoryProvider._();
 
-final class ShopRepositoryProvider
-    extends $FunctionalProvider<ShopRepository, ShopRepository, ShopRepository>
+final class ShopRepositoryProvider extends $FunctionalProvider<ShopRepository, ShopRepository, ShopRepository>
     with $Provider<ShopRepository> {
   ShopRepositoryProvider._()
     : super(
@@ -31,8 +30,7 @@ final class ShopRepositoryProvider
 
   @$internal
   @override
-  $ProviderElement<ShopRepository> $createElement($ProviderPointer pointer) =>
-      $ProviderElement(pointer);
+  $ProviderElement<ShopRepository> $createElement($ProviderPointer pointer) => $ProviderElement(pointer);
 
   @override
   ShopRepository create(Ref ref) {
@@ -41,11 +39,8 @@ final class ShopRepositoryProvider
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(ShopRepository value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<ShopRepository>(value),
-    );
+    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<ShopRepository>(value));
   }
 }
 
-String _$shopRepositoryHash() => r'357aa22c75da1e6b496eeb9ef7157b99ff9ce37e';
+String _$shopRepositoryHash() => r'a6833ca6e2065f7c2e0c348c361609b732b35db2';

@@ -19,6 +19,15 @@
 
 .PARAMETER SkipTests
     Build without running go vet / go test (not recommended).
+
+.NOTES
+    Releases are unsigned for now (installed by hand on each PC). To sign
+    with an Authenticode certificate later, so Windows SmartScreen and
+    antivirus programs trust the exe, set these before running; signtool
+    (Windows SDK) then uses the certificate in the current user's store:
+
+        $env:WF_SIGN_THUMBPRINT = '<thumbprint>'
+        $env:WF_SIGN_TIMESTAMP  = 'http://timestamp.digicert.com'   # optional
 #>
 [CmdletBinding()]
 param([switch]$SkipTests)
@@ -48,6 +57,17 @@ try {
     Write-Host 'go build'
     go build -trimpath -o $exe ./cmd/server
     if ($LASTEXITCODE -ne 0) { throw 'build failed' }
+
+    if ($env:WF_SIGN_THUMBPRINT) {
+        $ts = if ($env:WF_SIGN_TIMESTAMP) { $env:WF_SIGN_TIMESTAMP } else { 'http://timestamp.digicert.com' }
+        Write-Host 'signtool sign'
+        signtool sign /sha1 $env:WF_SIGN_THUMBPRINT /fd sha256 /tr $ts /td sha256 /d 'WholeFlow' $exe
+        if ($LASTEXITCODE -ne 0) { throw 'signing failed' }
+        signtool verify /pa $exe
+        if ($LASTEXITCODE -ne 0) { throw 'signature does not verify' }
+    } else {
+        Write-Host 'Note: wholeflow.exe is not signed (no WF_SIGN_THUMBPRINT).' -ForegroundColor Yellow
+    }
 
     $version = ((& $exe version) -split '\s+')[1]
     if (-not $version) { throw 'could not read the version from the built exe' }

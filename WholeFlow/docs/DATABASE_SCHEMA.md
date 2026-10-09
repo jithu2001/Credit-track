@@ -1,6 +1,6 @@
 # Database Schema (one PostgreSQL database per business)
 
-Migrations: `db/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, `0004_overdue.sql`, `0005_sites_visits.sql`, `0006_small_radius.sql`, `0007_service_control.sql`, applied in that order to every business database by the WholeFlow server (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). The business's login (GoTrue) and data API (PostgREST) run on top of it.
+Migrations: `db/migrations/0001_init.sql`, `0002_mobile_app.sql`, `0003_purchasing.sql`, `0004_overdue.sql`, `0005_sites_visits.sql`, `0006_small_radius.sql`, `0007_service_control.sql`, `0008_stock_minimums.sql`, `0009_lockdown.sql`, applied in that order to every business database by the WholeFlow server (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). The WholeFlow app API (`internal/appapi`, Go) signs people in against the `auth` tables and reads and writes this schema as `authenticated` (RLS) or, for Tally PC uploads and staff management, as `service_role`. See *Privileges, migrations and data retention (migration 0009)* below.
 
 ```
 businesses ─┬─ users (auth.users)            OWNER | STAFF
@@ -37,7 +37,7 @@ One row per login account; `id` references `auth.users(id)` (the login service's
 | permissions | jsonb | reserved for staff restrictions, e.g. `{"areas":["Pala"],"transactions":false}` |
 | created_by | uuid | the owner who created a staff user |
 
-Admins (you) never have a row here. The owner is created with the business in the admin app; staff are created by the owner in the Owner app (through the staff service), or from the Tally PC's Cloud Sync page, section "Business owner & staff accounts". Each calls the login service's admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service key; disabling an account sets `is_active = false` and bans the login.
+Admins (you) never have a row here. The owner is created with the business in the admin app; staff are created by the owner in the Owner app (through the app API's `/staff` routes), or from the Tally PC's Cloud Sync page, section "Business owner & staff accounts". Each calls the login service's admin API (`POST /auth/v1/admin/users` with `email_confirm: true`) and then inserts the `users` row with the service key; disabling an account sets `is_active = false` and bans the login.
 
 ### tally_connections
 | Column | Notes |
@@ -127,8 +127,8 @@ Both are `security_invoker`, so RLS applies to whoever selects from them.
 
 - `current_business_id()` returns the caller's business from `users` (active users only); `is_owner()` checks the role.
 - `SELECT` on every table is limited to `business_id = current_business_id()`; `tally_connections` additionally requires `is_owner()`.
-- `users`: owners can insert and update `STAFF` rows of their own business (create, rename, disable, set permissions). Nobody can change their own role through RLS.
-- No `INSERT`/`UPDATE`/`DELETE` policies exist on data tables for `authenticated`, and `anon` has no grants: only the service-role key (which bypasses RLS) writes data. That key lives only inside the sync service on the customer's PC.
+- `users`: owners may update `STAFF` rows of their own business, and since 0009 only the columns `name`, `is_active`, `requires_check_in` (column grants). The app API itself changes staff as `service_role`. Nobody can change a role, business or email through RLS.
+- Data tables have no `INSERT`/`UPDATE`/`DELETE` for `authenticated` except `sites` and `visit_plans` (owners); `anon` has no grants at all. Tally data is written as `service_role` (the PC's own key, through the app API). The exact list is in the 0009 section.
 
 Verifying isolation: sign in as a user of business A and run `select count(*) from shops` – only A's rows appear; with a user of business B, only B's. Service-role queries see everything.
 
@@ -232,6 +232,40 @@ where l.stock_item_id = :item order by p.purchase_date desc;
 ```
 
 Verified on 28 Sep 2026 against the live project: first run created 19 suppliers, 592 stock items and 442 bills for the two companies; the next run found every row in place (updated only, nothing created or deleted).
+
+## Privileges, migrations and data retention (migration 0009)
+
+Migration: `db/migrations/0009_lockdown.sql`. Checks: `db/tests/privileges.sql` (catalog), `db/tests/retention.sql`. Apply **only after every app and PC uses the app API**: the old PostgREST data API relied on the grants it removes.
+
+**Who may do what** (enforced by `tests/privileges.sql`):
+
+| Role | Tables |
+|---|---|
+| `anon` | Nothing (no table, function, schema or temp rights). The app API never uses it. |
+| `authenticated` | `SELECT` on every table and view except `schema_migrations`, `revoked_devices`; RLS picks the rows. Writes: `sites` INSERT (`id, business_id, company_id, name`), UPDATE (`name`), DELETE; `visit_plans` INSERT (`id, business_id, site_id, staff_id, plan_date, weekday, starts_on, ends_on`), UPDATE (`active`), DELETE; `users` UPDATE (`name, is_active, requires_check_in`). Everything else goes through `SECURITY DEFINER` functions (`check_in`, `set_site_shops`, `set_shop_location`, `set_stock_minimum`, …). |
+| `service_role` | `SELECT, INSERT, UPDATE, DELETE` (no `TRUNCATE`/`TRIGGER`/`REFERENCES`); `service_status` and `schema_migrations` read-only; nothing on `revoked_devices`. |
+
+No API role may create temporary tables, and `PUBLIC` cannot connect to a business database (only `<slug>_api` and `<slug>_auth`). Every `SECURITY DEFINER` function runs with `search_path = public, pg_temp`; no WholeFlow function is executable by `anon`/`PUBLIC`.
+
+RLS policies call `current_business_id()`, `is_owner()` and `auth.uid()` as `(select …)`, so each is evaluated once per query; for owners the per-row `can_see_*` checks are skipped (they are always true for owners).
+
+**Writing a new migration**
+
+- Keep the `begin;` … `commit;` lines (each on a line of its own). `migrate.sh` removes them and runs the file in one transaction together with its `schema_migrations` row and `lock_timeout = 10s`, so a file is applied and recorded, or neither. A file cannot commit part-way (no `create index concurrently`, no `vacuum`).
+- New tables get **no** rights for `authenticated` by default: `alter table … enable row level security`, add policies, then `grant select` (and any write, column-limited) explicitly, and update `tests/privileges.sql` when a write is added. `service_role` gets read/write by default.
+- New functions: `revoke all on function … from public, anon;` then grant `authenticated` / `service_role` as needed; `SECURITY DEFINER` functions must `set search_path = public, pg_temp`.
+- `migrate.sh` dumps the business database to `/opt/wholeflow/backup/pre-migrate/<date>/` before applying anything to a database that already has migrations (kept 14 days), runs one at a time (`flock`), carries on with the other businesses when one fails and exits non-zero with a summary.
+
+**Data retention** — `public.purge_old_data()`, run daily per business database as `postgres` (`select public.purge_old_data();`; returns counts as jsonb). Not executable by `anon`/`authenticated`. Periods (constants in the function):
+
+| Data | Kept | Then |
+|---|---|---|
+| `shop_visits.device_lat`, `device_lng` (staff GPS position at check-in) | 12 months after `checked_in_at` | set to null; the visit (time, status, distance, accuracy, note) stays |
+| `visit_failed_attempts` | 12 months after `attempted_at` | deleted |
+| `shop_location_suggestions` with status `rejected` | 12 months after `reviewed_at` | deleted (pending ones are kept; approved ones are the shop's pin) |
+| `sync_logs` | 180 days after `started_at` | deleted |
+
+Change a period by a new migration that redefines the function, and update this table.
 
 ## Future backends
 

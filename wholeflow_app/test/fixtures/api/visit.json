@@ -1,0 +1,16 @@
+{
+  "visit": {
+    "id": "6fbb3edb-fae9-498a-9184-c9e0f13f9625",
+    "checked_in_at": "2026-10-08T08:18:34.8259+00:00",
+    "device_lat": 9.85,
+    "device_lng": 76.97,
+    "accuracy_m": 8,
+    "status": "location_pending",
+    "shop_lat": null,
+    "shop_lng": null,
+    "radius_m": null,
+    "distance_m": null,
+    "note": "Paid next week"
+  }
+}
+

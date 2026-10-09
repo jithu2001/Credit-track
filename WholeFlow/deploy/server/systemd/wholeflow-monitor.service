@@ -1,0 +1,6 @@
+[Unit]
+Description=WholeFlow monitor (writes /var/log/wholeflow/monitor-*.log)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wholeflow/scripts/monitor.sh

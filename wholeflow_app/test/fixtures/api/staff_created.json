@@ -1,0 +1,19 @@
+{
+  "companies": [
+    {
+      "company_id": "c0000000-0000-0000-0000-00000000a001",
+      "full_company": false,
+      "site_ids": [
+        "e0000000-0000-0000-0000-00000000a001"
+      ],
+      "can_view_transactions": false
+    }
+  ],
+  "email": "new@new.test",
+  "id": "1f53a653-169d-457b-9949-b2dfd97cf4e5",
+  "is_active": true,
+  "name": "New Staff",
+  "requires_check_in": true,
+  "role": "STAFF"
+}
+

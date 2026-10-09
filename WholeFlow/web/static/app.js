@@ -476,16 +476,8 @@ async function renderSyncMain() {
         <div id="lastRun"></div>
       </section>
     </div>
-    <section class="panel form"><h2><span class="step">6</span>Business owner &amp; staff accounts <span class="muted small">logins for the mobile app</span></h2>
-      <p class="small muted">These accounts belong to the connected business and are used in the mobile app, never in this app. Create the owner here; the owner can later add staff from the mobile app, or you can add them here.</p>
-      <div id="users"><div class="loading">Loading…</div></div>
-      <form id="userForm" class="grid two" style="margin-top:12px">
-        <label><span class="l">Email</span><input name="email" type="email" autocomplete="off" required placeholder="owner@example.com"></label>
-        <label><span class="l">Name</span><input name="name" autocomplete="off" placeholder="Owner's name"></label>
-        <label><span class="l">Password (min 8 characters)</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-        <label><span class="l">Role</span><select name="role"><option value="OWNER">Owner</option><option value="STAFF">Staff</option></select></label>
-        <div class="row"><button type="submit" class="primary">Create account</button><span id="userResult" class="small"></span></div>
-      </form>
+    <section class="panel"><h2><span class="step">6</span>Mobile app logins</h2>
+      <p class="small muted">Logins for the WholeFlow Owner and Staff apps are not managed on this PC. The owner's login comes from WholeFlow when the business is set up; the owner adds staff in the Owner app (Settings → Staff).</p>
     </section>
     <section class="panel"><h2>Log <span class="muted small" id="logPath"></span></h2>
       <div class="row"><button id="logRefresh">Refresh</button><label class="small"><input type="checkbox" id="logAuto"> auto-refresh</label></div>
@@ -496,7 +488,6 @@ async function renderSyncMain() {
   bindSyncActions();
   loadSyncLog();
   syncTallyTest(false);
-  loadUsers();
   sync.timer = setInterval(refreshSyncStatus, 5000);
 }
 
@@ -621,48 +612,6 @@ function bindSyncActions() {
     catch (e) { out.innerHTML = `<span class="tag bad">error</span> ${esc(e.message)}`; }
   };
   $("#logRefresh").onclick = loadSyncLog;
-  $("#userForm").onsubmit = async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target); const out = $("#userResult"); out.textContent = "Creating…";
-    try {
-      const r = await syncApi("POST", "/api/sync/users", { email: f.get("email"), name: f.get("name"), password: f.get("password"), role: f.get("role") });
-      out.innerHTML = `<span class="tag ok">created</span> ${esc(r.user.email)} (${esc(r.user.role)}) — they can now log in to the mobile app with this email and password.`;
-      e.target.reset();
-      loadUsers();
-    } catch (err) { out.innerHTML = `<span class="tag bad">${esc(err.code || "error")}</span> ${esc(err.message)}`; }
-  };
-}
-
-async function loadUsers() {
-  const box = $("#users");
-  if (!box) return;
-  let r;
-  try { r = await syncApi("GET", "/api/sync/users"); }
-  catch (e) { box.innerHTML = `<p class="small muted">${esc(e.message)}</p>`; return; }
-  box.innerHTML = r.users.length
-    ? `<div class="table-wrap"><table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th><th>Created</th><th></th></tr></thead>
-       <tbody>${r.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${esc(u.name)}</td><td>${esc(u.role)}</td>
-         <td>${u.isActive ? '<span class="tag ok">active</span>' : '<span class="tag bad">disabled</span>'}</td><td>${fmtTime(u.createdAt)}</td>
-         <td class="num"><button class="small" data-act="pw" data-id="${esc(u.id)}" data-email="${esc(u.email)}">Reset password</button>
-             <button class="small" data-act="active" data-id="${esc(u.id)}" data-email="${esc(u.email)}" data-next="${u.isActive ? "false" : "true"}">${u.isActive ? "Disable" : "Enable"}</button></td></tr>`).join("")}</tbody></table></div>`
-    : `<p class="small muted">No accounts yet for this business. Create the owner's login below.</p>`;
-  box.querySelectorAll("button[data-act]").forEach((b) => (b.onclick = async () => {
-    const out = $("#userResult");
-    try {
-      if (b.dataset.act === "pw") {
-        const pw = prompt(`New password for ${b.dataset.email} (min 8 characters):`);
-        if (!pw) return;
-        await syncApi("POST", `/api/sync/users/${encodeURIComponent(b.dataset.id)}/password`, { password: pw });
-        out.innerHTML = `<span class="tag ok">password changed</span> ${esc(b.dataset.email)}`;
-      } else {
-        const next = b.dataset.next === "true";
-        if (!next && !confirm(`Disable ${b.dataset.email}? They will no longer be able to use the mobile app.`)) return;
-        await syncApi("POST", `/api/sync/users/${encodeURIComponent(b.dataset.id)}/active`, { active: next });
-        out.innerHTML = `<span class="tag ok">${next ? "enabled" : "disabled"}</span> ${esc(b.dataset.email)}`;
-        loadUsers();
-      }
-    } catch (e) { out.innerHTML = `<span class="tag bad">${esc(e.code || "error")}</span> ${esc(e.message)}`; }
-  }));
 }
 
 async function loadSyncLog() {

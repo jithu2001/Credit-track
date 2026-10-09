@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 )
@@ -90,5 +91,64 @@ func TestLimiterCaseAndBurst(t *testing.T) {
 	}
 	if ok != 3 {
 		t.Fatalf("burst let %d attempts through, want 3", ok)
+	}
+}
+
+func TestSessionsMaxAge(t *testing.T) {
+	s := NewSessions(time.Hour)
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	tok, _ := s.Create("dev")
+	// Used every 30 minutes, the session still ends at MaxSessionAge.
+	for i := 0; i < 23; i++ {
+		now = now.Add(30 * time.Minute)
+		if _, ok := s.Validate(tok); !ok {
+			t.Fatalf("active session ended early at %d", i)
+		}
+	}
+	now = now.Add(30 * time.Minute)
+	if _, ok := s.Validate(tok); ok {
+		t.Fatal("session outlived MaxSessionAge")
+	}
+	now = time.Now()
+	s2 := NewSessions(time.Hour)
+	a, _ := s2.Create("u")
+	b, _ := s2.Create("u")
+	c, _ := s2.Create("v")
+	s2.RevokeUser("u", a)
+	if _, ok := s2.Validate(a); !ok {
+		t.Fatal("kept session revoked")
+	}
+	if _, ok := s2.Validate(b); ok {
+		t.Fatal("other session of the user survived")
+	}
+	if _, ok := s2.Validate(c); !ok {
+		t.Fatal("another user's session revoked")
+	}
+}
+
+func TestClientIP(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil) // RemoteAddr 192.0.2.1:1234
+	r.Header.Set("X-Real-IP", "203.0.113.9")
+	if got := ClientIP(r); got != "192.0.2.1" {
+		t.Fatalf("X-Real-IP from a remote peer trusted: %s", got)
+	}
+	r.RemoteAddr = "127.0.0.1:5555"
+	if got := ClientIP(r); got != "203.0.113.9" {
+		t.Fatalf("X-Real-IP from nginx ignored: %s", got)
+	}
+	r.RemoteAddr = "[::1]:5555"
+	r.Header.Set("X-Real-IP", "junk")
+	if got := ClientIP(r); got != "::1" {
+		t.Fatalf("bad X-Real-IP: %s", got)
+	}
+	if got := IPKey("2001:db8:1:2:3:4:5:6"); got != "2001:db8:1:2::/64" {
+		t.Fatalf("IPv6 key %s", got)
+	}
+	if IPKey("2001:db8:1:2::9") != IPKey("2001:db8:1:2:ffff::1") {
+		t.Fatal("same /64, different keys")
+	}
+	if got := IPKey("198.51.100.7"); got != "198.51.100.7" {
+		t.Fatalf("IPv4 key %s", got)
 	}
 }

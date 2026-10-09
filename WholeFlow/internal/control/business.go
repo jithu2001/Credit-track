@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +15,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"wholeflow/internal/authn"
 )
 
 // Service holds the control operations; the HTTP layer only validates and calls it.
@@ -130,8 +130,12 @@ func (s *Service) Create(ctx context.Context, in CreateBusiness, adminID string)
 	if ownerName == "" {
 		ownerName = strings.TrimSpace(in.ContactName)
 	}
-	ownerID, err := s.createAuthUser(ctx, authPort, serviceKey, in.OwnerEmail, ownerPassword, map[string]any{
-		"name": ownerName, "business_id": tenantBusinessID, "role": "OWNER", "must_change_password": true,
+	var ownerID string
+	err = pgx.BeginFunc(ctx, tenant, func(tx pgx.Tx) (err error) {
+		ownerID, err = authn.CreateUser(ctx, tx, in.OwnerEmail, ownerPassword, map[string]any{
+			"name": ownerName, "business_id": tenantBusinessID, "role": "OWNER", "must_change_password": true,
+		}, s.Now())
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("owner login: %w", err)
@@ -181,27 +185,6 @@ func (s *Service) Create(ctx context.Context, in CreateBusiness, adminID string)
 	}
 	s.Store.Audit(ctx, nullable(adminID), &out.ID, "business.create", map[string]any{"slug": in.Slug, "plan": in.PlanCode})
 	return out, nil
-}
-
-func (s *Service) createAuthUser(ctx context.Context, port int, serviceKey, email, password string, meta map[string]any) (string, error) {
-	body, _ := json.Marshal(map[string]any{"email": email, "password": password, "email_confirm": true, "user_metadata": meta})
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/admin/users", port), bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+serviceKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.HTTP.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("login service %d: %s", resp.StatusCode, tail(string(raw), 300))
-	}
-	var u struct{ ID string }
-	if err := json.Unmarshal(raw, &u); err != nil || u.ID == "" {
-		return "", errors.New("login service returned no user id")
-	}
-	return u.ID, nil
 }
 
 // ---------------------------------------------------------------- subscription
@@ -502,6 +485,9 @@ type DeviceStatus struct {
 	SubscriptionState string `json:"subscription_state"`
 	MaxCompanies      int    `json:"max_companies"`
 	Revoked           bool   `json:"revoked"`
+	// LatestPCVersion is the newest Tally PC release (setting latest_pc_version;
+	// omitted when not set). PCs 0.6.0 and older ignore it.
+	LatestPCVersion string `json:"latest_pc_version,omitempty"`
 }
 
 // Heartbeat: a PC reports its version and learns its subscription state and
@@ -535,18 +521,7 @@ func (s *Service) Heartbeat(ctx context.Context, deviceKey, appVersion string) (
 		_, _ = s.Store.DB.Exec(ctx, `update devices set last_seen_at = now(), app_version = $2 where id::text = $1`, deviceID, clip(appVersion, 40))
 	}
 	return &DeviceStatus{SubscriptionState: AccessState(status, paidUntil, grace, remind, Today(s.Now())),
-		MaxCompanies: maxCompanies, Revoked: revokedAt != nil}, nil
-}
-
-// TenantForStaff gives the staff service a business's address and service key.
-func (s *Service) TenantForStaff(ctx context.Context, slug string) (baseURL, serviceKey string, err error) {
-	var sealed string
-	if err := s.Store.DB.QueryRow(ctx, `select base_url, service_key_sealed from businesses where slug = $1 and status <> 'closed'`, slug).
-		Scan(&baseURL, &sealed); err != nil {
-		return "", "", userErr(404, "NOT_FOUND", "No such business.")
-	}
-	serviceKey, err = s.Sealer.Open(sealed)
-	return baseURL, serviceKey, err
+		MaxCompanies: maxCompanies, Revoked: revokedAt != nil, LatestPCVersion: s.Store.Setting(ctx, "latest_pc_version")}, nil
 }
 
 // MigrateAll applies new migrations to every business database.
@@ -569,6 +544,9 @@ func (s *Service) runScript(ctx context.Context, timeout time.Duration, script s
 	err := cmd.Run()
 	return buf.String(), err
 }
+
+// ReadEnvFile reads a KEY=VALUE file such as businesses/<slug>/env.
+func ReadEnvFile(path string) (map[string]string, error) { return readEnvFile(path) }
 
 func readEnvFile(path string) (map[string]string, error) {
 	f, err := os.Open(path)

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart' as ll;
 
 import '../../../core/errors/app_failure.dart';
+import '../../../core/location/location_disclosure.dart';
 import '../../../core/location/location_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/shop_map.dart';
@@ -62,7 +63,9 @@ class _EditorState extends ConsumerState<_Editor> {
   Future<void> _useMyLocation() async {
     setState(() => _locating = true);
     try {
-      final r = await ref.read(locationServiceProvider).current();
+      final service = ref.read(locationServiceProvider);
+      if (!await ensureLocationDisclosure(context, service, LocationPurpose.pinShop)) return;
+      final r = await service.current();
       if (!mounted) return;
       if (r.isMocked) {
         showMessage(context, 'This location looks fake (mock location is on). Turn it off and try again.');

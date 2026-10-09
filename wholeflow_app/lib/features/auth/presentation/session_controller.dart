@@ -57,9 +57,11 @@ class SessionController extends _$SessionController {
     await _sub?.cancel();
     _sub = repo.authStateChanges().listen(_onAuthEvent, onError: (_) {});
     AppFailure.onSubscriptionEnded = _onSubscriptionEnded;
+    AppFailure.onSessionEnded = _onSessionEnded;
     ref.onDispose(() {
       _sub?.cancel();
       if (AppFailure.onSubscriptionEnded == _onSubscriptionEnded) AppFailure.onSubscriptionEnded = null;
+      if (AppFailure.onSessionEnded == _onSessionEnded) AppFailure.onSessionEnded = null;
     });
     return _resolve();
   }
@@ -67,6 +69,15 @@ class SessionController extends _$SessionController {
   /// Any screen's request was refused with HTTP 402. Deferred: errors are
   /// also mapped while widgets build.
   void _onSubscriptionEnded(AppFailure f) => scheduleMicrotask(() => _pause(f));
+
+  /// Any screen's request was refused with HTTP 401: the session was ended on
+  /// the server. Deferred like [_onSubscriptionEnded].
+  void _onSessionEnded() => scheduleMicrotask(() async {
+    if (!ref.mounted || _signingOut) return;
+    final current = state.value;
+    if (current is! SignedIn && current is! Paused) return;
+    await signOut(message: sessionEndedMessage);
+  });
 
   void _pause(AppFailure f) {
     if (!ref.mounted || !_repo.hasSession) return;
@@ -84,6 +95,10 @@ class SessionController extends _$SessionController {
       user = await _repo.loadProfile();
     } on AppFailure catch (f) {
       if (f.kind == FailureKind.subscriptionEnded) return Paused(message: f.detail, contact: f.contact);
+      if (f.kind == FailureKind.unauthenticated) {
+        await _dropSession();
+        return const SignedOut(message: sessionEndedMessage);
+      }
       rethrow;
     }
     if (user == null || !user.isActive) {
@@ -107,7 +122,7 @@ class SessionController extends _$SessionController {
       case AuthChangeEvent.signedOut:
         // Signed out elsewhere: refresh token revoked, account banned, etc.
         if (!_signingOut && (state.value is SignedIn || state.value is Paused)) {
-          state = const AsyncData(SignedOut(message: 'Your session has ended. Please sign in again.'));
+          state = const AsyncData(SignedOut(message: sessionEndedMessage));
         }
       case AuthChangeEvent.userUpdated:
         final current = state.value;
@@ -133,10 +148,12 @@ class SessionController extends _$SessionController {
     state = AsyncData(SignedOut(message: message));
   }
 
-  Future<void> changePassword(String newPassword) async {
-    await _repo.changePassword(newPassword);
+  /// [currentPassword]: see [AuthRepository.changePassword]. Afterwards the
+  /// user's flags are read from the server's answer.
+  Future<void> changePassword(String newPassword, {String? currentPassword}) async {
+    await _repo.changePassword(newPassword, currentPassword: currentPassword);
     final current = state.value;
-    if (current is SignedIn) state = AsyncData(SignedIn(current.user));
+    if (current is SignedIn) state = AsyncData(SignedIn(current.user, mustChangePassword: _repo.mustChangePassword));
   }
 
   /// Re-reads the caller's row (on resume and refresh) so a disabled account

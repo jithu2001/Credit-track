@@ -14,7 +14,6 @@ WholeFlow gives a wholesale business its **shop outstanding balances, sales, sto
                                       │                                         + database biz_<slug>         │
  Owner app ─┐                         ├─▶ api.<domain>/control/   ─▶ control service (Go) ─▶ control_db       │
  Staff app ─┴─ reference key ─────────┘   admin.<domain>          ─▶ admin web app (same Go service)         │
-                                          api.<domain>/b/<slug>/functions/v1/ ─▶ staff service (Deno)         │
                          └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,7 +48,6 @@ WholeFlow gives a wholesale business its **shop outstanding balances, sales, sto
 | **Owner app** and **Staff app** (Flutter) | [`wholeflow_app/`](wholeflow_app) (flavors `owner`, `staff`) | Android phones | The owner and staff apps. On first launch they ask for the business's reference key (typed or QR), then show the normal login. They show subscription banners and a "paused" screen when the subscription ends. |
 | **Control service + admin app** (Go) | [`WholeFlow/cmd/control`](WholeFlow/cmd/control), [`WholeFlow/internal/control`](WholeFlow/internal/control) (pages in `internal/control/web`) | Server, systemd `wholeflow-control`, 127.0.0.1:8100 | Creates businesses, looks up reference keys for the apps, activates Tally PCs, records manual payments, enforces subscriptions. It also serves the admin web app at `https://admin.<domain>`. |
 | **Business databases and APIs** | [`WholeFlow/deploy/server`](WholeFlow/deploy/server) (scripts and templates), [`WholeFlow/db/migrations`](WholeFlow/db/migrations) (schema) | Server, Docker | One PostgreSQL 15 with a database `biz_<slug>` per business. Each business has its own GoTrue (login) and PostgREST (data API) container. The apps reach them with the GoTrue/PostgREST client libraries. |
-| **Staff service** (Deno) | [`WholeFlow/staff-service`](WholeFlow/staff-service) | Server, Docker container `staff`, 127.0.0.1:8200 | Lets an owner create, edit, reset and disable staff accounts from the Owner app, for every business. |
 | **Server kit** | [`WholeFlow/deploy/server`](WholeFlow/deploy/server) | Copied to `/opt/wholeflow` | docker-compose, nginx config, systemd unit, scripts to create, migrate, back up and delete businesses. |
 
 Rules that hold everywhere:
@@ -79,9 +77,8 @@ Credit-track/
 │   │   └── control/              control service: businesses, keys, PCs, subscriptions, admin API, admin web app (web/)
 │   ├── web/static/               Tally PC web app pages (embedded in the exe)
 │   ├── db/
-│   │   ├── migrations/           0001–0007 business database schema (applied to every business)
+│   │   ├── migrations/           0001–0009 business database schema (applied to every business)
 │   │   └── tests/                SQL tests + run_local.sh (throwaway Postgres in Docker)
-│   ├── staff-service/            staff service, Deno (handler.ts logic; backend.ts API client; multi.ts = server entry)
 │   ├── deploy/                   Windows installer + release script (Install-WholeFlow.cmd, Build-Release.ps1)
 │   ├── deploy/server/            server kit → /opt/wholeflow (compose, nginx, systemd, scripts, templates)
 │   └── docs/                     MULTI_TENANT_PLAN, SYNC_SETUP, SYNC_ARCHITECTURE, DATABASE_SCHEMA
@@ -125,9 +122,10 @@ Follow these in order to rebuild everything from nothing. The live system was bu
 - Git, SSH and Docker (Docker is only needed for the SQL tests).
 - **Go 1.26+**.
 - **Flutter 3.47+** (Dart 3.13+) with the Android SDK, plus `adb` to install on phones.
-- Deno 2.x, optional, for the staff-service tests.
 
 ### 4.2 Server
+
+> **Current, complete guide for a fresh production server** (app API, two-step admin sign-in, hardened kit): [WholeFlow/docs/DEPLOY_FRESH_SERVER.md](WholeFlow/docs/DEPLOY_FRESH_SERVER.md). The steps below are the original setup and may lag behind it.
 
 #### Step 1: DNS
 
@@ -207,9 +205,8 @@ On your PC, from the repo root:
 
 ```bash
 rsync -a WholeFlow/deploy/server/ wholeflow:/opt/wholeflow/
-ssh wholeflow 'mkdir -p /opt/wholeflow/{migrations,staff,bin,businesses} /etc/nginx/wholeflow-businesses && chmod 700 /opt/wholeflow/businesses && chmod +x /opt/wholeflow/scripts/*.sh'
+ssh wholeflow 'mkdir -p /opt/wholeflow/{migrations,bin,businesses} /etc/nginx/wholeflow-businesses && chmod 700 /opt/wholeflow/businesses && chmod +x /opt/wholeflow/scripts/*.sh'
 scp WholeFlow/db/migrations/*.sql wholeflow:/opt/wholeflow/migrations/
-scp WholeFlow/staff-service/{handler.ts,backend.ts,multi.ts,deno.json} wholeflow:/opt/wholeflow/staff/
 ```
 
 #### Step 6: Secrets and the database
@@ -218,19 +215,17 @@ On the server:
 
 ```bash
 cd /opt/wholeflow
-PG=$(openssl rand -hex 24); TOKEN=$(openssl rand -hex 32); MASTER=$(openssl rand -hex 32)
+PG=$(openssl rand -hex 24); MASTER=$(openssl rand -hex 32)
 
 cat > .env <<EOF
 POSTGRES_PASSWORD=$PG
 PUBLIC_URL=https://api.example.in
-INTERNAL_TOKEN=$TOKEN
 EOF
 
 cat > control.env <<EOF
 CONTROL_DB_URL=postgres://postgres:$PG@127.0.0.1:5432/control_db
 PG_ADMIN_URL=postgres://postgres:$PG@127.0.0.1:5432/postgres
 MASTER_KEY=$MASTER
-INTERNAL_TOKEN=$TOKEN
 PUBLIC_URL=https://api.example.in
 KIT_DIR=/opt/wholeflow
 LISTEN=127.0.0.1:8100
@@ -265,7 +260,6 @@ systemctl list-timers | grep certbot                      # auto-renewal is on
 
 What it routes:
 - `api.<domain>/control/` → control service
-- `api.<domain>/b/<slug>/functions/v1/` → staff service
 - `api.<domain>/b/<slug>/{auth,rest}/v1/` → that business's containers (one file per business in `/etc/nginx/wholeflow-businesses/`, written by `new-business.sh`)
 - `admin.<domain>` → admin app (pages and admin API only)
 
@@ -293,21 +287,15 @@ set -a; . /opt/wholeflow/control.env; set +a
 /opt/wholeflow/bin/wholeflow-control create-admin you@example.in "Your Name"
 ```
 
-#### Step 9: Staff service
+#### Step 9: Nightly backups
 
 ```bash
-cd /opt/wholeflow && docker compose up -d staff           # Deno, 127.0.0.1:8200, reads INTERNAL_TOKEN from .env
-docker compose ps
+cp /opt/wholeflow/systemd/wholeflow-backup.{service,timer} /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now wholeflow-backup.timer   # 02:30 IST
+systemctl start wholeflow-backup && ls /opt/wholeflow/backup/              # run once now: newest folder has OK
 ```
 
-#### Step 10: Nightly backups
-
-```bash
-echo '30 2 * * * root /opt/wholeflow/scripts/backup.sh >> /var/log/wholeflow-backup.log 2>&1' > /etc/cron.d/wholeflow-backup
-/opt/wholeflow/scripts/backup.sh                          # run once now: "backup ok: … files"
-```
-
-#### Step 11: Check the server
+#### Step 10: Check the server
 
 ```bash
 curl -s https://api.example.in/control/health            # {"ok":true}
@@ -365,7 +353,7 @@ On the phone:
 3. Sign in. The owner uses the email and temporary password from Step 4.3 and is asked to choose a new password.
 4. The owner adds staff in **Settings → Staff**: email, temporary password, companies or sites, and optional check-in. Staff install the **Staff** app, connect with the **same reference key** and sign in.
 
-Settings → **Switch business** connects to another business. Owner and Staff can be installed side by side (`com.wholeflow.wholeflow_app`, `com.wholeflow.staff`).
+Settings → **Switch business** connects to another business. Owner and Staff can be installed side by side (`com.wholeflow.owner`, `com.wholeflow.staff`).
 
 > Release APKs are currently signed with the debug key ([android/app/build.gradle.kts](wholeflow_app/android/app/build.gradle.kts)). Create a real upload key before publishing on the Play Store.
 
@@ -379,9 +367,6 @@ go vet ./... && gofmt -l . && go test ./...
 
 # Database: every migration + SQL test on a throwaway Postgres in Docker (never touches a real server)
 db/tests/run_local.sh
-
-# Staff service
-cd staff-service && deno test && cd -
 
 # Flutter
 cd ../wholeflow_app
@@ -425,30 +410,21 @@ Then open http://127.0.0.1:18080.
 |---|---|
 | **Control service or admin pages** (`WholeFlow/internal/control`, `cmd/control`) | Build as in Step 8, `scp` to `/opt/wholeflow/bin/wholeflow-control.new`, then `cp wholeflow-control wholeflow-control.prev && mv wholeflow-control.new wholeflow-control && systemctl restart wholeflow-control`. Roll back with `.prev`. |
 | **Database** (new file in `WholeFlow/db/migrations/`) | Keep migrations additive. Run `db/tests/run_local.sh`, copy the file to `/opt/wholeflow/migrations/`, then admin app → **Settings → Update all businesses** (or `scripts/migrate.sh --all`). New businesses get every migration automatically. |
-| **Staff service** (`manage-staff/*.ts`) | Copy `handler.ts backend.ts multi.ts` to `/opt/wholeflow/staff/`, then `docker compose restart staff`. |
 | **Tally PC app** | Raise `Version` in `WholeFlow/internal/syncer/settings.go`, run `Build-Release.ps1`, and run `Install-WholeFlow.cmd` on each PC (it upgrades in place and keeps settings). The admin app shows each PC's version. |
 | **Phone apps** | Raise `version:` in `wholeflow_app/pubspec.yaml`, build the APKs (4.5) and share them. Saved connections and logins survive updates. |
 
 ## 7. Backups and restore
 
-- **Nightly** at 02:30 IST, `scripts/backup.sh` dumps every database (`control_db` and each `biz_*`) and the roles to `/var/backups/wholeflow/<date>/`. It checks each dump is readable and keeps 14 days. The log is `/var/log/wholeflow-backup.log`.
-- **Restore drill** (passed on 6 Oct 2026): restore a dump into a scratch database and compare row counts.
+- **Nightly** at 02:30 IST (`wholeflow-backup.timer` → `scripts/backup.sh`): every database (`control_db`, each `biz_*`), the roles and the server's configuration and secrets (env files, `businesses/*/env`, nginx, certificates) go to **`/opt/wholeflow/backup/<date>_<time>/`**, each dump checked, with an `OK` or `FAILED` marker and checksums. Kept 14 days on the server. Log: `/var/log/wholeflow/backup.log`; the admin app's Server health shows the newest backup's age.
+- **Download them yourself** (no automatic off-site copy yet), e.g. weekly from your laptop:
 
   ```bash
-  cd /opt/wholeflow
-  docker compose exec -T db createdb -U postgres restore_drill
-  docker compose exec -T db pg_restore -U postgres -d restore_drill < /var/backups/wholeflow/<date>/biz_<slug>.dump
-  docker compose exec -T db psql -U postgres -d restore_drill -c 'select count(*) from shops'
-  docker compose exec -T db dropdb -U postgres restore_drill
-  ```
-- **Restore one business for real**:
-
-  ```bash
-  docker compose exec -T db pg_restore -U postgres -d biz_<slug> --clean --if-exists < /var/backups/wholeflow/<date>/biz_<slug>.dump
+  rsync -av --exclude '.tmp-*' --exclude '.lock' wholeflow:/opt/wholeflow/backup/ ~/wholeflow-backups/
   ```
 
-- **Rebuilding the whole server**: do section 4.2 on a new VPS, using the **same `MASTER_KEY`**. Restore `control_db` and every `biz_*`, and copy `/opt/wholeflow/businesses/` (each business's keys and ports) from the old server or a backup of it. Then start each business with `docker compose -p biz-<slug> -f businesses/<slug>/compose.yml --env-file businesses/<slug>/env up -d`, copy its nginx file, and reload nginx. **Back up `/opt/wholeflow/businesses/`, `.env` and `control.env` somewhere safe as well as the database dumps.**
-- **Off-site copy**: not set up yet (see section 9).
+  They are **not encrypted** and contain every customer's data and the server's `MASTER_KEY`: keep them on an encrypted disk only.
+- **Restore** (one business into a scratch database, then swap; or a whole new server from a downloaded copy): `scripts/restore.sh` and [WholeFlow/docs/RUNBOOK_RESTORE.md](WholeFlow/docs/RUNBOOK_RESTORE.md). Never `pg_restore --clean` into the live database.
+- **Later, optional:** encryption (an age public key in `/opt/wholeflow/backup.recipients`) and an automatic off-site copy (`BACKUP_REMOTE`), see `WholeFlow/deploy/server/README.md` "Backups and restore".
 
 ## 8. Security
 
@@ -477,7 +453,7 @@ Built, deployed and tested (October 2026):
 - server
 - control service
 - admin app
-- business databases and staff service
+- business databases (staff management later moved into the app API)
 - Owner and Staff apps (hosted mode, tested on a phone)
 - Tally PC app 0.4.0 (tested live against the server)
 

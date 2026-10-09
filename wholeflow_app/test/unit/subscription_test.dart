@@ -4,8 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException, PostgrestException;
 import 'package:wholeflow_app/core/connection/business_connection.dart';
+import 'package:wholeflow_app/core/api/api_client.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/router/owner_router.dart';
 import 'package:wholeflow_app/core/router/staff_router.dart';
@@ -124,35 +124,12 @@ void main() {
       AppFailure? seen;
       AppFailure.onSubscriptionEnded = (f) => seen = f;
       final f = AppFailure.from(
-        const PostgrestException(message: 'subscription_ended', code: 'PT402', details: 'Pay ₹800.', hint: '9847000000'),
+        const ApiException(402, 'SUBSCRIPTION_ENDED', 'subscription_ended', details: 'Pay ₹800.', hint: '9847000000'),
       );
       expect(f.kind, FailureKind.subscriptionEnded);
       expect(f.detail, 'Pay ₹800.');
       expect(f.contact, '9847000000');
       expect(seen, same(f));
-    });
-
-    test('a 402 re-wrapped by maybeSingle (code "402", JSON in the message) still pauses with the text', () {
-      AppFailure? seen;
-      AppFailure.onSubscriptionEnded = (f) => seen = f;
-      final f = AppFailure.from(
-        const PostgrestException(
-          code: '402',
-          details: 'Payment Required',
-          message: '{"code":"PT402","details":"Pay ₹800.","hint":"9847000000","message":"subscription_ended"}',
-        ),
-      );
-      expect(f.kind, FailureKind.subscriptionEnded);
-      expect(f.detail, 'Pay ₹800.');
-      expect(f.contact, '9847000000');
-      expect(seen, isNotNull);
-    });
-
-    test('a 402 from the staff service also pauses', () {
-      AppFailure? seen;
-      AppFailure.onSubscriptionEnded = (f) => seen = f;
-      expect(AppFailure.from(const FunctionException(status: 402)).kind, FailureKind.subscriptionEnded);
-      expect(seen, isNotNull);
     });
 
     test('both apps send a paused session to /paused and back once renewed', () {

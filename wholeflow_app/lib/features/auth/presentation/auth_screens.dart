@@ -184,12 +184,19 @@ class ForcePasswordChangeScreen extends ConsumerStatefulWidget {
 class _ForcePasswordChangeScreenState extends ConsumerState<ForcePasswordChangeScreen> {
   bool _busy = false;
 
-  Future<void> _submit(String password) async {
+  Future<void> _submit(String password, String? _) async {
     setState(() => _busy = true);
+    final session = ref.read(sessionControllerProvider.notifier);
     try {
-      await ref.read(sessionControllerProvider.notifier).changePassword(password);
+      await session.changePassword(password);
     } on AppFailure catch (f) {
-      if (mounted) showMessage(context, f.message);
+      if (f.kind == FailureKind.reauthenticationNeeded) {
+        // The sign-in is too old for a password change: sign in again, which
+        // brings the user straight back here.
+        await session.signOut(message: 'Please sign in again, then set your password.');
+      } else if (mounted) {
+        showMessage(context, f.message);
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

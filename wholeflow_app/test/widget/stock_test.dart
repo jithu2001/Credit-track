@@ -19,34 +19,27 @@ import 'package:wholeflow_app/features/stock/stock_screen.dart';
 import 'package:wholeflow_app/features/suppliers/data/supplier_repository.dart';
 import 'package:wholeflow_app/features/suppliers/domain/supplier.dart';
 
+import '../stock_like_server.dart';
 import 'helpers.dart';
 
 const companyA = Company(id: 'co-a', companyName: 'JMJ Marketing', syncStatus: 'SYNCED');
 
 class FakeInventoryRepository implements InventoryRepository {
-  final List<bool> requestedWithCosts = [];
+  /// Owners get values; staff don't (the server leaves them out).
+  FakeInventoryRepository({this.withCosts = true});
+
+  final bool withCosts;
 
   @override
-  Future<List<StockItem>> items(String companyId, {required bool withCosts}) async {
-    requestedWithCosts.add(withCosts);
-    return [
-      StockItem(
-        id: 'i1',
-        name: 'TYRE 145/80 R12',
-        unit: 'Nos',
-        closingQty: 1250,
-        closingValue: withCosts ? const Money(15000000) : null,
-      ),
-      const StockItem(id: 'i2', name: 'TUBE 12', unit: 'Nos', closingQty: 2, reorderLevel: 10),
-    ];
-  }
+  Future<StockList> items(String companyId) async => stockListOf([
+    stockItem(id: 'i1', name: 'TYRE 145/80 R12', unit: 'Nos', qty: 1250, value: withCosts ? const Money(15000000) : null),
+    stockItem(id: 'i2', name: 'TUBE 12', unit: 'Nos', qty: 2, reorder: 10),
+  ]);
 
   @override
-  Future<StockItem> item(String itemId, {required bool withCosts}) async => throw UnimplementedError();
+  Future<StockItem> item(String itemId) async => throw UnimplementedError();
   @override
-  Future<List<ItemPurchase>> purchasesOf(String itemId, {int limit = 20}) async => const [];
-  @override
-  Future<Map<String, double>> minimums(String companyId) async => const {};
+  Future<List<ItemPurchase>> purchasesOf(String itemId) async => const [];
   @override
   Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {}
 }
@@ -98,7 +91,6 @@ void main() {
     expect(find.widgetWithText(Tab, 'Inventory'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Purchases'), findsOneWidget);
     expect(find.widgetWithText(Tab, 'Suppliers'), findsOneWidget);
-    expect(inventory.requestedWithCosts, [true]);
     expect(find.text('1,250 Nos'), findsOneWidget);
     expect(find.text('Low stock'), findsOneWidget);
     expect(find.textContaining('Value ₹1.5 L'), findsOneWidget);
@@ -114,7 +106,7 @@ void main() {
   });
 
   testWidgets('staff see only inventory, loaded without costs', (tester) async {
-    final inventory = FakeInventoryRepository();
+    final inventory = FakeInventoryRepository(withCosts: false);
     await pumpScreen(tester, const StockScreen(), overrides: await overrides(staffUser, inventory));
     await tester.pumpAndSettle();
 
@@ -122,7 +114,6 @@ void main() {
     expect(find.text('Purchases'), findsNothing);
     expect(find.text('Suppliers'), findsNothing);
     expect(find.text('Inventory'), findsOneWidget);
-    expect(inventory.requestedWithCosts, [false]);
     expect(find.text('1,250 Nos'), findsOneWidget);
     expect(find.textContaining('Value'), findsNothing);
   });
@@ -130,9 +121,9 @@ void main() {
   group('minimum stock', () {
     testWidgets('owner long-presses, selects all shown, and sets one minimum for all', (tester) async {
       final inventory = _MinimumRepository([
-        const StockItem(id: 'a', name: 'TYRE A', unit: 'Nos', closingQty: 40),
-        const StockItem(id: 'b', name: 'TYRE B', unit: 'Nos', closingQty: 5),
-        const StockItem(id: 'c', name: 'OIL 1L', unit: 'Ltr', closingQty: 12),
+        stockItem(id: 'a', name: 'TYRE A', unit: 'Nos', qty: 40),
+        stockItem(id: 'b', name: 'TYRE B', unit: 'Nos', qty: 5),
+        stockItem(id: 'c', name: 'OIL 1L', unit: 'Ltr', qty: 12),
       ]);
       await pumpScreen(tester, const StockScreen(), overrides: await overrides(owner, inventory));
       await tester.pumpAndSettle();
@@ -162,7 +153,7 @@ void main() {
     });
 
     testWidgets('staff cannot start selecting', (tester) async {
-      final inventory = _MinimumRepository([const StockItem(id: 'a', name: 'TYRE A', closingQty: 4, minQty: 10)]);
+      final inventory = _MinimumRepository([stockItem(id: 'a', name: 'TYRE A', qty: 4, min: 10)]);
       await pumpRoutedScreen(tester, const StockScreen(), overrides: await overrides(staffUser, inventory));
       await tester.pumpAndSettle();
       expect(find.text('Low stock (1)'), findsOneWidget, reason: 'staff still see the alert status');
@@ -175,10 +166,10 @@ void main() {
 
     testWidgets('dashboard stock alert lists the furthest below and opens the low-stock list', (tester) async {
       final inventory = _MinimumRepository([
-        const StockItem(id: 'a', name: 'TYRE A', unit: 'Nos', closingQty: 9, minQty: 10),
-        const StockItem(id: 'b', name: 'TUBE', unit: 'Nos', closingQty: 0, minQty: 4),
-        const StockItem(id: 'c', name: 'OIL', unit: 'Ltr', closingQty: 50, minQty: 10),
-        const StockItem(id: 'd', name: 'BELT', unit: 'Nos', closingQty: 2, reorderLevel: 6),
+        stockItem(id: 'a', name: 'TYRE A', unit: 'Nos', qty: 9, min: 10),
+        stockItem(id: 'b', name: 'TUBE', unit: 'Nos', qty: 0, min: 4),
+        stockItem(id: 'c', name: 'OIL', unit: 'Ltr', qty: 50, min: 10),
+        stockItem(id: 'd', name: 'BELT', unit: 'Nos', qty: 2, reorder: 6),
       ]);
       await pumpRoutedScreen(
         tester,
@@ -205,10 +196,10 @@ void main() {
 
     testWidgets('below minimum shows the same items as the dashboard, out of stock included', (tester) async {
       final inventory = _MinimumRepository([
-        const StockItem(id: 'a', name: 'TYRE A', unit: 'Nos', closingQty: 9, minQty: 10),
-        const StockItem(id: 'b', name: 'TUBE', unit: 'Nos', closingQty: 0, minQty: 4),
-        const StockItem(id: 'c', name: 'OIL', unit: 'Ltr', closingQty: 50, minQty: 10),
-        const StockItem(id: 'e', name: 'CHAIN', unit: 'Nos', closingQty: 0),
+        stockItem(id: 'a', name: 'TYRE A', unit: 'Nos', qty: 9, min: 10),
+        stockItem(id: 'b', name: 'TUBE', unit: 'Nos', qty: 0, min: 4),
+        stockItem(id: 'c', name: 'OIL', unit: 'Ltr', qty: 50, min: 10),
+        stockItem(id: 'e', name: 'CHAIN', unit: 'Nos', qty: 0),
       ]);
       await pumpRoutedScreen(tester, const StockScreen(), overrides: await overrides(owner, inventory));
       await tester.pumpAndSettle();
@@ -222,14 +213,14 @@ void main() {
     });
 
     testWidgets('no below-minimum chip while no item has a minimum', (tester) async {
-      final inventory = _MinimumRepository([const StockItem(id: 'a', name: 'TYRE A', closingQty: 0)]);
+      final inventory = _MinimumRepository([stockItem(id: 'a', name: 'TYRE A', qty: 0)]);
       await pumpRoutedScreen(tester, const StockScreen(), overrides: await overrides(owner, inventory));
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('below-minimum')), findsNothing);
     });
 
     testWidgets('dashboard card stays hidden while no item has a minimum', (tester) async {
-      final inventory = _MinimumRepository([const StockItem(id: 'a', name: 'TYRE A', closingQty: 0)]);
+      final inventory = _MinimumRepository([stockItem(id: 'a', name: 'TYRE A', qty: 0)]);
       await pumpScreen(
         tester,
         const Scaffold(body: StockAlertCard(companyId: 'co-a')),
@@ -249,20 +240,15 @@ class _MinimumRepository implements InventoryRepository {
   final List<({Set<String> ids, double? min})> calls = [];
 
   @override
-  Future<List<StockItem>> items(String companyId, {required bool withCosts}) async => list;
+  Future<StockList> items(String companyId) async => stockListOf(list);
   @override
-  Future<StockItem> item(String itemId, {required bool withCosts}) async => list.firstWhere((i) => i.id == itemId);
+  Future<StockItem> item(String itemId) async => list.firstWhere((i) => i.id == itemId);
   @override
-  Future<List<ItemPurchase>> purchasesOf(String itemId, {int limit = 20}) async => const [];
-  @override
-  Future<Map<String, double>> minimums(String companyId) async => {
-    for (final i in list)
-      if (i.minQty != null) i.id: i.minQty!,
-  };
+  Future<List<ItemPurchase>> purchasesOf(String itemId) async => const [];
   @override
   Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {
     final ids = itemIds.toSet();
     calls.add((ids: ids, min: min));
-    list = [for (final i in list) ids.contains(i.id) ? i.withMinimum(min) : i];
+    list = [for (final i in list) ids.contains(i.id) ? withMinimum(i, min) : i];
   }
 }

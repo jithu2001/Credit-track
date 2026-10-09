@@ -1,0 +1,12 @@
+# Optional IP allowlist for the admin app (admin.<domain>).
+#   cp /opt/wholeflow/templates/admin-allowlist.conf.example /etc/nginx/wholeflow-admin-allow.conf
+#   edit the allow lines, then uncomment
+#     include /etc/nginx/wholeflow-admin-allow.conf;
+#   in the admin server block of nginx/wholeflow.conf, and run
+#     nginx -t && systemctl reload nginx
+# Everyone not listed gets 403. Home/office broadband IPs in India often
+# change: keep an SSH way in (ssh wholeflow) to update this file, or list a
+# small VPN's fixed address instead.
+allow 203.0.113.10;      # office (example address; replace)
+# allow 2001:db8::/64;   # IPv6 range (example)
+deny all;

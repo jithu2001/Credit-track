@@ -24,8 +24,6 @@ class ServiceStatus {
     contact: _text(j['contact']),
   );
 
-  static const columns = 'status, paid_until, grace_until, remind_from, plan_name, message, contact';
-
   /// 'active' | 'suspended' | 'closed'.
   final String status;
   final DateTime? paidUntil;

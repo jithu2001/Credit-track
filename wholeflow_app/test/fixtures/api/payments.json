@@ -1,0 +1,86 @@
+{
+  "ageing": {
+    "d1_30": "800.00",
+    "d31_60": "300.00",
+    "d61_90": "0.00",
+    "d90_plus": "0.00",
+    "not_due": "0.00"
+  },
+  "avg_days_to_pay": 95,
+  "books_from": "2026-04-01",
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "credit_days": 30,
+  "on_time_rate": 0,
+  "open_amount": "1100.00",
+  "overdue": "1100.00",
+  "overdue_month_ago": "1500.00",
+  "overdue_shops": 1,
+  "shops": [
+    {
+      "advance": "0.00",
+      "ageing": {
+        "d1_30": "800.00",
+        "d31_60": "300.00",
+        "d61_90": "0.00",
+        "d90_plus": "0.00",
+        "not_due": "0.00"
+      },
+      "avg_days_late": 65,
+      "avg_days_to_pay": 95,
+      "computed_balance": "1100.00",
+      "last_payment_amount": "1200.00",
+      "last_payment_date": "2026-07-10",
+      "max_days_overdue": 50,
+      "oldest_open_bill_date": "2026-05-01",
+      "on_time_bills": 0,
+      "on_time_rate": 0,
+      "open_amount": "1100.00",
+      "open_bills": 2,
+      "overdue": "1100.00",
+      "paid_bills": 1,
+      "reconciled": true,
+      "shop": {
+        "id": "d0000000-0000-0000-0000-00000000a001",
+        "name": "Alpha Stores",
+        "opening": "1000.00",
+        "phone": "9800000001",
+        "receivable": "1100.00",
+        "site_name": "Town"
+      }
+    },
+    {
+      "advance": "50.00",
+      "ageing": {
+        "d1_30": "0.00",
+        "d31_60": "0.00",
+        "d61_90": "0.00",
+        "d90_plus": "0.00",
+        "not_due": "0.00"
+      },
+      "avg_days_late": null,
+      "avg_days_to_pay": null,
+      "computed_balance": "-50.00",
+      "last_payment_amount": "0.00",
+      "last_payment_date": null,
+      "max_days_overdue": 0,
+      "oldest_open_bill_date": null,
+      "on_time_bills": 0,
+      "on_time_rate": null,
+      "open_amount": "0.00",
+      "open_bills": 0,
+      "overdue": "0.00",
+      "paid_bills": 0,
+      "reconciled": true,
+      "shop": {
+        "id": "d0000000-0000-0000-0000-00000000a002",
+        "name": "Beta Traders",
+        "opening": "-200.00",
+        "phone": null,
+        "receivable": "-50.00",
+        "site_name": null
+      }
+    }
+  ],
+  "today": "2026-07-20"
+}
+

@@ -1,0 +1,30 @@
+{
+  "closing": "2300.00",
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "computed_balance": "1100.00",
+  "from": "2026-06-01",
+  "ledger_opening": "1000.00",
+  "lines": [
+    {
+      "amount": "800.00",
+      "balance_after": "2300.00",
+      "category": "sales",
+      "created_at": "2026-10-08T08:18:34.594969Z",
+      "credit": "0.00",
+      "debit": "800.00",
+      "id": "40bf7fa2-b77e-4370-9c51-cd2b3271b2f6",
+      "narration": null,
+      "transaction_date": "2026-06-15",
+      "voucher_number": "2",
+      "voucher_type": "Sales"
+    }
+  ],
+  "opening": "1500.00",
+  "reconciled": true,
+  "shop_id": "d0000000-0000-0000-0000-00000000a001",
+  "tally_balance": "1100.00",
+  "to": "2026-06-30",
+  "total_credit": "0.00",
+  "total_debit": "800.00"
+}
+

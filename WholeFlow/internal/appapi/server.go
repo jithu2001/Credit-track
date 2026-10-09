@@ -1,0 +1,656 @@
+// Package appapi is the WholeFlow app API: the server side of the Owner and
+// Staff apps (and a future web app). It serves every business from one
+// process at /b/{slug}/api/v1/…, checks the same login tokens the business's
+// GoTrue issues, and runs every query as the business data API's role with the
+// caller's claims, so the database's row-level security decides what each
+// user may see, exactly as through PostgREST. See docs/API_PLAN.md.
+package appapi
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"wholeflow/internal/authn"
+	"wholeflow/internal/control"
+)
+
+// Server serves the app API for every business.
+type Server struct {
+	Control *pgxpool.Pool   // control_db: which businesses exist, their token secret
+	Sealer  *control.Sealer // opens the sealed token secrets
+	KitDir  string          // /opt/wholeflow: businesses/<slug>/env holds the data role's login
+	PGHost  string          // host:port of PostgreSQL as seen from this process
+	Log     *slog.Logger
+	Now     func() time.Time
+
+	// Resolve finds a business's token secret, database URL and login service;
+	// nil means control_db + businesses/<slug>/env (tests set their own).
+	Resolve func(ctx context.Context, slug string) (TenantInfo, error)
+
+	// MinAppBuild is the lowest phone-app build allowed (0 = any); nil reads
+	// the control_db setting min_app_build (cached for a minute).
+	MinAppBuild func(ctx context.Context) int
+
+	// Connections per business: TenantMaxConns as its data role, AuthMaxConns
+	// as its login role (0 = DefaultTenantMaxConns / DefaultAuthMaxConns).
+	TenantMaxConns int32
+	AuthMaxConns   int32
+	// ExpectedMigration is the newest business-database migration this
+	// build knows (e.g. "0009_lockdown.sql"); a business whose
+	// schema_migrations is behind is logged as a warning. "" = no check.
+	ExpectedMigration string
+
+	mu        sync.Mutex
+	tenants   map[string]*tenant
+	lastEvict time.Time
+
+	minBuildMu sync.Mutex
+	minBuild   int
+	minBuildAt time.Time
+}
+
+const (
+	DefaultTenantMaxConns = 3
+	DefaultAuthMaxConns   = 2
+	// tenantIdle: a business without requests for this long has its
+	// connection pools closed (they are opened again on the next request).
+	tenantIdle = 15 * time.Minute
+	// sessionCacheTTL: an open session is re-checked at most this often; a
+	// sign-out through this API is seen at once, one elsewhere (the admin
+	// app's owner reset) within this time.
+	sessionCacheTTL = 15 * time.Second
+)
+
+// tenant is one business: its token secret and a small connection pool as
+// its data API role (<slug>_api), refreshed every few minutes.
+type tenant struct {
+	TenantInfo
+	slug     string
+	pool     *pgxpool.Pool
+	authPool *pgxpool.Pool // the login tables, as the business's login role
+	loadedAt time.Time
+	usedAt   time.Time // wall clock, guarded by Server.mu
+
+	sessMu   sync.Mutex
+	sessions map[string]time.Time // open sessions → checked until
+}
+
+// sessionOpen reports whether an access token's session is still open (cached briefly).
+func (s *Server) sessionOpen(ctx context.Context, t *tenant, sessionID string) (bool, error) {
+	now := time.Now()
+	t.sessMu.Lock()
+	until, ok := t.sessions[sessionID]
+	t.sessMu.Unlock()
+	if ok && now.Before(until) {
+		return true, nil
+	}
+	if t.authPool == nil {
+		return false, errors.New("no login database configured for " + t.slug)
+	}
+	open, err := authn.SessionExists(ctx, t.authPool, sessionID, s.Now())
+	if err != nil || !open {
+		return false, err
+	}
+	t.sessMu.Lock()
+	defer t.sessMu.Unlock()
+	if t.sessions == nil || len(t.sessions) > 10000 {
+		t.sessions = map[string]time.Time{}
+	}
+	t.sessions[sessionID] = now.Add(sessionCacheTTL)
+	return true, nil
+}
+
+// forgetSessions drops the cached sessions (after a sign-out, password change,
+// reset or ban through this API), so they are checked again at once.
+func (t *tenant) forgetSessions() {
+	t.sessMu.Lock()
+	defer t.sessMu.Unlock()
+	t.sessions = nil
+}
+
+// TenantInfo is what the API needs to serve one business.
+type TenantInfo struct {
+	Secret     string // signs the business's login tokens
+	DBURL      string // its data API role (<slug>_api) on biz_<slug>
+	AuthURL    string // its login service, e.g. http://127.0.0.1:9101 (admin API)
+	ServiceKey string // service_role key for the login service's admin API
+	BusinessID string // the business's row id inside its database (businesses.id)
+	AuthDBURL  string // its login role (<slug>_auth) on biz_<slug>: the login tables
+	BaseURL    string // https://api.example/b/<slug> (iss of the access tokens)
+}
+
+const tenantTTL = 5 * time.Minute
+
+func (s *Server) Routes() http.Handler {
+	mux := http.NewServeMux()
+	// Up and able to reach control_db (the monitor checks this every 5 minutes).
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		if s.Control != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+			defer cancel()
+			if err := s.Control.Ping(ctx); err != nil {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": "control_db unreachable"})
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+	mux.HandleFunc("GET /b/{slug}/api/v1/payments", s.handle(s.paymentSummary))
+	mux.HandleFunc("GET /b/{slug}/api/v1/payments/shops/{id}", s.handle(s.shopPayments))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}/statement", s.handle(s.shopStatement))
+	mux.HandleFunc("GET /b/{slug}/api/v1/dashboard", s.handle(s.dashboard))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops", s.handle(s.shopsPage))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}", s.handle(s.shopDetail))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/outstanding", s.handle(s.outstandingReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/overdue", s.handle(s.overdueReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock", s.handle(s.stockList))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}", s.handle(s.stockItem))
+	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}/purchases", s.handle(s.stockItemPurchases))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/stock/minimum", s.handleWrite(s.setStockMinimum))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases", s.handle(s.purchasesPage))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases/months", s.handle(s.purchaseMonths))
+	mux.HandleFunc("GET /b/{slug}/api/v1/purchases/{id}", s.handle(s.purchaseDetail))
+	mux.HandleFunc("GET /b/{slug}/api/v1/suppliers", s.handle(s.suppliersList))
+	mux.HandleFunc("GET /b/{slug}/api/v1/suppliers/{id}", s.handle(s.supplierDetail))
+	mux.HandleFunc("GET /b/{slug}/api/v1/me", s.handle(s.me))
+	mux.HandleFunc("GET /b/{slug}/api/v1/me/access", s.handle(s.myAccess))
+	mux.HandleFunc("GET /b/{slug}/api/v1/companies", s.handle(s.companies))
+	mux.HandleFunc("GET /b/{slug}/api/v1/companies/{id}/areas", s.handle(s.companyAreas))
+	mux.HandleFunc("GET /b/{slug}/api/v1/service-status", s.handle(s.serviceStatus))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sync/connections", s.handle(s.syncConnections))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sync/logs", s.handle(s.syncLogs))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sites", s.handle(s.sitesList))
+	mux.HandleFunc("POST /b/{slug}/api/v1/sites", s.handleWrite(s.createSite))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/sites/{id}", s.handleWrite(s.renameSite))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/sites/{id}", s.handleWrite(s.deleteSite))
+	mux.HandleFunc("GET /b/{slug}/api/v1/sites/{id}/shops", s.handle(s.siteShops))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/sites/{id}/shops", s.handleWrite(s.putSiteShops))
+	mux.HandleFunc("GET /b/{slug}/api/v1/companies/{id}/site-shops", s.handle(s.companySiteShops))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/sites", s.handle(s.siteReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}/location", s.handle(s.shopLocation))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/shops/{id}/location", s.handleWrite(s.setShopLocation))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/shops/{id}/location", s.handleWrite(s.clearShopLocation))
+	mux.HandleFunc("GET /b/{slug}/api/v1/location-suggestions", s.handle(s.locationSuggestions))
+	mux.HandleFunc("POST /b/{slug}/api/v1/location-suggestions/{id}/review", s.handleWrite(s.reviewSuggestion))
+	// Listing tasks first makes the days' tasks from the plans (idempotent), so it writes.
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/tasks", s.handleWrite(s.visitTasks))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/tasks/{id}/failed-attempts", s.handle(s.failedAttempts))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/tasks/{id}/check-in", s.handleWrite(s.checkIn))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/plans", s.handle(s.visitPlans))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/plans", s.handleWrite(s.createPlans))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.setPlanActive))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/visits/plans/{id}", s.handleWrite(s.deletePlan))
+	mux.HandleFunc("GET /b/{slug}/api/v1/visits/{id}", s.handle(s.visitDetail))
+	mux.HandleFunc("POST /b/{slug}/api/v1/visits/{id}/note", s.handleWrite(s.addVisitNote))
+	s.pcRoutes(mux)
+	s.authRoutes(mux)
+	mux.HandleFunc("GET /b/{slug}/api/v1/staff", s.handle(s.staffList))
+	mux.HandleFunc("POST /b/{slug}/api/v1/staff", s.handleWrite(s.createStaff))
+	mux.HandleFunc("PATCH /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.renameStaff))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/companies", s.handleWrite(s.setStaffCompanies))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/check-in", s.handleWrite(s.setStaffCheckIn))
+	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/active", s.handleWrite(s.setStaffActive))
+	mux.HandleFunc("POST /b/{slug}/api/v1/staff/{id}/password", s.handleWrite(s.resetStaffPassword))
+	mux.HandleFunc("POST /b/{slug}/api/v1/client-errors", s.clientError)
+	return s.versionGate(mux)
+}
+
+// ---------------------------------------------------------------- app version
+
+// versionGate answers 426 to a phone app older than min_app_build (its
+// X-App-Version build number). Requests without the header (Tally PCs,
+// scripts) pass.
+func (s *Server) versionGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasPrefix(p, "/b/") && (strings.Contains(p, "/api/v1/") || strings.Contains(p, "/auth/v1/")) &&
+			r.Header.Get("X-App-Version") != "" && control.TooOld(r, s.minAppBuild(r.Context())) {
+			if strings.Contains(p, "/auth/v1/") {
+				authError(w, http.StatusUpgradeRequired, "upgrade_required", control.UpgradeMessage)
+			} else {
+				writeJSON(w, http.StatusUpgradeRequired, map[string]any{"error": fail(http.StatusUpgradeRequired, "UPGRADE_REQUIRED", control.UpgradeMessage)})
+			}
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// minAppBuild reads control_db's settings.min_app_build (SELECT only), at most once a minute.
+func (s *Server) minAppBuild(ctx context.Context) int {
+	if s.MinAppBuild != nil {
+		return s.MinAppBuild(ctx)
+	}
+	if s.Control == nil {
+		return 0
+	}
+	s.minBuildMu.Lock()
+	defer s.minBuildMu.Unlock()
+	if !s.minBuildAt.IsZero() && time.Since(s.minBuildAt) < time.Minute {
+		return s.minBuild
+	}
+	s.minBuildAt = time.Now() // on an error: keep the last value, try again in a minute
+	qctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var v string
+	err := s.Control.QueryRow(qctx, `select value from settings where key = 'min_app_build'`).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		s.minBuild = 0
+	} else if err != nil {
+		s.Log.Warn("min_app_build unreadable", "error", err.Error())
+	} else if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n >= 0 {
+		s.minBuild = n
+	} else if strings.TrimSpace(v) == "" {
+		s.minBuild = 0
+	}
+	return s.minBuild
+}
+
+// Close releases every business's connections.
+func (s *Server) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.tenants {
+		t.close()
+	}
+	s.tenants = nil
+}
+
+// ---------------------------------------------------------------- errors
+
+// apiError is sent as {"error": {"code", "message", "details", "hint"}}.
+type apiError struct {
+	Status  int    `json:"-"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Details string `json:"details,omitempty"`
+	Hint    string `json:"hint,omitempty"`
+}
+
+func (e *apiError) Error() string { return e.Code + ": " + e.Message }
+
+func fail(status int, code, message string) *apiError {
+	return &apiError{Status: status, Code: code, Message: message}
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// toAPIError maps database errors raised by the business's rules: check_request
+// (PT402 subscription ended, PT403 PC revoked) and permission errors.
+func toAPIError(err error) *apiError {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae
+	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) {
+		switch pg.Code {
+		case "PT402":
+			return &apiError{Status: http.StatusPaymentRequired, Code: "SUBSCRIPTION_ENDED", Message: pg.Message, Details: pg.Detail, Hint: pg.Hint}
+		case "PT403":
+			return &apiError{Status: http.StatusForbidden, Code: "FORBIDDEN", Message: pg.Message, Details: pg.Detail}
+		case "42501":
+			return fail(http.StatusForbidden, "FORBIDDEN", "You don't have access to this.")
+		case "22P02":
+			return fail(http.StatusBadRequest, "INVALID_INPUT", "Invalid id.")
+		case "23502", "23503", "23514": // not null, foreign key, check: the data sent breaks a rule
+			// The database's own wording names tables and columns: logged, not sent.
+			return fail(http.StatusBadRequest, "INVALID_INPUT", "Some of the data sent is not valid.")
+		case "22023": // invalid input raised by our SQL functions: "fn_name: message"
+			msg := pg.Message
+			if _, after, ok := strings.Cut(msg, ": "); ok {
+				msg = strings.ToUpper(after[:1]) + after[1:] + "."
+			}
+			return fail(http.StatusBadRequest, "INVALID_INPUT", msg)
+		}
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------- requests
+
+// request is one authenticated call: the business, the caller's claims and
+// a transaction that runs as them.
+type request struct {
+	*http.Request
+	tenant *tenant
+	claims map[string]any
+	tx     pgx.Tx
+	today  time.Time
+	// undo: changes made outside tx (in the login tables) to reverse when tx
+	// does not commit, so the two databases' views stay the same.
+	undo []func(ctx context.Context) error
+}
+
+// onRollback registers fn to run if the request's transaction is not committed.
+func (r *request) onRollback(fn func(ctx context.Context) error) { r.undo = append(r.undo, fn) }
+
+// rollback runs the registered undo steps (newest first).
+func (s *Server) rollback(r *request) {
+	ctx := context.WithoutCancel(r.Context())
+	for i := len(r.undo) - 1; i >= 0; i-- {
+		if err := r.undo[i](ctx); err != nil {
+			s.Log.Error("undo after a failed request failed: login and data may disagree", "path", r.URL.Path, "error", err.Error())
+		}
+	}
+	r.undo = nil
+}
+
+// handle wraps a handler: finds the business, checks the token, and runs fn
+// in a read-only transaction as the caller (role authenticated + their JWT
+// claims), after public.check_request() — the same checks PostgREST makes.
+func (s *Server) handle(fn func(*request) (any, error)) http.HandlerFunc {
+	return s.handleTx(fn, pgx.ReadOnly)
+}
+
+// handleWrite is handle for requests that change data (read-write transaction,
+// committed when fn succeeds). The database's own functions still decide who may.
+func (s *Server) handleWrite(fn func(*request) (any, error)) http.HandlerFunc {
+	return s.handleTx(fn, pgx.ReadWrite)
+}
+
+// logRule logs a request the database refused for breaking a rule (the
+// client only gets a general message).
+func (s *Server) logRule(r *http.Request, err error) {
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && strings.HasPrefix(pg.Code, "23") {
+		s.Log.Warn("request breaks a database rule", "path", r.URL.Path, "code", pg.Code, "constraint", pg.ConstraintName,
+			"table", pg.TableName, "column", pg.ColumnName, "message", pg.Message)
+	}
+}
+
+func (s *Server) handleTx(fn func(*request) (any, error), mode pgx.TxAccessMode) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := s.serve(r, fn, mode)
+		if err != nil {
+			s.logRule(r, err)
+			ae := toAPIError(err)
+			if ae == nil {
+				s.Log.Error("request failed", "path", r.URL.Path, "error", err.Error())
+				ae = fail(http.StatusInternalServerError, "SERVER_ERROR", "The server had a problem. Please try again in a moment.")
+			}
+			writeJSON(w, ae.Status, map[string]any{"error": ae})
+			return
+		}
+		writeJSON(w, http.StatusOK, out)
+	}
+}
+
+func (s *Server) serve(r *http.Request, fn func(*request) (any, error), mode pgx.TxAccessMode) (any, error) {
+	ctx := r.Context()
+	t, err := s.tenant(ctx, r.PathValue("slug"))
+	if err != nil {
+		return nil, err
+	}
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || token == "" {
+		return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
+	}
+	claims, err := control.VerifyJWT(t.Secret, token, s.Now())
+	if err != nil {
+		return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
+	}
+	// Only signed-in people: not the public key, not a Tally PC's key.
+	if claims["role"] != "authenticated" {
+		return nil, fail(http.StatusForbidden, "FORBIDDEN", "This key can't use the app API.")
+	}
+	// A token whose session has ended (signed out, password reset, disabled)
+	// stops working now, not when it expires. Every sign-in token carries
+	// session_id (ours and GoTrue's).
+	if sid, _ := claims["session_id"].(string); sid != "" {
+		open, err := s.sessionOpen(ctx, t, sid)
+		if err != nil {
+			return nil, err
+		}
+		if !open {
+			return nil, fail(http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in again.")
+		}
+	}
+	claimsJSON, _ := json.Marshal(claims)
+
+	tx, err := t.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: mode})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(context.WithoutCancel(ctx))
+	if _, err := tx.Exec(ctx, `set local role authenticated`); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `select set_config('request.jwt.claims', $1, true)`, string(claimsJSON)); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `select public.check_request()`); err != nil {
+		return nil, err
+	}
+	req := &request{Request: r, tenant: t, claims: claims, tx: tx, today: control.Today(s.Now())}
+	out, err := fn(req)
+	if err != nil {
+		s.rollback(req)
+		return nil, err
+	}
+	if mode == pgx.ReadWrite {
+		if err := tx.Commit(ctx); err != nil {
+			s.rollback(req)
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// readBody decodes a JSON request body (at most 1 MB) into v.
+func readBody(r *request, v any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fail(http.StatusBadRequest, "INVALID_INPUT", "The request body is not valid JSON.")
+	}
+	return nil
+}
+
+// tenant finds a business by slug (cached for a few minutes).
+func (s *Server) tenant(ctx context.Context, slug string) (*tenant, error) {
+	if slug == "" || strings.ContainsAny(slug, "/.\\") {
+		return nil, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
+	}
+	s.mu.Lock()
+	if s.tenants == nil {
+		s.tenants = map[string]*tenant{}
+	}
+	s.evictIdleLocked()
+	cached := s.tenants[slug]
+	if cached != nil {
+		cached.usedAt = time.Now()
+	}
+	s.mu.Unlock()
+	if cached != nil && s.Now().Sub(cached.loadedAt) < tenantTTL {
+		return cached, nil
+	}
+
+	resolve := s.Resolve
+	if resolve == nil {
+		resolve = s.fromControl
+	}
+	info, err := resolve(ctx, slug)
+	if err != nil {
+		var ae *apiError
+		if errors.As(err, &ae) && ae.Status == http.StatusNotFound {
+			s.drop(slug)
+		}
+		return nil, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur := s.tenants[slug]; cur != nil && cur.DBURL == info.DBURL && cur.AuthDBURL == info.AuthDBURL {
+		cur.TenantInfo, cur.loadedAt, cur.usedAt = info, s.Now(), time.Now()
+		return cur, nil
+	}
+	cfg, err := pgxpool.ParseConfig(info.DBURL)
+	if err != nil {
+		return nil, err
+	}
+	cfg.MaxConns = orDefault(s.TenantMaxConns, DefaultTenantMaxConns)
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	var authPool *pgxpool.Pool
+	if info.AuthDBURL != "" {
+		acfg, err := pgxpool.ParseConfig(info.AuthDBURL)
+		if err != nil {
+			pool.Close()
+			return nil, err
+		}
+		acfg.MaxConns = orDefault(s.AuthMaxConns, DefaultAuthMaxConns)
+		acfg.MaxConnIdleTime = 5 * time.Minute
+		if authPool, err = pgxpool.NewWithConfig(ctx, acfg); err != nil {
+			pool.Close()
+			return nil, err
+		}
+	}
+	if old := s.tenants[slug]; old != nil {
+		old.close()
+	}
+	t := &tenant{TenantInfo: info, slug: slug, pool: pool, authPool: authPool, loadedAt: s.Now(), usedAt: time.Now()}
+	s.tenants[slug] = t
+	if s.ExpectedMigration != "" {
+		go s.checkMigrations(t)
+	}
+	return t, nil
+}
+
+func orDefault(n, def int32) int32 {
+	if n > 0 {
+		return n
+	}
+	return def
+}
+
+// evictIdleLocked closes the pools of businesses unused for tenantIdle
+// (looked at no more than once a minute). s.mu must be held.
+func (s *Server) evictIdleLocked() {
+	now := time.Now()
+	if now.Sub(s.lastEvict) < time.Minute {
+		return
+	}
+	s.lastEvict = now
+	for slug, t := range s.tenants {
+		if now.Sub(t.usedAt) > tenantIdle {
+			t.close()
+			delete(s.tenants, slug)
+		}
+	}
+}
+
+// checkMigrations warns when a business database is behind the newest
+// migration this build knows (it still serves it).
+func (s *Server) checkMigrations(t *tenant) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var latest string
+	err := pgx.BeginTxFunc(ctx, t.pool, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `set local role service_role`); err != nil {
+			return err
+		}
+		return tx.QueryRow(ctx, `select coalesce(max(name), '') from public.schema_migrations`).Scan(&latest)
+	})
+	if err != nil {
+		s.Log.Warn("business migrations unreadable", "business", t.slug, "error", err.Error())
+		return
+	}
+	if latest < s.ExpectedMigration {
+		s.Log.Warn("business database is behind this API: run scripts/migrate.sh", "business", t.slug,
+			"latest", latest, "expected", s.ExpectedMigration)
+	}
+}
+
+// fromControl looks a business up in control_db (closed ones don't exist
+// here) and reads its data role's login from businesses/<slug>/env.
+func (s *Server) fromControl(ctx context.Context, slug string) (TenantInfo, error) {
+	var sealedSecret, sealedKey, status string
+	var authPort int
+	var info TenantInfo
+	err := s.Control.QueryRow(ctx, `select jwt_secret_sealed, service_key_sealed, auth_port, status, coalesce(tenant_business_id::text, '')
+		from businesses where slug = $1`, slug).Scan(&sealedSecret, &sealedKey, &authPort, &status, &info.BusinessID)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status == "closed") {
+		return TenantInfo{}, fail(http.StatusNotFound, "NOT_FOUND", "No such business.")
+	} else if err != nil {
+		return TenantInfo{}, err
+	}
+	if info.Secret, err = s.Sealer.Open(sealedSecret); err != nil {
+		return TenantInfo{}, err
+	}
+	if info.ServiceKey, err = s.Sealer.Open(sealedKey); err != nil {
+		return TenantInfo{}, err
+	}
+	info.AuthURL = fmt.Sprintf("http://127.0.0.1:%d", authPort)
+	env, err := control.ReadEnvFile(filepath.Join(s.KitDir, "businesses", slug, "env"))
+	if err != nil {
+		return TenantInfo{}, fmt.Errorf("business %s env: %w", slug, err)
+	}
+	if info.DBURL, err = s.localURL(env["API_DB_URL"]); err != nil {
+		return TenantInfo{}, fmt.Errorf("business %s API_DB_URL: %w", slug, err)
+	}
+	if info.AuthDBURL, err = s.localURL(env["AUTH_DB_URL"]); err != nil {
+		return TenantInfo{}, fmt.Errorf("business %s AUTH_DB_URL: %w", slug, err)
+	}
+	info.BaseURL = env["BASE_URL"]
+	return info, nil
+}
+
+func (t *tenant) close() {
+	t.pool.Close()
+	if t.authPool != nil {
+		t.authPool.Close()
+	}
+}
+
+func (s *Server) drop(slug string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t := s.tenants[slug]; t != nil {
+		t.close()
+		delete(s.tenants, slug)
+	}
+}
+
+// localURL points a business's database URL (written for the containers,
+// host "db") at PostgreSQL as this process reaches it.
+func (s *Server) localURL(raw string) (string, error) {
+	if raw == "" {
+		return "", errors.New("missing")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if s.PGHost != "" {
+		u.Host = s.PGHost
+	}
+	q := u.Query()
+	if q.Get("sslmode") == "" {
+		q.Set("sslmode", "disable")
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}

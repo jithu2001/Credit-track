@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"wholeflow/internal/auth"
 )
 
 // Enquiries from the product website's contact form. The form posts to
@@ -96,7 +97,7 @@ func (s *Server) leadRoutes(mux *http.ServeMux) {
 }
 
 func (s *Server) createLead(w http.ResponseWriter, r *http.Request) {
-	ip := clientIP(r)
+	ip := auth.ClientIP(r)
 	if !s.allowIP(ip, 5) {
 		writeErr(w, userErr(http.StatusTooManyRequests, "TOO_MANY", "Too many messages. Please try again in a minute."))
 		return

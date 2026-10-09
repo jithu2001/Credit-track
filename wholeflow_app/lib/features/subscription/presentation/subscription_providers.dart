@@ -1,7 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../../../core/errors/app_failure.dart';
-import '../../../core/providers.dart';
+import '../../../core/api/api_client.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../domain/service_status.dart';
 
@@ -16,8 +16,8 @@ Future<ServiceStatus?> serviceStatus(Ref ref) async {
   final user = ref.watch(currentUserProvider);
   if (user == null) return null;
   try {
-    final row = await ref.watch(supabaseProvider).from('service_status').select(ServiceStatus.columns).maybeSingle();
-    return row == null ? null : ServiceStatus.fromJson(row);
+    final row = (await ref.watch(apiClientProvider).get('service-status'))['service_status'];
+    return row is Map<String, dynamic> ? ServiceStatus.fromJson(row) : null;
   } catch (e) {
     AppFailure.from(e); // a 402 still pauses the app
     return null; // banners are optional: never break a screen over them

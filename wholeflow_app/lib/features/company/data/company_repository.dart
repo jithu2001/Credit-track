@@ -1,31 +1,32 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/api/api_client.dart';
 import '../../../core/errors/app_failure.dart';
-import '../../../core/providers.dart';
 import '../domain/company.dart';
 
 part 'company_repository.g.dart';
 
+/// Companies, the caller's assignments and shop areas, from the app API.
 class CompanyRepository {
-  CompanyRepository(this._client);
+  CompanyRepository(this._api);
 
-  final SupabaseClient _client;
+  final ApiClient _api;
 
   Future<List<Company>> visibleCompanies() async {
     try {
-      final rows = await _client.from('tally_companies').select(Company.columns).order('company_name');
-      return rows.map(Company.fromJson).toList();
+      final body = await _api.get('companies');
+      return [for (final r in (body['companies'] as List).cast<Map<String, dynamic>>()) Company.fromJson(r)];
     } catch (e) {
       throw AppFailure.from(e);
     }
   }
 
   /// The caller's own assignments (staff); owners have none and need none.
+  /// [userId] is the signed-in user: the server answers for them only.
   Future<List<CompanyAccess>> accessOf(String userId) async {
     try {
-      final rows = await _client.from('staff_company_access').select(CompanyAccess.columns).eq('user_id', userId);
-      return rows.map(CompanyAccess.fromJson).toList();
+      final body = await _api.get('me/access');
+      return [for (final r in (body['access'] as List).cast<Map<String, dynamic>>()) CompanyAccess.fromJson(r)];
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -34,23 +35,8 @@ class CompanyRepository {
   /// Distinct Tally areas of a company's active shops, sorted (the site editor's "By area").
   Future<List<String>> areasOf(String companyId) async {
     try {
-      final rows = await fetchAll(
-        (from, to) => _client
-            .from('shops')
-            .select('area')
-            .eq('company_id', companyId)
-            .isFilter('deleted_at', null)
-            .not('area', 'is', null)
-            .order('area')
-            .range(from, to),
-        pageSize: 1000,
-      );
-      // Exact values: the shop list filters with `area in (...)`.
-      final areas = <String>{
-        for (final r in rows)
-          if ((r['area'] as String?)?.isNotEmpty ?? false) r['area'] as String,
-      };
-      return areas.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+      final body = await _api.get('companies/$companyId/areas');
+      return (body['areas'] as List).cast<String>();
     } catch (e) {
       throw AppFailure.from(e);
     }
@@ -58,4 +44,4 @@ class CompanyRepository {
 }
 
 @Riverpod(keepAlive: true)
-CompanyRepository companyRepository(Ref ref) => CompanyRepository(ref.watch(supabaseProvider));
+CompanyRepository companyRepository(Ref ref) => CompanyRepository(ref.watch(apiClientProvider));

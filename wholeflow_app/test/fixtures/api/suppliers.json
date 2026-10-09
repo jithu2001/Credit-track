@@ -1,0 +1,25 @@
+{
+  "suppliers": [
+    {
+      "id": "f0000000-0000-0000-0000-00000000b001",
+      "company_id": "c0000000-0000-0000-0000-00000000a001",
+      "name": "Supplier One",
+      "aliases": [],
+      "ledger_group": null,
+      "phone": null,
+      "phones": [],
+      "contact_person": null,
+      "email": null,
+      "gstin": null,
+      "address": null,
+      "address_lines": [],
+      "state": null,
+      "pincode": null,
+      "opening_balance_amount": 0.00,
+      "opening_balance_type": "",
+      "payable": 2500.00,
+      "synced_at": "2026-10-08T08:18:34.709804+00:00"
+    }
+  ]
+}
+

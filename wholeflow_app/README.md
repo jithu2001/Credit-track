@@ -31,26 +31,61 @@ flutter pub get
 
 # WholeFlow Owner (full business control, insights, staff admin, sync health, stock valuation)
 flutter run --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
-flutter build apk --release --flavor owner -t lib/main_owner.dart --dart-define-from-file=env/hosted.json
 
 # WholeFlow Staff (lean, for 1-2 GB phones: assigned shops, dues, quantities, visits)
 flutter run --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
-flutter build apk --release --flavor staff -t lib/main_staff.dart --dart-define-from-file=env/hosted.json
 ```
 
-Both apps can be installed side by side on the same phone (`com.wholeflow.wholeflow_app` and `com.wholeflow.staff`). Owner is the default flavor, so a plain `flutter run` builds it. `env/*.json` is git-ignored except `hosted.json`, which holds no secrets.
+Both apps can be installed side by side on the same phone (`com.wholeflow.owner` and `com.wholeflow.staff`). Owner is the default flavor, so a plain `flutter run` builds it. `env/*.json` is git-ignored except `hosted.json`, which holds no secrets.
 
 The app talks to the server's login (GoTrue) and data API (PostgREST) through the `supabase_flutter` package, which is only the client library for those open-source servers. There is no Supabase account or project.
+
+## Release builds (Google Play)
+
+Release builds are signed with the **upload key** from `android/key.properties` (git-ignored), shrunk with R8 and with obfuscated Dart code. Without `key.properties` a release build stops with an error; debug builds and `flutter test` don't need it.
+
+**Once: create the upload key** (keep it outside the repo, back it up with its passwords; losing it means asking Google for an upload-key reset):
+
+```bash
+mkdir -p ~/keys
+keytool -genkey -v -keystore ~/keys/wholeflow-upload.jks -storetype JKS \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+cp android/key.properties.example android/key.properties   # then fill in the path and passwords
+```
+
+**Play App Signing:** when creating each app in Play Console (Owner `com.wholeflow.owner`, Staff `com.wholeflow.staff`), keep "Let Google manage and protect your app signing key" (the default). Google signs what users install; your key above is only the upload key, so it can be reset through Play Console if it is ever lost. Use the same upload key for both apps.
+
+**Each release:**
+
+1. Raise the build number in `pubspec.yaml` (`version: 1.0.1+2`: the part after `+` is the Android versionCode and must go up with every upload).
+2. Build both bundles:
+
+   ```bash
+   tool/build_release.sh
+   # which runs, for each flavor:
+   flutter build appbundle --release --flavor owner -t lib/main_owner.dart \
+     --obfuscate --split-debug-info=build/symbols/owner --dart-define-from-file=env/hosted.json
+   flutter build appbundle --release --flavor staff -t lib/main_staff.dart \
+     --obfuscate --split-debug-info=build/symbols/staff --dart-define-from-file=env/hosted.json
+   ```
+
+3. Upload `build/app/outputs/bundle/<flavor>Release/app-<flavor>-release.aab`, keep `build/symbols/<flavor>/` for that version (needed to read obfuscated stack traces with `flutter symbolize`), and tag it: `git tag app-<version>`.
+
+`-P wfLocal=true` (local server testing) is refused for release builds.
+
+**Too-old apps:** every request carries `X-App-Version` (`<version>+<build>`) and `X-App-Platform`. When the server's minimum version is raised, older apps get HTTP 426 and show only an "Update required" screen with a Google Play button.
+
+**Crash reports:** uncaught errors are sent (signed in only, at most 5 per run, message and stack trace only, tokens removed) to the business's `POST /api/v1/client-errors`.
 
 ## Backend pieces (in `WholeFlow/`)
 
 | Path | What it does |
 |---|---|
-| `db/migrations/0001`–`0007` | The business database: tables, Row Level Security, reports (`overdue_shops`, `site_report`), sites and visits, subscription status. The WholeFlow server applies them to every business (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). |
-| `staff-service/` | The staff service, one for every business on the server (`multi.ts`): owner-only `create_staff`, `update_staff`, `set_companies`, `set_active`, `reset_password` |
+| `db/migrations/0001`–`0009` | The business database: tables, Row Level Security, reports (`overdue_shops`, `site_report`), sites and visits, subscription status. The WholeFlow server applies them to every business (`scripts/migrate.sh`, or admin app → Settings → *Update all businesses*). |
+| `internal/appapi/staff_http.go` | Staff management for every business (`/b/<slug>/api/v1/staff`): owner-only create, update, companies and sites, enable/disable, reset password |
 | `db/tests/*.sql` + `db/tests/run_local.sh` | Run every migration and SQL test on a throwaway Postgres in Docker; everything is rolled back |
 
-Tests: `WholeFlow/db/tests/run_local.sh` (SQL) and `cd WholeFlow/staff-service && deno test` (staff service).
+Tests: `WholeFlow/db/tests/run_local.sh` (SQL) and the Go tests in `WholeFlow` (`go test ./...`; with `WF_TEST_PG` they cover every endpoint).
 
 ## How access works
 

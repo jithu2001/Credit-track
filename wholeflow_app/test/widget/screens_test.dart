@@ -90,6 +90,7 @@ Future<List<Override>> baseOverrides({
   FakeVisitRepository? visitRepo,
   LocationReading? location,
   bool devMode = false,
+  bool askLocationPermission = false,
 }) async {
   SharedPreferences.setMockInitialValues({});
   final prefs = await SharedPreferences.getInstance();
@@ -100,7 +101,7 @@ Future<List<Override>> baseOverrides({
       FakeCompanyRepository(companies: companies, access: access, areas: const ['Pala', 'Rajakkad']),
     ),
     shopRepositoryProvider.overrideWithValue(shopRepo ?? FakeShopRepository(shops: shops)),
-    dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository()),
+    dashboardRepositoryProvider.overrideWithValue(dashboard ?? FakeDashboardRepository(topDues: shops)),
     analyticsRepositoryProvider.overrideWithValue(FakeAnalyticsRepository()),
     overdueRepositoryProvider.overrideWithValue(overdueRepo ?? FakeOverdueRepository()),
     siteRepositoryProvider.overrideWithValue(siteRepo ?? FakeSiteRepository(sitesList: sites)),
@@ -110,6 +111,7 @@ Future<List<Override>> baseOverrides({
       FakeLocationService(
         location ?? const LocationReading(latitude: 9.85, longitude: 76.97, accuracyMeters: 10, isMocked: false),
         devMode: devMode,
+        askPermission: askLocationPermission,
       ),
     ),
   ];
@@ -591,6 +593,31 @@ void main() {
       expect(find.textContaining("rougher than this shop's 5 m limit"), findsOneWidget);
     });
 
+    testWidgets('check-in: before the permission prompt, says what location is collected and who sees it', (tester) async {
+      final repo = FakeVisitRepository();
+      await pumpRoutedScreen(
+        tester,
+        CheckInScreen(task: task('2', 'NEXT SHOP', VisitState.pending)),
+        overrides: await baseOverrides(user: staffUser, visitRepo: repo, askLocationPermission: true),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('location-disclosure')), findsOneWidget);
+      expect(find.textContaining('sends it to your business owner'), findsOneWidget);
+      expect(find.textContaining('only while the check-in screen is open'), findsOneWidget);
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Check-in needs your location'), findsOneWidget);
+
+      // Asking again shows it again; Continue goes on to read the location.
+      await tester.tap(find.byTooltip('Refresh location'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Check-in needs your location'), findsNothing);
+      expect(repo.checkIns, isEmpty);
+    });
+
     testWidgets('check-in: Developer options on shows the warning and keeps Check in off', (tester) async {
       final repo = FakeVisitRepository();
       await pumpRoutedScreen(
@@ -905,6 +932,7 @@ void main() {
           theme: dark ? AppTheme.dark() : AppTheme.light(),
           overrides: await baseOverrides(
             dashboard: FakeDashboardRepository(
+              topDues: shops,
               summaryRow: const CompanySummary(
                 companyId: 'co-a',
                 companyName: 'JMJ Marketing',

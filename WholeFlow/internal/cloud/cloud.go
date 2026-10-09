@@ -47,41 +47,6 @@ type Provider interface {
 	CreateSyncLog(ctx context.Context, l SyncLog) error
 }
 
-// UserManager is an optional capability of a Provider: managing the
-// business's own login accounts (owner / staff) for the mobile app. The sync
-// engine never uses it; only the Cloud Sync page does.
-type UserManager interface {
-	// ListUsers returns the accounts of the configured business.
-	ListUsers(ctx context.Context) ([]User, error)
-	// CreateUser creates a login (email + password) and its users row.
-	CreateUser(ctx context.Context, u NewUser) (User, error)
-	// SetUserPassword replaces the password of an account.
-	SetUserPassword(ctx context.Context, id, password string) error
-	// SetUserActive enables or disables an account.
-	SetUserActive(ctx context.Context, id string, active bool) error
-}
-
-const (
-	RoleOwner = "OWNER"
-	RoleStaff = "STAFF"
-)
-
-type User struct {
-	ID        string
-	Email     string
-	Name      string
-	Role      string
-	IsActive  bool
-	CreatedAt time.Time
-}
-
-type NewUser struct {
-	Email    string
-	Password string
-	Name     string
-	Role     string
-}
-
 // ---------------------------------------------------------------- models
 
 type Connection struct {

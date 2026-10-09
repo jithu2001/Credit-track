@@ -26,7 +26,6 @@ abstract class StaffMember with _$StaffMember {
 
   factory StaffMember.fromJson(Map<String, dynamic> json) => _$StaffMemberFromJson(json);
 
-  static const columns = 'id,role,name,email,is_active,requires_check_in,created_at';
 
   bool get isOwner => role == UserRole.owner;
   bool get hasNoCompany => !isOwner && companies.isEmpty;

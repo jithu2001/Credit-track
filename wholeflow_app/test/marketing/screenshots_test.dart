@@ -1,13 +1,22 @@
 // Renders real app screens with invented data for the product website
 // (website/img). Skipped in the normal test run; to regenerate:
 //
-//   WF_SCREENSHOTS=1 flutter test test/marketing --update-goldens
+//   WF_SCREENSHOTS=1 flutter test test/marketing
 //
-// Output: test/marketing/out/*.png at 1080×2400 (360×800 logical, ×3).
+// Output: test/marketing/out/*.png at 1080×2400 (360×800 logical, captured at ×3).
+//
+// Google Play phone screenshots (9:16, 1080×1920, captured at ×3):
+//
+//   WF_SCREENSHOTS=play flutter test test/marketing
+//
+// Output: test/marketing/out/play/*.png (owner-* for WholeFlow Owner,
+// staff-* for WholeFlow Staff).
 // Every name and amount here is invented: no real business, phone or key.
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -51,12 +60,16 @@ import 'package:wholeflow_app/features/visits/data/visit_repository.dart';
 import 'package:wholeflow_app/features/visits/domain/visit.dart';
 import 'package:wholeflow_app/features/visits/presentation/staff_visits_screen.dart';
 
+import '../stock_like_server.dart';
 import '../widget/helpers.dart';
 
 final _skip = Platform.environment['WF_SCREENSHOTS'] == null;
 
-const _company = Company(id: 'co', companyName: 'Periyar Traders (FY 2026-27)', syncStatus: 'SYNCED');
-const _staff = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Anand', requiresCheckIn: true);
+/// Play Store mode: 9:16 screens written at full resolution.
+final _play = Platform.environment['WF_SCREENSHOTS'] == 'play';
+
+const _company = Company(id: 'co', companyName: 'Sunrise Distributors (FY 2026-27)', syncStatus: 'SYNCED');
+const _staff = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Sam', requiresCheckIn: true);
 
 ShopSummary _shop(String id, String name, String site, int rupees, {int paise = 0}) => ShopSummary(
   id: id,
@@ -68,21 +81,21 @@ ShopSummary _shop(String id, String name, String site, int rupees, {int paise = 
 );
 
 final _shops = [
-  _shop('s1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', 184850),
-  _shop('s2', 'HIGHRANGE TYRE HOUSE -- KATTAPPANA', 'Kattappana', 152900),
-  _shop('s3', 'GREENVALLEY MOTORS -- NEDUMKANDAM', 'Kattappana', 96420, paise: 50),
-  _shop('s4', 'CARDAMOM HILLS AGENCIES -- VANDANMEDU', 'Kumily', 74880),
-  _shop('s5', 'RIVERSIDE LUBES -- ADIMALI', 'Adimali', 61200),
-  _shop('s6', 'TEAVALLEY AUTO CENTRE -- THODUPUZHA', 'Thodupuzha', 48315),
-  _shop('s7', 'MISTY PEAK MOTOR WORKS -- MUNNAR', 'Adimali', 33760),
-  _shop('s8', 'KAILAS TYRES -- KUMILY', 'Kumily', -12500),
+  _shop('s1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', 184850),
+  _shop('s2', 'NORTHSTAR TYRE HOUSE -- HILLVIEW', 'Hillview', 152900),
+  _shop('s3', 'EVERGREEN MOTORS -- MAPLE JUNCTION', 'Hillview', 96420, paise: 50),
+  _shop('s4', 'BRIGHT STAR AGENCIES -- SILVER OAK', 'Riverbend', 74880),
+  _shop('s5', 'COMET LUBES -- LAKESIDE', 'Lakeside', 61200),
+  _shop('s6', 'ZENITH AUTO CENTRE -- GREENFIELD', 'Greenfield', 48315),
+  _shop('s7', 'ORBIT MOTOR WORKS -- CORAL BAY', 'Lakeside', 33760),
+  _shop('s8', 'NOVA TYRES -- RIVERBEND', 'Riverbend', -12500),
 ];
 
 const _sites = [
-  Site(id: 'site-kumily', companyId: 'co', name: 'Kumily'),
-  Site(id: 'site-kattappana', companyId: 'co', name: 'Kattappana'),
-  Site(id: 'site-adimali', companyId: 'co', name: 'Adimali'),
-  Site(id: 'site-thodupuzha', companyId: 'co', name: 'Thodupuzha'),
+  Site(id: 'site-riverbend', companyId: 'co', name: 'Riverbend'),
+  Site(id: 'site-hillview', companyId: 'co', name: 'Hillview'),
+  Site(id: 'site-lakeside', companyId: 'co', name: 'Lakeside'),
+  Site(id: 'site-greenfield', companyId: 'co', name: 'Greenfield'),
 ];
 
 final _today = DateTime.now();
@@ -116,67 +129,121 @@ OverdueShop _overdue(
 });
 
 final _overdueShops = [
-  _overdue('s2', 'HIGHRANGE TYRE HOUSE -- KATTAPPANA', 'Kattappana', 152900, 88400, 52, [
+  _overdue('s2', 'NORTHSTAR TYRE HOUSE -- HILLVIEW', 'Hillview', 152900, 88400, 52, [
     (82, 'Sales · PT/1183', 51200),
     (64, 'Sales · PT/1246', 37200),
   ]),
-  _overdue('s1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', 184850, 62750, 37, [(67, 'Sales · PT/1209', 62750)]),
-  _overdue('s5', 'RIVERSIDE LUBES -- ADIMALI', 'Adimali', 61200, 24900, 19, [(49, 'Sales · PT/1301', 24900)]),
-  _overdue('s7', 'MISTY PEAK MOTOR WORKS -- MUNNAR', 'Adimali', 33760, 18210, 8, [(38, 'Sales · PT/1352', 18210)]),
+  _overdue('s1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', 184850, 62750, 37, [(67, 'Sales · PT/1209', 62750)]),
+  _overdue('s5', 'COMET LUBES -- LAKESIDE', 'Lakeside', 61200, 24900, 19, [(49, 'Sales · PT/1301', 24900)]),
+  _overdue('s7', 'ORBIT MOTOR WORKS -- CORAL BAY', 'Lakeside', 33760, 18210, 8, [(38, 'Sales · PT/1352', 18210)]),
 ];
 
 /// Unpaid bills older than 30 days for the same shops as the Overdue view.
 class _Analytics implements AnalyticsRepository {
+  // (shop, days ago, rupees): unpaid sales bills, no payments yet.
+  static const _bills = [
+    ('s2', 82, 51200),
+    ('s2', 64, 37200),
+    ('s2', 12, 64500),
+    ('s1', 67, 62750),
+    ('s1', 20, 121600),
+    ('s5', 49, 24900),
+    ('s5', 9, 36300),
+    ('s7', 38, 18210),
+    ('s7', 6, 15550),
+    ('s3', 15, 96420),
+    ('s4', 11, 74880),
+    ('s6', 8, 48315),
+  ];
+
   @override
-  Future<AnalyticsData> load(String companyId) async {
-    PaymentTxn sale(String shop, int daysAgo, int rupees, String no) => PaymentTxn(
-      shopId: shop,
-      date: _ago(daysAgo),
-      category: TxnCategory.sales,
-      debit: Money(rupees * 100),
-      credit: Money.zero,
-      voucher: 'Sales · $no',
-    );
-    return AnalyticsData(
-      booksFrom: _ago(365),
-      shops: [
-        for (final s in _shops.take(7))
-          ShopOpening(id: s.id, name: s.name, siteName: s.siteName, opening: Money.zero, receivable: s.receivable),
-      ],
-      txns: [
-        sale('s2', 82, 51200, 'PT/1183'),
-        sale('s2', 64, 37200, 'PT/1246'),
-        sale('s2', 12, 64500, 'PT/1440'),
-        sale('s1', 67, 62750, 'PT/1209'),
-        sale('s1', 20, 121600, 'PT/1411'),
-        sale('s5', 49, 24900, 'PT/1301'),
-        sale('s5', 9, 36300, 'PT/1458'),
-        sale('s7', 38, 18210, 'PT/1352'),
-        sale('s7', 6, 15550, 'PT/1466'),
-        sale('s3', 15, 96420, 'PT/1425'),
-        sale('s4', 11, 74880, 'PT/1437'),
-        sale('s6', 8, 48315, 'PT/1461'),
-      ],
-    );
+  Future<BusinessPaymentSummary> summary(String companyId, {required int creditDays}) async {
+    String rs(int r) => '$r.00';
+    String bucket(int daysAgo) => switch (daysAgo - creditDays) {
+      <= 0 => 'not_due',
+      <= 30 => 'd1_30',
+      <= 60 => 'd31_60',
+      <= 90 => 'd61_90',
+      _ => 'd90_plus',
+    };
+    Map<String, String> ageing(Iterable<(String, int, int)> bills) {
+      final out = {for (final k in AgeBucket.values) k.code: 0};
+      for (final b in bills) {
+        out[bucket(b.$2)] = out[bucket(b.$2)]! + b.$3;
+      }
+      return out.map((k, v) => MapEntry(k, rs(v)));
+    }
+
+    var overdueTotal = 0, openTotal = 0, overdueShops = 0;
+    final shops = <Map<String, dynamic>>[];
+    for (final s in _shops.take(7)) {
+      final mine = [
+        for (final b in _bills)
+          if (b.$1 == s.id) b,
+      ];
+      if (mine.isEmpty) continue;
+      final open = mine.fold(0, (t, b) => t + b.$3);
+      final late = [
+        for (final b in mine)
+          if (b.$2 > creditDays) b,
+      ];
+      final overdue = late.fold(0, (t, b) => t + b.$3);
+      final maxLate = late.fold(0, (m, b) => b.$2 - creditDays > m ? b.$2 - creditDays : m);
+      overdueTotal += overdue;
+      openTotal += open;
+      if (overdue > 0) overdueShops++;
+      shops.add({
+        'shop': {'id': s.id, 'name': s.name, 'site_name': s.siteName, 'opening': '0.00', 'receivable': rs(open)},
+        'advance': '0.00',
+        'overdue': rs(overdue),
+        'open_amount': rs(open),
+        'open_bills': mine.length,
+        'max_days_overdue': maxLate,
+        'oldest_open_bill_date': _d(mine.map((b) => b.$2).reduce((a, b) => a > b ? a : b)),
+        'ageing': ageing(mine),
+        'paid_bills': 0,
+        'on_time_bills': 0,
+        'last_payment_amount': '0.00',
+        'computed_balance': rs(open),
+        'reconciled': true,
+      });
+    }
+    return BusinessPaymentSummary.fromJson({
+      'credit_days': creditDays,
+      'today': _d(0),
+      'overdue': rs(overdueTotal),
+      'overdue_shops': overdueShops,
+      'open_amount': rs(openTotal),
+      'ageing': ageing([
+        for (final b in _bills)
+          if (_shops.take(7).any((s) => s.id == b.$1)) b,
+      ]),
+      'shops': shops,
+    });
   }
+
+  @override
+  Future<ShopPayments> shop(String shopId, {required int creditDays}) => throw UnimplementedError();
 }
 
 class _Dashboard implements DashboardRepository {
   @override
-  Future<CompanySummary?> summary(String companyId) async => const CompanySummary(
-    companyId: 'co',
-    companyName: 'Periyar Traders (FY 2026-27)',
-    shops: 214,
-    shopsWithDues: 96,
-    totalOutstanding: Money(248641250),
-    totalCredit: Money(11230000),
-  );
-  @override
-  Future<SyncState?> syncState(String companyId) async =>
-      SyncState(lastSuccessfulSyncAt: DateTime.now().subtract(const Duration(minutes: 3)));
-  @override
-  Future<MonthSales> monthSales(String companyId, DateTime now) async =>
-      MonthSales(month: DateTime(now.year, now.month), amount: const Money(684215000), bills: 143);
+  Future<Dashboard> load(String companyId) async {
+    final now = DateTime.now();
+    return Dashboard(
+      summary: const CompanySummary(
+        companyId: 'co',
+        companyName: 'Sunrise Distributors (FY 2026-27)',
+        shops: 214,
+        shopsWithDues: 96,
+        totalOutstanding: Money(248641250),
+        totalCredit: Money(11230000),
+      ),
+      syncState: SyncState(lastSuccessfulSyncAt: now.subtract(const Duration(minutes: 3))),
+      monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(684215000), bills: 143),
+      topDues: _shops.take(10).toList(),
+    );
+  }
 }
 
 ShopTransaction _txn(String id, int daysAgo, TxnCategory cat, String type, String no, {int debit = 0, int credit = 0}) =>
@@ -203,57 +270,26 @@ final _statement = [
 
 class _Inventory implements InventoryRepository {
   @override
-  Future<List<StockItem>> items(String companyId, {required bool withCosts}) async => [
-    StockItem(
-      id: 'i1',
-      name: 'TYRE 145/80 R12 TL',
-      group: 'Tyres',
-      unit: 'Nos',
-      closingQty: 1250,
-      closingValue: withCosts ? const Money(287500000) : null,
-    ),
-    StockItem(
-      id: 'i2',
-      name: 'TYRE 90/100-10 TL',
-      group: 'Tyres',
-      unit: 'Nos',
-      closingQty: 642,
-      closingValue: withCosts ? const Money(96300000) : null,
-    ),
-    StockItem(
-      id: 'i3',
-      name: 'ENGINE OIL 20W40 1 L',
-      group: 'Lubricants',
-      unit: 'Ltr',
-      closingQty: 388,
-      closingValue: withCosts ? const Money(15132000) : null,
-    ),
-    StockItem(
-      id: 'i4',
-      name: 'TUBE 3.00-17',
-      group: 'Tubes',
-      unit: 'Nos',
-      closingQty: 14,
-      reorderLevel: 50,
-      closingValue: withCosts ? const Money(2940000) : null,
-    ),
-    StockItem(
+  Future<StockList> items(String companyId) async => stockListOf([
+    stockItem(id: 'i1', name: 'TYRE 145/80 R12 TL', group: 'Tyres', unit: 'Nos', qty: 1250, value: const Money(287500000)),
+    stockItem(id: 'i2', name: 'TYRE 90/100-10 TL', group: 'Tyres', unit: 'Nos', qty: 642, value: const Money(96300000)),
+    stockItem(id: 'i3', name: 'ENGINE OIL 20W40 1 L', group: 'Lubricants', unit: 'Ltr', qty: 388, value: const Money(15132000)),
+    stockItem(id: 'i4', name: 'TUBE 3.00-17', group: 'Tubes', unit: 'Nos', qty: 14, reorder: 50, value: const Money(2940000)),
+    stockItem(
       id: 'i5',
       name: 'BRAKE SHOE SET (2W)',
       group: 'Spares',
       unit: 'Set',
-      closingQty: 9,
-      reorderLevel: 40,
-      closingValue: withCosts ? const Money(1782000) : null,
+      qty: 9,
+      reorder: 40,
+      value: const Money(1782000),
     ),
-    const StockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', closingQty: 0),
-  ];
+    stockItem(id: 'i6', name: 'CHAIN SPROCKET KIT', group: 'Spares', unit: 'Kit', qty: 0),
+  ]);
   @override
-  Future<StockItem> item(String itemId, {required bool withCosts}) async => throw UnimplementedError();
+  Future<StockItem> item(String itemId) async => throw UnimplementedError();
   @override
-  Future<List<ItemPurchase>> purchasesOf(String itemId, {int limit = 20}) async => const [];
-  @override
-  Future<Map<String, double>> minimums(String companyId) async => const {};
+  Future<List<ItemPurchase>> purchasesOf(String itemId) async => const [];
   @override
   Future<void> setMinimum(String companyId, Iterable<String> itemIds, double? min) async {}
 }
@@ -278,7 +314,7 @@ VisitTask _task(String id, String shop, String site, VisitState state) => VisitT
   taskId: id,
   companyId: 'co',
   staffId: 'staff-1',
-  staffName: 'Anand',
+  staffName: 'Sam',
   shopId: 's-$id',
   shopName: shop,
   siteName: site,
@@ -300,26 +336,27 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     ),
     shopRepositoryProvider.overrideWithValue(
       FakeShopRepository(
+        companyName: 'Sunrise Distributors (FY 2026-27)',
         shops: _shops,
         detailShop: const ShopDetail(
           id: 's1',
           companyId: 'co',
-          name: 'MALABAR AUTO SPARES -- KUMILY',
-          area: 'Kumily',
+          name: 'BLUEWAVE AUTO SPARES -- RIVERBEND',
+          area: 'Riverbend',
           receivable: Money(18485000),
         ),
       ),
     ),
     dashboardRepositoryProvider.overrideWithValue(_Dashboard()),
     analyticsRepositoryProvider.overrideWithValue(_Analytics()),
-    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops)),
+    overdueRepositoryProvider.overrideWithValue(FakeOverdueRepository(_overdueShops, 'Sunrise Distributors (FY 2026-27)')),
     siteRepositoryProvider.overrideWithValue(
       FakeSiteRepository(
         sitesList: _sites,
         reportRows: const [
           SiteReportRow(
-            siteId: 'site-kumily',
-            siteName: 'Kumily',
+            siteId: 'site-riverbend',
+            siteName: 'Riverbend',
             shops: 58,
             shopsWithDues: 31,
             outstanding: Money(84213000),
@@ -329,8 +366,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(161520000),
           ),
           SiteReportRow(
-            siteId: 'site-kattappana',
-            siteName: 'Kattappana',
+            siteId: 'site-hillview',
+            siteName: 'Hillview',
             shops: 64,
             shopsWithDues: 29,
             outstanding: Money(76054250),
@@ -340,8 +377,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(198410000),
           ),
           SiteReportRow(
-            siteId: 'site-adimali',
-            siteName: 'Adimali',
+            siteId: 'site-lakeside',
+            siteName: 'Lakeside',
             shops: 47,
             shopsWithDues: 22,
             outstanding: Money(52896000),
@@ -351,8 +388,8 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
             collections: Money(127250000),
           ),
           SiteReportRow(
-            siteId: 'site-thodupuzha',
-            siteName: 'Thodupuzha',
+            siteId: 'site-greenfield',
+            siteName: 'Greenfield',
             shops: 45,
             shopsWithDues: 14,
             outstanding: Money(35478000),
@@ -368,12 +405,12 @@ Future<List<Override>> _overrides({AppUser user = owner}) async {
     visitRepositoryProvider.overrideWithValue(
       FakeVisitRepository(
         taskList: [
-          _task('1', 'MALABAR AUTO SPARES -- KUMILY', 'Kumily', VisitState.verified),
-          _task('2', 'CARDAMOM HILLS AGENCIES -- VANDANMEDU', 'Kumily', VisitState.verified),
-          _task('3', 'KAILAS TYRES -- KUMILY', 'Kumily', VisitState.verified),
-          _task('4', 'THEKKADY MOTOR STORES -- KUMILY', 'Kumily', VisitState.pending),
-          _task('5', 'SPICE ROUTE AUTOMOBILES -- KUMILY', 'Kumily', VisitState.pending),
-          _task('6', 'HILLVIEW TYRE POINT -- CHELIMADA', 'Kumily', VisitState.pending),
+          _task('1', 'BLUEWAVE AUTO SPARES -- RIVERBEND', 'Riverbend', VisitState.verified),
+          _task('2', 'BRIGHT STAR AGENCIES -- SILVER OAK', 'Riverbend', VisitState.verified),
+          _task('3', 'NOVA TYRES -- RIVERBEND', 'Riverbend', VisitState.verified),
+          _task('4', 'PIONEER MOTOR STORES -- RIVERBEND', 'Riverbend', VisitState.pending),
+          _task('5', 'GALAXY AUTOMOBILES -- RIVERBEND', 'Riverbend', VisitState.pending),
+          _task('6', 'SUMMIT TYRE POINT -- PALM GROVE', 'Riverbend', VisitState.pending),
         ],
       ),
     ),
@@ -420,7 +457,7 @@ Future<void> _shot(
 }) async {
   debugDisableShadows = false; // real elevation shadows in the picture
   tester.view.devicePixelRatio = 3;
-  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.physicalSize = _play ? const Size(1080, 1920) : const Size(1080, 2400);
   addTearDown(tester.view.reset);
   final items = user.isOwner ? navItemsFor(UserRole.owner) : staffNavItemsFor(checksIn: true);
   await tester.pumpWidget(
@@ -441,7 +478,15 @@ Future<void> _shot(
     await then();
     await tester.pumpAndSettle();
   }
-  await expectLater(find.byKey(const Key('shot')), matchesGoldenFile('out/$name.png'));
+  // Captured at ×3 (full phone resolution); a golden file would be 1×.
+  final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(const Key('shot')));
+  await tester.runAsync(() async {
+    final image = await boundary.toImage(pixelRatio: 3);
+    final png = await image.toByteData(format: ui.ImageByteFormat.png);
+    File('test/marketing/out/${_play ? 'play/' : ''}$name.png')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(png!.buffer.asUint8List());
+  });
   debugDisableShadows = true; // the test framework checks it is back to its default
 }
 
@@ -483,5 +528,8 @@ void main() {
     testWidgets('sites', (t) => _shot(t, 'sites', const SitesScreen(), nav: 2));
     testWidgets('stock', (t) => _shot(t, 'stock', const StockScreen(), nav: 3));
     testWidgets('staff visits', (t) => _shot(t, 'staff-visits', const StaffVisitsScreen(), user: _staff, nav: 2));
+    testWidgets('staff dashboard', (t) => _shot(t, 'staff-dashboard', const DashboardScreen(), user: _staff));
+    testWidgets('staff shops', (t) => _shot(t, 'staff-shops', const ShopsScreen(), user: _staff, nav: 1));
+    testWidgets('staff stock', (t) => _shot(t, 'staff-stock', const StockScreen(), user: _staff, nav: 3));
   });
 }

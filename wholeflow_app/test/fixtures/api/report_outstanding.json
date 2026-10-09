@@ -1,0 +1,26 @@
+{
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "company_name": "API Co",
+  "generated_at": "2026-07-20T06:00:00Z",
+  "groups": [
+    {
+      "shops": [
+        {
+          "area": null,
+          "name": "Alpha Stores",
+          "phone": "9800000001",
+          "receivable": "1100.00",
+          "shop_id": "d0000000-0000-0000-0000-00000000a001",
+          "site_id": "e0000000-0000-0000-0000-00000000a001",
+          "site_name": "Town"
+        }
+      ],
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town",
+      "subtotal": "1100.00"
+    }
+  ],
+  "shop_count": 1,
+  "total": "1100.00"
+}
+

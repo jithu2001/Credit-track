@@ -135,10 +135,13 @@ reset role;
 
 -- ------------------------------------------------------------------ site report
 
-select pg_temp.act_as('a2000000-0000-0000-0000-000000000001');
+-- Signed-in roles have no temporary-table rights: postgres makes the table.
 create temp table rep as
+  select * from public.site_report('c2000000-0000-0000-0000-0000000000a1', current_date, current_date) limit 0;
+grant select, insert on rep to authenticated;
+select pg_temp.act_as('a2000000-0000-0000-0000-000000000001');
+insert into rep
   select * from public.site_report('c2000000-0000-0000-0000-0000000000a1', date_trunc('month', current_date)::date, current_date);
-grant select on rep to authenticated;
 select pg_temp.check((select count(*) from rep) = 3, 'owner report: Town, Hills and no site');
 select pg_temp.check((select shops = 2 and shops_with_dues = 1 and outstanding = 1000 and advance = 200 and sales = 700 and collections = 300
                       from rep where site_name = 'Town'), 'owner report: Town figures (last year''s sale left out)');

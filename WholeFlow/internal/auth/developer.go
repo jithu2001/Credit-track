@@ -80,21 +80,36 @@ func VerifyPassword(encoded, password string) bool {
 
 // ---------------------------------------------------------------- sessions
 
+// MaxSessionAge caps a session however active it stays (the idle timeout
+// alone would let a busy session live for ever).
+const MaxSessionAge = 12 * time.Hour
+
 type session struct {
 	user    string
+	created time.Time
 	expires time.Time
 }
 
 // Sessions is an in-memory session table: restarting the service logs
-// everyone out, which is fine for a local admin tool.
+// everyone out, which is fine for a local admin tool. A session ends after
+// ttl without use, and MaxAge after it was made at the latest.
 type Sessions struct {
-	mu   sync.Mutex
-	ttl  time.Duration
-	toks map[string]session
+	mu     sync.Mutex
+	ttl    time.Duration
+	MaxAge time.Duration // 0 = MaxSessionAge
+	toks   map[string]session
+	now    func() time.Time
 }
 
 func NewSessions(ttl time.Duration) *Sessions {
-	return &Sessions{ttl: ttl, toks: map[string]session{}}
+	return &Sessions{ttl: ttl, toks: map[string]session{}, now: time.Now}
+}
+
+func (s *Sessions) maxAge() time.Duration {
+	if s.MaxAge > 0 {
+		return s.MaxAge
+	}
+	return MaxSessionAge
 }
 
 func (s *Sessions) Create(user string) (string, error) {
@@ -105,29 +120,31 @@ func (s *Sessions) Create(user string) (string, error) {
 	tok := base64.RawURLEncoding.EncodeToString(b)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := time.Now()
+	now := s.now()
 	for k, v := range s.toks {
-		if now.After(v.expires) {
+		if now.After(v.expires) || now.Sub(v.created) >= s.maxAge() {
 			delete(s.toks, k)
 		}
 	}
-	s.toks[tok] = session{user: user, expires: now.Add(s.ttl)}
+	s.toks[tok] = session{user: user, created: now, expires: now.Add(s.ttl)}
 	return tok, nil
 }
 
-// Validate returns the user for a live token and slides its expiry.
+// Validate returns the user for a live token and slides its idle expiry
+// (never past the session's maximum age).
 func (s *Sessions) Validate(tok string) (string, bool) {
 	if tok == "" {
 		return "", false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
 	v, ok := s.toks[tok]
-	if !ok || time.Now().After(v.expires) {
+	if !ok || now.After(v.expires) || now.Sub(v.created) >= s.maxAge() {
 		delete(s.toks, tok)
 		return "", false
 	}
-	v.expires = time.Now().Add(s.ttl)
+	v.expires = now.Add(s.ttl)
 	s.toks[tok] = v
 	return v.user, true
 }
@@ -136,6 +153,18 @@ func (s *Sessions) Revoke(tok string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.toks, tok)
+}
+
+// RevokeUser ends every session of user except keep ("" = all of them),
+// e.g. after a password change or when the account is disabled.
+func (s *Sessions) RevokeUser(user, keep string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for tok, v := range s.toks {
+		if v.user == user && tok != keep {
+			delete(s.toks, tok)
+		}
+	}
 }
 
 // ---------------------------------------------------------------- login throttling
@@ -150,6 +179,7 @@ type Limiter struct {
 	fails       map[string][]time.Time
 	locked      map[string]time.Time
 	now         func() time.Time
+	lastPrune   time.Time
 }
 
 func NewLimiter(maxFailures int, window, lockout time.Duration) *Limiter {
@@ -217,11 +247,16 @@ func (l *Limiter) recentLocked(key string, now time.Time) []time.Time {
 	return recent
 }
 
+// pruneEvery: expired entries are dropped at most this often, so a flood of
+// random keys can neither grow the maps for ever nor make every Allow scan them.
+const pruneEvery = time.Minute
+
 // pruneLocked drops expired entries so random usernames cannot grow the maps forever.
 func (l *Limiter) pruneLocked(now time.Time) {
-	if len(l.fails)+len(l.locked) < 256 {
+	if len(l.fails)+len(l.locked) < 256 || now.Sub(l.lastPrune) < pruneEvery {
 		return
 	}
+	l.lastPrune = now
 	for k := range l.fails {
 		if len(l.recentLocked(k, now)) == 0 {
 			delete(l.fails, k)
@@ -230,17 +265,6 @@ func (l *Limiter) pruneLocked(now time.Time) {
 	for k, until := range l.locked {
 		if !now.Before(until) {
 			delete(l.locked, k)
-		}
-	}
-}
-
-// RevokeAllExcept ends every session but keep (e.g. after a password change).
-func (s *Sessions) RevokeAllExcept(keep string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for tok := range s.toks {
-		if tok != keep {
-			delete(s.toks, tok)
 		}
 	}
 }

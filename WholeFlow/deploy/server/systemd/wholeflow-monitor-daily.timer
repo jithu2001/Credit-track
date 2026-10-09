@@ -1,0 +1,9 @@
+[Unit]
+Description=Write the WholeFlow daily summary in the late evening (India time)
+
+[Timer]
+OnCalendar=*-*-* 23:50:00 Asia/Kolkata
+Persistent=true
+
+[Install]
+WantedBy=timers.target

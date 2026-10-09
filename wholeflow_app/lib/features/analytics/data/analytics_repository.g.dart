@@ -55,4 +55,4 @@ final class AnalyticsRepositoryProvider
 }
 
 String _$analyticsRepositoryHash() =>
-    r'cb68eae70dc508acfb304a6e33b0353c0903ae27';
+    r'32756486ce65c3ca54ed831a3cf3c1b90a517533';

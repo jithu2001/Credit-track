@@ -12,7 +12,7 @@ WholeFlow is **one executable, `wholeflow.exe`**, that does two things in one pr
 It installs as the Windows service **WholeFlow**, so both start at boot without anyone logging in.
 
 ```
-TallyPrime ──HTTP/XML──▶ wholeflow.exe (web app + sync, customer PC) ──HTTPS──▶ WholeFlow server (PostgREST + PostgreSQL + RLS, per business) ──▶ phone apps
+TallyPrime ──HTTP/XML──▶ wholeflow.exe (web app + sync, customer PC) ──HTTPS──▶ WholeFlow server (Go app API + PostgreSQL + RLS, a database per business) ──▶ phone apps
 ```
 
 Principles that hold throughout: nothing is ever written to Tally; Tally is never exposed to the internet; `internal/tally` is the only package that knows Tally XML/TDL; all cloud writes are idempotent upserts keyed by Tally GUIDs; nothing in the cloud is deleted because Tally happens to be offline.
@@ -29,8 +29,8 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Windows service install (`install`/`start`/`stop`) | **Verified live** on the development PC: service installed; after the 28 Sep 2026 boot (09:33) it started by itself at 09:35 and synced 9 s later without anyone opening the app. Implemented with `x/sys/windows/svc` + `mgr`; `install` now upgrades in place. |
 | Background process (`run -background`, `start`/`stop` without the service) | Verified live: hidden process (no window handle), `status` reports `running as background`, `stop` ends it through `POST /api/sync/quit` (control token only, tested). |
 | Logon autostart (`autostart`, Task Scheduler, no Administrator) | Verified by `TestLogonTaskLifecycle` (registers, inspects and removes a real task under a test name). |
-| Migrations | Applied by the WholeFlow server to every business; PostgREST client verified against a fake in tests |
-| Version control | Still **not a git repository**; `.gitignore` covers `bin/`, `logs/`, `.env` |
+| Migrations | Applied by the WholeFlow server to every business (`deploy/server/scripts/migrate.sh --all`) |
+| Version control | Git (repository Credit-track); `.gitignore` covers `bin/`, `logs/`, `.env` |
 
 ### Feature completeness
 
@@ -64,7 +64,7 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Language / runtime | Go 1.26 module, built with 1.27.1, Windows target |
 | HTTP | `net/http` `ServeMux` (Go 1.22 patterns); web app API, `/api/sync/*` and embedded static files on `APP_ADDR` (default 127.0.0.1:8080) |
 | Tally transport | `net/http` POST of TDL collection envelopes; one mutex (Tally handles one request at a time); sanitiser for Tally's illegal XML |
-| Cloud transport | The business's PostgREST API on the WholeFlow server over HTTPS with the PC key: upserts (`resolution=merge-duplicates`), `Range` paging, `PATCH … id=in.(…)` soft deletes; standard library only |
+| Cloud transport | The WholeFlow app API (`/b/<slug>/api/v1/pc/…`, `internal/cloud/hosted`) over HTTPS with the PC key: idempotent upserts keyed by Tally GUIDs, paging, soft deletes; standard library only |
 | Persistence on the PC | `%ProgramData%\WholeFlow\config.json` (settings, DPAPI-encrypted PC key), `state.json` (per-company cursor/status), atomic writes |
 | Secrets | Windows DPAPI, machine scope; `plain:` fallback elsewhere, clearly labelled |
 | Auth (developer) | PBKDF2-SHA256 600k iterations, in-memory sessions, per-user lockout |
@@ -72,7 +72,7 @@ Principles that hold throughout: nothing is ever written to Tally; Tally is neve
 | Logging | `log/slog` text to `logs\app.log`, rotated at 20 MB × 5 |
 | Frontend | Vanilla JS/CSS single page, embedded via `embed.FS`; routes `#/dashboard #/shops #/outstanding #/status #/sync` |
 | Database | PostgreSQL on the WholeFlow server with RLS; 8 tables, 2 `security_invoker` views |
-| Tests | `testing` + `httptest` fakes for TallyPrime and PostgREST; in-memory cloud provider |
+| Tests | `testing` + `httptest` fakes for TallyPrime and the app API; in-memory cloud provider |
 
 ## 4. How it runs
 

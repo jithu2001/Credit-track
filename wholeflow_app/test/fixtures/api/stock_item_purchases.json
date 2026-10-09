@@ -1,0 +1,20 @@
+{
+  "purchases": [
+    {
+      "id": "f0000000-0000-0000-0000-00000000c001",
+      "purchase_date": "2026-07-05",
+      "supplier_name": "Supplier One",
+      "voucher_number": "PB/1",
+      "tally_alter_id": null,
+      "purchase_lines": [
+        {
+          "qty": 10.000,
+          "unit": "Nos",
+          "rate": 100.00,
+          "amount": 1000.00
+        }
+      ]
+    }
+  ]
+}
+

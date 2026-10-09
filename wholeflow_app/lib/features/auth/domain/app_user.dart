@@ -32,8 +32,6 @@ abstract class AppUser with _$AppUser {
 
   factory AppUser.fromJson(Map<String, dynamic> json) => _$AppUserFromJson(json);
 
-  static const columns = 'id,business_id,role,name,email,is_active,requires_check_in';
-
   bool get isOwner => role == UserRole.owner;
 
   String get displayName => name.trim().isNotEmpty ? name.trim() : (email ?? 'User');

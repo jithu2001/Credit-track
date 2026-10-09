@@ -1,5 +1,5 @@
 name: wholeflow_app
-description: "A new Flutter project."
+description: "WholeFlow Owner and Staff: Tally outstanding, dues, stock and shop visits on Android phones."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,6 +16,8 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
+# Every Play Store upload needs a higher build number (after the +): it is the
+# Android versionCode. tool/build_release.sh refuses one already released.
 version: 1.0.0+1
 
 environment:

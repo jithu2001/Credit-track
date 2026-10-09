@@ -3,10 +3,12 @@ package control
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,4 +112,20 @@ func (s *Store) Setting(ctx context.Context, key string) string {
 	var v string
 	_ = s.DB.QueryRow(ctx, `select value from settings where key = $1`, key).Scan(&v)
 	return v
+}
+
+// IntSetting reads a whole-number setting (0 when missing or empty).
+func (s *Store) IntSetting(ctx context.Context, key string) (int, error) {
+	var v string
+	err := s.DB.QueryRow(ctx, `select value from settings where key = $1`, key).Scan(&v)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(v)
 }

@@ -106,6 +106,10 @@ func TestJWT(t *testing.T) {
 	if _, err := VerifyJWT("secret-a", tok, now.AddDate(6, 0, 0)); err == nil {
 		t.Fatal("expired key verified")
 	}
+	noExp, _ := SignJWT("secret-a", map[string]any{"role": "service_role", "device_id": "dev-1"})
+	if _, err := VerifyJWT("secret-a", noExp, now); err == nil {
+		t.Fatal("token without exp verified")
+	}
 	if c, _ := ParseJWTUnverified(tok); c["ref"] != "jmj" {
 		t.Fatal("unverified parse")
 	}

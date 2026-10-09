@@ -1,64 +1,36 @@
 import '../../../core/money/money.dart';
-import '../../shop_detail/domain/statement.dart';
 
-/// Payment behaviour of shops, computed on the device from synced data.
+/// Payment behaviour of shops, worked out on the WholeFlow server
+/// (`GET /api/v1/payments`, internal/appapi/payments.go) and read here.
 ///
 /// Every credit (receipt, return, credit adjustment) settles the **oldest open
 /// bill first** (FIFO). A bill is due `creditDays` after its date. The shop's
-/// opening balance counts as one bill dated where the synced vouchers begin
-/// (the current Tally period); a Cr opening balance is an advance. Credits that find no open bill wait as an
-/// advance and settle the next bills as they arrive.
-///
-/// Only receipts count as *paying* for the timing figures (days to pay,
-/// on time); returns and adjustments still settle bills.
+/// opening balance counts as one bill dated where the synced vouchers begin.
+/// Only receipts count as *paying* for the timing figures (days to pay, on
+/// time); returns and adjustments still settle bills.
 
-/// One voucher line of a shop, as needed for the analysis.
-class PaymentTxn {
-  const PaymentTxn({
-    required this.shopId,
-    required this.date,
-    required this.category,
-    required this.debit,
-    required this.credit,
-    this.voucher,
-    this.createdAt,
-  });
+DateTime? _date(Object? v) => v is String && v.isNotEmpty ? DateTime.parse(v) : null;
+Money _money(Object? v) => v == null ? Money.zero : Money.parse(v);
+double? _double(Object? v) => v is num ? v.toDouble() : null;
+int _int(Object? v) => v is num ? v.toInt() : 0;
 
-  final String shopId;
-  final DateTime date;
-  final TxnCategory category;
-  final Money debit;
-  final Money credit;
-  final String? voucher;
-  final DateTime? createdAt;
+enum SettleKind {
+  payment,
+  returned,
+  adjustment;
+
+  static SettleKind parse(Object? v) => switch (v) {
+    'payment' => payment,
+    'returned' => returned,
+    _ => adjustment,
+  };
 }
-
-class ShopOpening {
-  const ShopOpening({
-    required this.id,
-    required this.name,
-    this.siteName,
-    this.phone,
-    required this.opening,
-    required this.receivable,
-  });
-
-  final String id;
-  final String name;
-
-  /// Null when the shop is in no site.
-  final String? siteName;
-  final String? phone;
-
-  /// Signed: Dr (owes) positive.
-  final Money opening;
-  final Money receivable;
-}
-
-enum SettleKind { payment, returned, adjustment }
 
 class Allocation {
   const Allocation(this.date, this.amount, this.kind);
+
+  factory Allocation.fromJson(Map<String, dynamic> j) =>
+      Allocation(_date(j['date'])!, _money(j['amount']), SettleKind.parse(j['kind']));
 
   final DateTime date;
   final Money amount;
@@ -66,17 +38,36 @@ class Allocation {
 }
 
 class Bill {
-  Bill({required this.date, required this.amount, required this.due, this.voucher, this.isOpening = false}) : remaining = amount;
+  const Bill({
+    required this.date,
+    required this.amount,
+    required this.due,
+    required this.remaining,
+    this.voucher,
+    this.isOpening = false,
+    this.settledOn,
+    this.allocations = const [],
+  });
+
+  factory Bill.fromJson(Map<String, dynamic> j) => Bill(
+    date: _date(j['date'])!,
+    amount: _money(j['amount']),
+    due: _date(j['due'])!,
+    remaining: _money(j['remaining']),
+    voucher: j['voucher'] as String?,
+    isOpening: j['is_opening'] == true,
+    settledOn: _date(j['settled_on']),
+    allocations: [for (final a in (j['allocations'] as List? ?? const [])) Allocation.fromJson(a as Map<String, dynamic>)],
+  );
 
   final DateTime date;
   final Money amount;
   final DateTime due;
   final String? voucher;
   final bool isOpening;
-
-  Money remaining;
-  DateTime? settledOn;
-  final List<Allocation> allocations = [];
+  final Money remaining;
+  final DateTime? settledOn;
+  final List<Allocation> allocations;
 
   bool get isOpen => remaining.isPositive;
 
@@ -91,22 +82,20 @@ class Bill {
 
 /// Ageing of open amounts by days past due.
 enum AgeBucket {
-  notDue('Not due yet'),
-  d1to30('1–30 days late'),
-  d31to60('31–60 days late'),
-  d61to90('61–90 days late'),
-  d90plus('Over 90 days late');
+  notDue('not_due', 'Not due yet'),
+  d1to30('d1_30', '1–30 days late'),
+  d31to60('d31_60', '31–60 days late'),
+  d61to90('d61_90', '61–90 days late'),
+  d90plus('d90_plus', 'Over 90 days late');
 
-  const AgeBucket(this.label);
+  const AgeBucket(this.code, this.label);
+  final String code;
   final String label;
 
-  static AgeBucket of(int daysOverdue) => switch (daysOverdue) {
-    <= 0 => notDue,
-    <= 30 => d1to30,
-    <= 60 => d31to60,
-    <= 90 => d61to90,
-    _ => d90plus,
-  };
+  static Map<AgeBucket, Money> parse(Object? json) {
+    final m = json is Map ? json : const {};
+    return {for (final k in values) k: _money(m[k.code])};
+  }
 }
 
 enum PaymentStatus {
@@ -147,79 +136,149 @@ enum PayHabit {
   }
 }
 
-class ShopPaymentProfile {
-  ShopPaymentProfile({
-    required this.shop,
-    required this.bills,
-    required this.advance,
-    required this.today,
-    required this.lastPaymentDate,
-    required this.lastPaymentAmount,
-    required this.avgDaysToPay,
-    required this.avgDaysLate,
+/// A shop as the payment analysis sees it.
+class PaymentShop {
+  const PaymentShop({
+    required this.id,
+    required this.name,
+    this.siteName,
+    this.phone,
+    required this.opening,
+    required this.receivable,
   });
 
-  final ShopOpening shop;
+  factory PaymentShop.fromJson(Map<String, dynamic> j) => PaymentShop(
+    id: j['id'] as String,
+    name: (j['name'] as String?) ?? '',
+    siteName: j['site_name'] as String?,
+    phone: j['phone'] as String?,
+    opening: _money(j['opening']),
+    receivable: _money(j['receivable']),
+  );
 
-  /// All bills, oldest first.
-  final List<Bill> bills;
+  final String id;
+  final String name;
+
+  /// Null when the shop is in no site.
+  final String? siteName;
+  final String? phone;
+
+  /// Signed: Dr (owes) positive.
+  final Money opening;
+  final Money receivable;
+}
+
+/// One shop's payment figures. [bills] is filled only for the shop view
+/// (`/payments/shops/{id}`): every unpaid bill and the latest paid ones.
+class ShopPaymentProfile {
+  const ShopPaymentProfile({
+    required this.shop,
+    required this.today,
+    required this.advance,
+    required this.overdue,
+    required this.openAmount,
+    required this.openBillCount,
+    required this.maxDaysOverdue,
+    required this.ageing,
+    required this.paidBillCount,
+    required this.onTimeCount,
+    this.oldestOpenBillDate,
+    this.onTimeRate,
+    this.avgDaysToPay,
+    this.avgDaysLate,
+    this.lastPaymentDate,
+    this.lastPaymentAmount = Money.zero,
+    required this.computedBalance,
+    required this.reconciled,
+    this.bills = const [],
+  });
+
+  factory ShopPaymentProfile.fromJson(Map<String, dynamic> j, {required DateTime today}) => ShopPaymentProfile(
+    shop: PaymentShop.fromJson(j['shop'] as Map<String, dynamic>),
+    today: today,
+    advance: _money(j['advance']),
+    overdue: _money(j['overdue']),
+    openAmount: _money(j['open_amount']),
+    openBillCount: _int(j['open_bills']),
+    maxDaysOverdue: _int(j['max_days_overdue']),
+    oldestOpenBillDate: _date(j['oldest_open_bill_date']),
+    ageing: AgeBucket.parse(j['ageing']),
+    paidBillCount: _int(j['paid_bills']),
+    onTimeCount: _int(j['on_time_bills']),
+    onTimeRate: _double(j['on_time_rate']),
+    avgDaysToPay: _double(j['avg_days_to_pay']),
+    avgDaysLate: _double(j['avg_days_late']),
+    lastPaymentDate: _date(j['last_payment_date']),
+    lastPaymentAmount: _money(j['last_payment_amount']),
+    computedBalance: _money(j['computed_balance']),
+    reconciled: j['reconciled'] == true,
+    bills: [for (final b in (j['bills'] as List? ?? const [])) Bill.fromJson(b as Map<String, dynamic>)],
+  );
+
+  final PaymentShop shop;
+  final DateTime today;
 
   /// Credit not yet used against any bill.
   final Money advance;
-  final DateTime today;
-  final DateTime? lastPaymentDate;
-  final Money lastPaymentAmount;
+  final Money overdue;
+  final Money openAmount;
+  final int openBillCount;
+
+  /// Days past due of the oldest overdue bill (0 when nothing is overdue).
+  final int maxDaysOverdue;
+  final DateTime? oldestOpenBillDate;
+  final Map<AgeBucket, Money> ageing;
+
+  /// Bills fully settled with at least one receipt, and how many of them by their due date.
+  final int paidBillCount;
+  final int onTimeCount;
+
+  /// Share of paid bills settled by their due date; null when none are paid yet.
+  final double? onTimeRate;
 
   /// Receipt-weighted average days from bill date to payment; null without receipts.
   final double? avgDaysToPay;
 
   /// Receipt-weighted average days paid after the due date (early counts as 0).
   final double? avgDaysLate;
+  final DateTime? lastPaymentDate;
+  final Money lastPaymentAmount;
+
+  /// Open bills minus advance; equals the synced balance when the data is complete.
+  final Money computedBalance;
+  final bool reconciled;
+
+  /// Oldest first; empty in the company summary.
+  final List<Bill> bills;
 
   List<Bill> get openBills => bills.where((b) => b.isOpen).toList();
-
-  Money get openAmount => bills.fold(Money.zero, (s, b) => s + b.remaining);
-
-  Money get overdue => bills.where((b) => b.isOpen && b.daysOverdue(today) > 0).fold(Money.zero, (s, b) => s + b.remaining);
-
-  /// Days past due of the oldest overdue bill (0 when nothing is overdue).
-  int get maxDaysOverdue => bills.where((b) => b.isOpen).fold(0, (m, b) => b.daysOverdue(today) > m ? b.daysOverdue(today) : m);
-
-  DateTime? get oldestOpenBillDate {
-    for (final b in bills) {
-      if (b.isOpen) return b.date;
-    }
-    return null;
-  }
-
-  Map<AgeBucket, Money> get ageing {
-    final out = {for (final k in AgeBucket.values) k: Money.zero};
-    for (final b in bills.where((b) => b.isOpen)) {
-      final k = AgeBucket.of(b.daysOverdue(today));
-      out[k] = out[k]! + b.remaining;
-    }
-    return out;
-  }
-
-  /// Bills fully settled with at least one receipt.
-  List<Bill> get paidBills => bills.where((b) => !b.isOpen && b.paidByReceipt).toList();
-
-  int get onTimeCount => paidBills.where((b) => b.settledOnTime).length;
-
-  /// Share of paid bills settled by their due date; null when none are paid yet.
-  double? get onTimeRate => paidBills.isEmpty ? null : onTimeCount / paidBills.length;
 
   PaymentStatus get status => PaymentStatus.of(maxDaysOverdue);
 
   PayHabit habit(int creditDays) => PayHabit.of(avgDaysToPay, creditDays);
-
-  /// Open bills minus advance; equals the synced balance when the data is complete.
-  Money get computedBalance => openAmount - advance;
-  bool get reconciled => computedBalance == shop.receivable;
-
-  bool get hasActivity => bills.isNotEmpty || advance.isPositive;
 }
 
+/// One shop's bills under FIFO, for the shop view.
+class ShopPayments {
+  const ShopPayments({required this.profile, required this.creditDays, required this.closedBills});
+
+  factory ShopPayments.fromJson(Map<String, dynamic> j) {
+    final today = _date(j['today']) ?? DateTime.now();
+    return ShopPayments(
+      profile: ShopPaymentProfile.fromJson(j, today: today),
+      creditDays: _int(j['credit_days']),
+      closedBills: _int(j['closed_bills']),
+    );
+  }
+
+  final ShopPaymentProfile profile;
+  final int creditDays;
+
+  /// Settled bills in all; [ShopPaymentProfile.bills] has only the latest of them.
+  final int closedBills;
+}
+
+/// The company's payment figures with one line per shop that has bills.
 class BusinessPaymentSummary {
   const BusinessPaymentSummary({
     required this.shops,
@@ -229,9 +288,28 @@ class BusinessPaymentSummary {
     required this.overdueShops,
     required this.openAmount,
     required this.ageing,
-    required this.onTimeRate,
-    required this.avgDaysToPay,
+    this.onTimeRate,
+    this.avgDaysToPay,
+    this.overdueMonthAgo,
   });
+
+  factory BusinessPaymentSummary.fromJson(Map<String, dynamic> j) {
+    final today = _date(j['today']) ?? DateTime.now();
+    return BusinessPaymentSummary(
+      shops: [
+        for (final s in (j['shops'] as List? ?? const [])) ShopPaymentProfile.fromJson(s as Map<String, dynamic>, today: today),
+      ],
+      creditDays: _int(j['credit_days']),
+      today: today,
+      overdue: _money(j['overdue']),
+      overdueShops: _int(j['overdue_shops']),
+      openAmount: _money(j['open_amount']),
+      ageing: AgeBucket.parse(j['ageing']),
+      onTimeRate: _double(j['on_time_rate']),
+      avgDaysToPay: _double(j['avg_days_to_pay']),
+      overdueMonthAgo: j['overdue_month_ago'] == null ? null : _money(j['overdue_month_ago']),
+    );
+  }
 
   final List<ShopPaymentProfile> shops;
   final int creditDays;
@@ -242,200 +320,7 @@ class BusinessPaymentSummary {
   final Map<AgeBucket, Money> ageing;
   final double? onTimeRate;
   final double? avgDaysToPay;
-}
 
-DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
-
-/// Runs FIFO for one shop.
-ShopPaymentProfile analyseShop({
-  required ShopOpening shop,
-  required List<PaymentTxn> txns,
-  required int creditDays,
-  required DateTime booksFrom,
-  required DateTime today,
-}) {
-  final day = _day(today);
-  final bills = <Bill>[];
-  // Advances waiting for a bill: (date, amount, kind), oldest first.
-  final pool = <(DateTime, Money, SettleKind)>[];
-
-  var paidWeighted = 0.0, lateWeighted = 0.0, paidTotal = 0.0;
-  DateTime? lastPaymentDate;
-  var lastPaymentAmount = Money.zero;
-
-  void record(Bill bill, DateTime date, Money amount, SettleKind kind) {
-    bill.allocations.add(Allocation(date, amount, kind));
-    bill.remaining -= amount;
-    if (!bill.isOpen) bill.settledOn = date.isBefore(bill.date) ? bill.date : date;
-    if (kind == SettleKind.payment) {
-      final paidOn = date.isBefore(bill.date) ? bill.date : date;
-      final rupees = amount.paise / 100;
-      paidWeighted += rupees * paidOn.difference(bill.date).inDays;
-      final late = paidOn.difference(bill.due).inDays;
-      lateWeighted += rupees * (late > 0 ? late : 0);
-      paidTotal += rupees;
-    }
-  }
-
-  void addBill(Bill bill) {
-    bills.add(bill);
-    // Settle straight away from any advance.
-    while (bill.isOpen && pool.isNotEmpty) {
-      final (date, amount, kind) = pool.first;
-      final use = amount < bill.remaining ? amount : bill.remaining;
-      record(bill, date, use, kind);
-      final left = amount - use;
-      if (left.isPositive) {
-        pool[0] = (date, left, kind);
-      } else {
-        pool.removeAt(0);
-      }
-    }
-  }
-
-  void addCredit(DateTime date, Money amount, SettleKind kind) {
-    var left = amount;
-    for (final bill in bills) {
-      if (!left.isPositive) break;
-      if (!bill.isOpen) continue;
-      final use = left < bill.remaining ? left : bill.remaining;
-      record(bill, date, use, kind);
-      left -= use;
-    }
-    if (left.isPositive) pool.add((date, left, kind));
-  }
-
-  final start = _day(booksFrom);
-  if (shop.opening.isPositive) {
-    addBill(
-      Bill(
-        date: start,
-        amount: shop.opening,
-        due: start.add(Duration(days: creditDays)),
-        isOpening: true,
-        voucher: 'Opening balance',
-      ),
-    );
-  } else if (shop.opening.isNegative) {
-    pool.add((start, shop.opening.abs(), SettleKind.adjustment));
-  }
-
-  // Same day: bills before credits, so a same-day payment can settle that day's bill.
-  final ordered = [...txns]
-    ..sort((a, b) {
-      final d = _day(a.date).compareTo(_day(b.date));
-      if (d != 0) return d;
-      final ab = a.debit.isPositive ? 0 : 1, bb = b.debit.isPositive ? 0 : 1;
-      if (ab != bb) return ab - bb;
-      final ac = a.createdAt, bc = b.createdAt;
-      return (ac != null && bc != null) ? ac.compareTo(bc) : 0;
-    });
-
-  for (final t in ordered) {
-    final date = _day(t.date);
-    if (t.debit.isPositive) {
-      addBill(
-        Bill(
-          date: date,
-          amount: t.debit,
-          due: date.add(Duration(days: creditDays)),
-          voucher: t.voucher,
-        ),
-      );
-    }
-    if (t.credit.isPositive) {
-      final kind = switch (t.category) {
-        TxnCategory.receipts => SettleKind.payment,
-        TxnCategory.returns => SettleKind.returned,
-        _ => SettleKind.adjustment,
-      };
-      if (kind == SettleKind.payment) {
-        lastPaymentDate = date;
-        lastPaymentAmount = t.credit;
-      }
-      addCredit(date, t.credit, kind);
-    }
-  }
-
-  return ShopPaymentProfile(
-    shop: shop,
-    bills: bills,
-    advance: pool.fold(Money.zero, (s, p) => s + p.$2),
-    today: day,
-    lastPaymentDate: lastPaymentDate,
-    lastPaymentAmount: lastPaymentAmount,
-    avgDaysToPay: paidTotal == 0 ? null : paidWeighted / paidTotal,
-    avgDaysLate: paidTotal == 0 ? null : lateWeighted / paidTotal,
-  );
-}
-
-/// Runs FIFO for every shop of a company and totals the results.
-BusinessPaymentSummary analyseBusiness({
-  required List<ShopOpening> shops,
-  required List<PaymentTxn> txns,
-  required int creditDays,
-  required DateTime booksFrom,
-  required DateTime today,
-}) {
-  final byShop = <String, List<PaymentTxn>>{};
-  for (final t in txns) {
-    byShop.putIfAbsent(t.shopId, () => []).add(t);
-  }
-  final profiles = [
-    for (final s in shops)
-      analyseShop(shop: s, txns: byShop[s.id] ?? const [], creditDays: creditDays, booksFrom: booksFrom, today: today),
-  ].where((p) => p.hasActivity).toList();
-
-  final ageing = {for (final k in AgeBucket.values) k: Money.zero};
-  var overdue = Money.zero, open = Money.zero;
-  var overdueShops = 0, paid = 0, onTime = 0;
-  var weighted = 0.0, total = 0.0;
-  for (final p in profiles) {
-    final o = p.overdue;
-    overdue += o;
-    if (o.isPositive) overdueShops++;
-    open += p.openAmount;
-    p.ageing.forEach((k, v) => ageing[k] = ageing[k]! + v);
-    paid += p.paidBills.length;
-    onTime += p.onTimeCount;
-    if (p.avgDaysToPay != null) {
-      // Weight each shop's average by the receipts it made.
-      final receipts = p.bills
-          .expand((b) => b.allocations)
-          .where((a) => a.kind == SettleKind.payment)
-          .fold(0.0, (s, a) => s + a.amount.paise / 100);
-      weighted += p.avgDaysToPay! * receipts;
-      total += receipts;
-    }
-  }
-  return BusinessPaymentSummary(
-    shops: profiles,
-    creditDays: creditDays,
-    today: _day(today),
-    overdue: overdue,
-    overdueShops: overdueShops,
-    openAmount: open,
-    ageing: ageing,
-    onTimeRate: paid == 0 ? null : onTime / paid,
-    avgDaysToPay: total == 0 ? null : weighted / total,
-  );
-}
-
-/// Overdue as it stood [daysAgo] days before [today], from the vouchers dated
-/// up to then. Null when the synced books do not reach back that far.
-Money? overdueDaysAgo({
-  required List<ShopOpening> shops,
-  required List<PaymentTxn> txns,
-  required int creditDays,
-  required DateTime booksFrom,
-  required DateTime today,
-  int daysAgo = 30,
-}) {
-  final then = _day(today).subtract(Duration(days: daysAgo));
-  if (then.isBefore(_day(booksFrom))) return null;
-  final earlier = [
-    for (final t in txns)
-      if (!_day(t.date).isAfter(then)) t,
-  ];
-  return analyseBusiness(shops: shops, txns: earlier, creditDays: creditDays, booksFrom: booksFrom, today: then).overdue;
+  /// Overdue 30 days ago with the same credit period; null when the books don't reach back that far.
+  final Money? overdueMonthAgo;
 }

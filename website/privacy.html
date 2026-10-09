@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy · WholeFlow</title>
-<meta name="description" content="What the WholeFlow website collects through its contact form, why, and how to have it deleted. No cookies, no analytics.">
+<meta name="description" content="What the WholeFlow website and the WholeFlow Owner and Staff apps collect, including location at shop check-in, how long it is kept, and how to have it deleted.">
 <link rel="canonical" href="https://wholeflow.jitsuji.xyz/privacy.html">
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/assets/img/favicon-32.png" type="image/png" sizes="32x32">
-<link rel="stylesheet" href="/assets/css/site.css?v=3">
+<link rel="stylesheet" href="/assets/css/site.css?v=5">
 </head>
 <body>
 <header class="top scrolled">
@@ -20,8 +20,9 @@
 </header>
 <main class="wrap page-simple">
   <p class="eyebrow">Privacy</p>
-  <h1>What this website keeps about you</h1>
-  <p>Last updated 6 October 2026.</p>
+  <h1>What WholeFlow keeps about you</h1>
+  <p>Last updated 8 October 2026.</p>
+  <p>This page covers this website and the WholeFlow Owner and WholeFlow Staff apps. The business that uses WholeFlow (your employer, if you are staff) decides what goes into its WholeFlow account; we run the service for it.</p>
 
   <h2>No cookies, no tracking</h2>
   <p>This site sets no cookies and has no analytics, advertising or tracking code. Its fonts and images are served from our own server, so visiting it does not send your details to anyone else.</p>
@@ -44,6 +45,34 @@
 
   <h2>If you become a customer</h2>
   <p>Your Tally data is kept in a database of its own for your business on our server, and is used only to run WholeFlow for you. WholeFlow only reads from Tally; it never changes your books.</p>
+
+  <h2>What the apps keep</h2>
+  <p>The Owner and Staff apps show the business's data from its own database on our server. For that, the server keeps:</p>
+  <ul>
+    <li><strong>Your account:</strong> name, email, role, the companies and sites the owner gave you, and your password (stored only as a one-way hash).</li>
+    <li><strong>The business's data from Tally:</strong> shops and suppliers with their phone numbers and addresses, balances, bills, payments and stock, as the Tally PC sends them.</li>
+    <li><strong>Visits:</strong> the shops planned for each day, each check-in, and any note you add.</li>
+    <li><strong>Sign-ins and errors:</strong> when you signed in, the app version, and, if the app crashes, the error text and where in the app it happened. Crash reports never include passwords, sign-in tokens or the business's data.</li>
+  </ul>
+  <p>On the phone, the app keeps your sign-in and the business it is connected to. These are left out of phone backups, so they are not copied to a new phone or to cloud backup. Signing out or uninstalling the app removes them.</p>
+
+  <h2>Location (Staff app check-in)</h2>
+  <p>If the business owner turns on check-in for you, the Staff app reads your phone's GPS position when you check in at a shop. It asks first, and reads the location only while the check-in screen is open. It never reads your location in the background or when the app is closed, and it cannot be used to follow you outside check-in.</p>
+  <p>For each check-in we keep the position, its accuracy, the time, the distance to the shop's pin, and whether the check-in was accepted. The business owner sees this, to know the shop was visited. The owner may also pin a shop at the place they are standing, which saves that position as the shop's location.</p>
+  <p>Developer options or a mock-location app being on is recorded with a check-in, because they allow fake locations.</p>
+
+  <h2>How long the apps' data is kept</h2>
+  <ul>
+    <li>Check-in locations: 12 months, then removed.</li>
+    <li>Refused check-in attempts: removed after 12 months.</li>
+    <li>Sync logs from the Tally PC: 180 days.</li>
+    <li>Your account and the business's data: while the business uses WholeFlow, or until deleted as below.</li>
+  </ul>
+
+  <h2 id="delete">Deleting an account or a business</h2>
+  <p><strong>Staff:</strong> ask your business owner. The owner can disable your account in the Owner app at once (you are signed out and can no longer sign in) and can ask us to delete it. If you can't reach the owner, send us a message through the <a href="/#contact">contact form</a> with the business name and your email.</p>
+  <p><strong>Owners and businesses:</strong> send a message through the <a href="/#contact">contact form</a> from the mobile number or email we know, saying which staff accounts or that the whole business should be deleted. We can send you a full copy of your data first.</p>
+  <p>We delete within 30 days of your request and tell you when it is done. Backups are kept for up to 30 days, so deleted data is gone from them too within 30 days after that.</p>
   <p><a href="/">Back to WholeFlow</a></p>
 </main>
 <footer class="foot">

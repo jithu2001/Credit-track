@@ -1,0 +1,8 @@
+# Copy to android/key.properties (gitignored) and fill in. Release builds fail
+# without it; debug builds and `flutter test` don't use it.
+# storeFile is relative to android/app/ (or an absolute path). Keep the
+# keystore OUTSIDE the repo and back it up; see wholeflow_app/README.md.
+storeFile=/home/YOU/keys/wholeflow-upload.jks
+storePassword=CHANGE_ME
+keyAlias=upload
+keyPassword=CHANGE_ME

@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- Google Play feature graphic (1024×500) for both apps. Not deployed.
+     Render: open tools/play-feature.html?app=owner (or ?app=staff) at 1024×500
+     and screenshot the page (Playwright: page.screenshot). Uses the site's own
+     fonts and the Play screenshots from wholeflow_app/test/marketing/out/play/. -->
+<html><head><meta charset="utf-8">
+<style>
+  @font-face { font-family: 'Fraunces'; font-weight: 400 600; src: url(../assets/fonts/Fraunces-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'IBM Plex Sans'; font-weight: 400 600; src: url(../assets/fonts/IBMPlexSans-latin.woff2) format('woff2'); }
+  @font-face { font-family: 'IBM Plex Mono'; font-weight: 500; src: url(../assets/fonts/IBMPlexMono-500-latin.woff2) format('woff2'); }
+  html, body { margin: 0 }
+  body { width: 1024px; height: 500px; overflow: hidden; background: #f7f5ef; font-family: 'IBM Plex Sans'; color: #16201e;
+    background-image: repeating-linear-gradient(to bottom, transparent 0 31px, rgba(11,95,86,.07) 31px 32px); position: relative }
+  .copy { position: absolute; left: 64px; top: 70px; width: 560px }
+  .brand { display: flex; align-items: center; gap: 14px; font: 600 30px 'Fraunces' }
+  .brand img { width: 52px; height: 52px; border-radius: 12px }
+  .brand small { font: 500 18px 'IBM Plex Mono'; color: #0b5f56; margin-left: 4px }
+  h1 { font: 600 60px/1.04 'Fraunces'; margin: 40px 0 20px; letter-spacing: -.01em }
+  p { font-size: 23px; line-height: 1.4; color: #3c4744; margin: 0 }
+  .phone { position: absolute; right: 80px; top: 40px; width: 250px; border-radius: 34px; padding: 9px; background: #111614;
+    transform: rotate(3deg); box-shadow: 0 30px 60px -20px rgba(22,32,30,.5) }
+  .phone img { width: 100%; border-radius: 26px; display: block }
+</style></head>
+<body>
+  <div class="copy">
+    <div class="brand"><img src="../assets/img/icon-192.png" alt="">WholeFlow <small id="role">Owner</small></div>
+    <h1 id="title">Your Tally dues,<br>in your pocket.</h1>
+    <p id="text">Outstanding, overdue bills and stock from TallyPrime, on your phone.</p>
+  </div>
+  <div class="phone"><img id="shot" src="../../wholeflow_app/test/marketing/out/play/owner-dashboard.png" alt=""></div>
+  <script>
+    if (new URLSearchParams(location.search).get('app') === 'staff') {
+      document.getElementById('role').textContent = 'Staff';
+      document.getElementById('title').innerHTML = 'Dues and visits<br>for your sales team.';
+      document.getElementById('text').textContent = 'See each shop’s dues before you go, and check in at every shop on your route.';
+      document.getElementById('shot').src = '../../wholeflow_app/test/marketing/out/play/staff-visits.png';
+    }
+  </script>
+</body></html>

@@ -53,7 +53,7 @@ class _PaymentInsightsScreenState extends ConsumerState<PaymentInsightsScreen> {
       body: company == null
           ? const SizedBox.shrink()
           : RefreshIndicator(
-              onRefresh: () => ref.refresh(analyticsDataProvider(company.id).future),
+              onRefresh: () => ref.refresh(paymentSummaryProvider(company.id).future),
               child: ContentWidth(
                 child: switch (summary!) {
                   AsyncValue(:final value?) => _Body(
@@ -66,7 +66,7 @@ class _PaymentInsightsScreenState extends ConsumerState<PaymentInsightsScreen> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: [
                       const SizedBox(height: Insets.xxl),
-                      ErrorState(error: error, onRetry: () => ref.invalidate(analyticsDataProvider(company.id))),
+                      ErrorState(error: error, onRetry: () => ref.invalidate(paymentSummaryProvider(company.id))),
                     ],
                   ),
                   _ => const SkeletonList(),

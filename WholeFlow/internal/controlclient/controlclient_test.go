@@ -111,3 +111,17 @@ func TestNewRefusesPlainHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOutdated(t *testing.T) {
+	for _, c := range []struct {
+		cur, latest string
+		want        bool
+	}{
+		{"0.5.1", "0.6.0", true}, {"0.6.0", "0.6.0", false}, {"0.10.0", "0.9.9", false}, {"0.9", "0.10.0", true},
+		{"v0.6.0-dev", "0.6.1", true}, {"0.6.0", "", false}, {"dev", "0.6.0", false}, {"0.6", "0.6.0", false},
+	} {
+		if got := Outdated(c.cur, c.latest); got != c.want {
+			t.Errorf("Outdated(%q, %q) = %v", c.cur, c.latest, got)
+		}
+	}
+}

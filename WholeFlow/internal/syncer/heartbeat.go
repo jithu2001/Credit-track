@@ -24,9 +24,10 @@ type Heartbeat struct {
 	Timeout  time.Duration
 	Now      func() time.Time
 
-	mu      gosync.Mutex
-	last    time.Time
-	lastErr string
+	mu          gosync.Mutex
+	last        time.Time
+	lastErr     string
+	warnedNewer string // the newer version already logged
 }
 
 func NewHeartbeat(settings *SettingsStore, log *slog.Logger) *Heartbeat {
@@ -82,6 +83,7 @@ func (h *Heartbeat) Beat(ctx context.Context) (resumed bool) {
 		}
 	}
 	h.note("")
+	h.noteNewer(hb.LatestPCVersion)
 
 	prev := l.SubscriptionState
 	changed := hb.SubscriptionState != "" && hb.SubscriptionState != l.SubscriptionState ||
@@ -113,6 +115,20 @@ func (h *Heartbeat) Beat(ctx context.Context) (resumed bool) {
 		h.Log.Warn(MsgDeviceRevoked)
 	}
 	return prev == "ended" && hb.SubscriptionState != "" && hb.SubscriptionState != "ended" && !hb.Revoked
+}
+
+// noteNewer logs once (per version) that a newer WholeFlow PC release is out.
+func (h *Heartbeat) noteNewer(latest string) {
+	if !controlclient.Outdated(Version, latest) {
+		return
+	}
+	h.mu.Lock()
+	seen := h.warnedNewer == latest
+	h.warnedNewer = latest
+	h.mu.Unlock()
+	if !seen {
+		h.Log.Warn("a newer WholeFlow PC version is available: please update this PC", "this_version", Version, "latest", latest)
+	}
 }
 
 // note logs a heartbeat problem once, and its recovery.

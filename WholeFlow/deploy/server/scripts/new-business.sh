@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# Creates one business: database biz_<slug>, its own login roles and signing
-# secret, a GoTrue (login) and PostgREST (data API) container, the nginx route
-# /b/<slug>/, and applies every migration. Prints the base URL and keys.
+# Creates one business: database biz_<slug> with its own roles, signing secret
+# and login tables, and applies every migration. Prints the base URL and keys.
+# No containers: the WholeFlow app API (wholeflow-api) serves its logins and
+# data at /b/<slug>/auth/v1/ and /b/<slug>/api/v1/ (one nginx rule for every
+# business). The control service runs this when the admin app creates a business.
 #
 #   scripts/new-business.sh <slug> "<Business name>"
 #
-# Phase 1 tool; the control service (phase 2) does the same steps.
+# Safe to run again after a failure: whatever this run created (roles,
+# database, businesses/<slug>/) is removed when it fails, and roles or an
+# empty database left by a run that was killed are cleared first.
+#
+# businesses/<slug>/env holds the business's secrets. It is readable by root
+# and group `wholeflow` (the app API runs as user wholeflow-api in that group).
+#
+# Overridable for tests: WF_ROOT, WF_PSQL (as in migrate.sh).
 set -euo pipefail
-cd /opt/wholeflow
+ROOT=${WF_ROOT:-/opt/wholeflow}
+cd "$ROOT"
 SLUG=${1:?usage: new-business.sh <slug> "<name>"}
 NAME=${2:?usage: new-business.sh <slug> "<name>"}
 [[ $SLUG =~ ^[a-z][a-z0-9]{1,19}$ ]] || { echo "slug: 2-20 lowercase letters/digits, starting with a letter" >&2; exit 1; }
@@ -16,12 +26,46 @@ DIR=businesses/$SLUG
 . ./.env
 PUBLIC_URL=${PUBLIC_URL:?PUBLIC_URL missing in .env}
 DB=biz_$SLUG
+GROUP=wholeflow
 
-psql_admin() { docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 -q "$@"; }
+read -r -a PSQL <<< "${WF_PSQL:-docker compose exec -T db psql}"
+psql_admin() { "${PSQL[@]}" -U postgres -v ON_ERROR_STOP=1 -X -q "$@"; }
+exists() { [ "$(psql_admin -tAc "$1" < /dev/null)" = 1 ]; }
 
-# Ports: next free slot (10000+n login, 11000+n data API), bound to localhost only.
-N=1; while ls businesses/*/env >/dev/null 2>&1 && grep -qx "SLOT=$N" businesses/*/env; do N=$((N+1)); done
-AUTH_PORT=$((10000+N)); REST_PORT=$((11000+N))
+# ---- leftovers of an earlier run that was killed before it could clean up
+if exists "select 1 from pg_database where datname = '$DB'"; then
+  # Only an empty database (no migration applied) may be replaced.
+  if [ "$(psql_admin -d "$DB" -tAc "select count(*) from public.schema_migrations" < /dev/null 2>/dev/null || echo 0)" != 0 ]; then
+    echo "database $DB already exists and has data, but $DIR does not; not touching it" >&2
+    exit 1
+  fi
+  echo "== removing the empty database $DB left by an earlier run"
+  psql_admin -c "drop database $DB with (force)" < /dev/null
+fi
+for r in "${SLUG}_auth" "${SLUG}_api"; do
+  if exists "select 1 from pg_roles where rolname = '$r'"; then
+    echo "== removing role $r left by an earlier run"
+    psql_admin -c "drop role $r" < /dev/null
+  fi
+done
+
+# ---- undo this run's work if anything below fails
+CREATED=""
+cleanup() {
+  local rc=$?
+  [ "$rc" = 0 ] && return
+  [ -z "$CREATED" ] && exit "$rc"
+  echo "== failed (exit $rc): removing what this run created" >&2
+  set +e
+  rm -rf "$DIR"
+  psql_admin -c "drop database if exists $DB with (force)" < /dev/null
+  psql_admin -c "drop role if exists ${SLUG}_api" -c "drop role if exists ${SLUG}_auth" < /dev/null
+  exit "$rc"
+}
+trap cleanup EXIT
+
+# No containers, so no ports (0 = none; kept in env for older tools).
+AUTH_PORT=0; REST_PORT=0
 
 AUTH_PW=$(openssl rand -hex 24); API_PW=$(openssl rand -hex 24); JWT_SECRET=$(openssl rand -hex 32)
 jwt() { python3 - "$JWT_SECRET" "$1" "$SLUG" <<'PY'
@@ -38,37 +82,47 @@ PY
 ANON_KEY=$(jwt anon); SERVICE_KEY=$(jwt service_role)
 
 echo "== database $DB"
+CREATED=1
 psql_admin <<SQL
 create role ${SLUG}_auth login password '$AUTH_PW';
 create role ${SLUG}_api login noinherit password '$API_PW';
-grant anon, authenticated, service_role to ${SLUG}_api;
+-- The app API switches into these per request (never anon).
+grant authenticated, service_role to ${SLUG}_api;
 alter role ${SLUG}_auth set search_path = auth;
 create database $DB;
+-- Private: only this business's login roles connect; no temporary tables.
 revoke all on database $DB from public;
 grant connect on database $DB to ${SLUG}_auth, ${SLUG}_api;
--- Signed-in API roles may use temporary tables (anon may not).
-grant temporary on database $DB to authenticated, service_role;
 grant create on database $DB to ${SLUG}_auth;
 SQL
 psql_admin -d "$DB" <<SQL
 create schema auth authorization ${SLUG}_auth;
-grant usage on schema auth to anon, authenticated, service_role;
--- What the data API (PostgREST) expects: the API roles may use the public schema, and
--- objects that migrations (run as postgres) create are granted to them.
-grant usage on schema public to anon, authenticated, service_role;
-alter default privileges for role postgres in schema public grant all on tables to anon, authenticated, service_role;
-alter default privileges for role postgres in schema public grant all on sequences to anon, authenticated, service_role;
-alter default privileges for role postgres in schema public grant execute on functions to anon, authenticated, service_role;
+grant usage on schema auth to authenticated, service_role;
+grant usage on schema public to authenticated, service_role;
+-- Objects that migrations (run as postgres) create: the PC uploads and staff
+-- management (service_role) may read and write them; signed-in people
+-- (authenticated) get nothing by default — each migration grants SELECT and
+-- any write explicitly, next to the table's RLS policies. anon gets nothing.
+alter default privileges for role postgres in schema public grant select, insert, update, delete on tables to service_role;
+alter default privileges for role postgres in schema public grant usage, select on sequences to service_role;
+alter default privileges for role postgres in schema public grant execute on functions to authenticated, service_role;
 create table public.schema_migrations (name text primary key, applied_at timestamptz not null default now());
-revoke all on public.schema_migrations from anon, authenticated;
+alter table public.schema_migrations enable row level security;
+revoke all on public.schema_migrations from public;
 SQL
 
-echo "== containers"
+echo "== login tables"
+# GoTrue's tables (db/auth/auth_schema.sql, copied to auth/ on the server),
+# owned by the business's login role, which the app API signs people in as.
+{ echo "set role ${SLUG}_auth;"; cat auth/auth_schema.sql; } | psql_admin -d "$DB" >/dev/null
+# auth_schema.sql (a GoTrue dump) also grants anon; anon has no use here.
+psql_admin -d "$DB" -c "revoke all on schema auth from anon" < /dev/null
+
+echo "== settings"
 umask 077
-mkdir -p "$DIR"
+mkdir -p businesses "$DIR"
 cat > "$DIR/env" <<ENV
 SLUG=$SLUG
-SLOT=$N
 NAME=$NAME
 AUTH_PORT=$AUTH_PORT
 REST_PORT=$REST_PORT
@@ -79,25 +133,23 @@ AUTH_DB_URL=postgres://${SLUG}_auth:$AUTH_PW@db:5432/$DB?search_path=auth
 API_DB_URL=postgres://${SLUG}_api:$API_PW@db:5432/$DB
 BASE_URL=$PUBLIC_URL/b/$SLUG
 ENV
-sed "s/__SLUG__/$SLUG/g" templates/business-compose.yml > "$DIR/compose.yml"
-docker compose -p "biz-$SLUG" -f "$DIR/compose.yml" --env-file "$DIR/env" up -d 2>&1 | tail -2
-
-echo "== waiting for the login service to create its tables"
-for i in $(seq 1 60); do curl -fs "http://127.0.0.1:$AUTH_PORT/health" >/dev/null && break; sleep 2; done
-curl -fs "http://127.0.0.1:$AUTH_PORT/health" >/dev/null || { echo "login service did not start; see: docker compose -p biz-$SLUG logs" >&2; exit 1; }
+# The app API (user wholeflow-api, group wholeflow) reads this file.
+chmod 750 "$DIR"; chmod 640 "$DIR/env"
+if getent group "$GROUP" > /dev/null; then
+  chgrp "$GROUP" businesses "$DIR" "$DIR/env"
+  chmod g+rx,o-rwx businesses
+else
+  echo "warning: group $GROUP does not exist yet; $DIR/env stays root-only (run: chgrp -R $GROUP $ROOT/businesses)" >&2
+fi
 
 echo "== migrations"
 scripts/migrate.sh "$SLUG"
-
-echo "== nginx route"
-sed -e "s/__SLUG__/$SLUG/g" -e "s/__AUTH_PORT__/$AUTH_PORT/g" -e "s/__REST_PORT__/$REST_PORT/g" \
-  templates/business-nginx.conf > "/etc/nginx/wholeflow-businesses/$SLUG.conf"
-nginx -t 2>/dev/null && systemctl reload nginx
+CREATED=""
 
 cat <<OUT
 
 Business "$NAME" is ready.
   Base URL:    $PUBLIC_URL/b/$SLUG
   Anon key:    $ANON_KEY
-  Service key: stored in /opt/wholeflow/$DIR/env (keep secret)
+  Service key: stored in $ROOT/$DIR/env (keep secret)
 OUT

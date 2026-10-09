@@ -72,7 +72,7 @@ First find which case you are in. On the client PC, look for `C:\Program Files\W
 
 1. **The business exists on the WholeFlow server.** In https://admin.jitsuji.xyz → **New business**. The result screen shows the **reference key** and a first **activation code**. For a business that already exists: open it → **Add a Tally PC** gives a new activation code. Codes work **once** and expire after **48 hours**.
 2. **The release package.** On your PC: `powershell -ExecutionPolicy Bypass -File deploy\Build-Release.ps1` produces `dist\WholeFlow-<version>.zip` (see [Rolling out an update](#rolling-out-an-update)). Copy it to the client PC (USB, WhatsApp Desktop, AnyDesk file transfer).
-3. **Your WholeFlow admin account** (email + password, the same one as the admin app). It signs in on the PC's page. Every sign-in needs internet, because the server checks it each time.
+3. **Your WholeFlow installer account** (email + password; admin app → Admins → add an *installer*). Use an installer account on customers' PCs rather than a full admin login: it can only sign in to the PC's page, not the admin app. It signs in on the PC's page. Every sign-in needs internet, because the server checks it each time.
 4. **An Administrator account on the client PC**, for the UAC prompt. Without one, use [logon autostart](#b-logon-autostart-no-administrator) instead of the service.
 5. **TallyPrime in server mode**: Help (F1) → Settings → Connectivity → Client/Server configuration → *TallyPrime acts as* = **Server** (or Both). Note the port; the app reads it from `tally.ini`. The company must be open in Tally for a sync to work.
 
@@ -107,7 +107,7 @@ Do this once the business exists in the admin app.
 
 1. Optional safety copy, from an Administrator console: `Copy-Item C:\ProgramData\WholeFlow C:\WholeFlow-backup -Recurse`.
 2. Extract the new zip and double-click **`Install-WholeFlow.cmd`** (accept UAC). It prints `Upgrading WholeFlow 0.3.x -> <new>`. It then stops the service, waits for Windows to release the old exe, copies the new one, restarts the service and prints `status`, which says the PC is *not connected*.
-3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow admin account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
+3. Open http://127.0.0.1:8080 and **sign in with your WholeFlow installer (or admin) account** (email + password; needs internet). The PC's **old local account** (the one created at first run, usually `admin`) **no longer works**: it is deleted from `config.json` at start.
 4. Cloud Sync → **Step 1 · Connect to WholeFlow**: enter the **reference key** and **activation code**, then click **Connect**.
 5. Click **Test cloud connection**. Check the ticked companies are still right: the plan's limit applies, and the page refuses more than the plan allows. Click **Save settings**.
 6. Click **Sync now**. The first sync is automatically a **full** one: the app sees a new cloud company and starts its markers from zero, so all history goes up. It takes a few minutes per company.
@@ -197,6 +197,13 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    | 0.4.1 | none | local account and offline login removed: `set-password` is gone, every sign-in is checked by the server, and logins stored by older versions are deleted from `config.json` at start |
    | 0.5.0 | none | Supabase connection removed; only the WholeFlow server. A PC still set up with a cloud URL and service key counts as not connected until it connects with a reference key (see Case 2) |
    | 0.5.1 | none | new look for the PC's pages, matching the admin and phone apps (Material 3, side navigation) |
+   | 0.6.0 | none (needs the WholeFlow app API on the server) | uploads go through the WholeFlow app API instead of the data API (PostgREST); purchase bills and their lines are saved in one step; the PC no longer manages mobile app logins (the owner's login comes from WholeFlow, staff are added in the Owner app) |
+
+   Numbering restarted for the first production release on the fresh server (9 October 2026); the versions above were test releases:
+
+   | Version | Migration to apply | What it adds |
+   |---|---|---|
+   | 0.1.0 | all (`0001`–`0009`; a new business gets them when it is created) | first production release: the same as test release 0.6.0 |
 
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 
@@ -236,6 +243,37 @@ Documentation:
 ---
 
 # Web app reference
+
+## Demo business for Play reviewers
+
+Google Play reviewers and closed-test testers sign in to a **demo business**
+with invented data only: "Demo Distributors", 32 shops in fictional towns,
+bills and payments from April to October 2026, stock, suppliers and purchase
+bills, no phone numbers. The data comes from a fake TallyPrime
+(`internal/syncer/demotally_test.go`), synced by a normal Tally PC app.
+
+1. Admin app → **New business**: name `Demo Distributors`, short name `demo`,
+   owner `Demo Owner` / `owner@example.com` (`example.com` can never be a real
+   person's address). Keep the reference key, activation code and temporary
+   password.
+2. On a Linux or Mac computer, start the fake Tally and a PC app pointed at it
+   (the PC app talks to the live server by default):
+   ```bash
+   touch /tmp/demo.stop
+   WF_DEMO_TALLY=127.0.0.1:19000 WF_DEMO_TALLY_STOP=/tmp/demo.stop \
+     go test ./internal/syncer -run TestDemoTally -timeout 12h -v &
+   go build -o /tmp/wholeflow-demo ./cmd/server
+   mkdir -p /tmp/wf-demo && cd /tmp/wf-demo && TALLY_HOST=127.0.0.1 TALLY_PORT=19000 \
+     WHOLEFLOW_DATA_DIR=/tmp/wf-demo /tmp/wholeflow-demo run
+   ```
+3. Open http://127.0.0.1:8080, sign in with an installer account, Cloud Sync
+   → reference key + activation code → tick **Demo Distributors** → **Sync now**.
+4. Owner app: reference key, `owner@example.com`, temporary password → set the
+   permanent password given to Google (Play Console → App content → App
+   access). Add a staff login (`staff@example.com`, a site, a visit plan) and
+   sign in with it once in the Staff app.
+5. Stop both with Ctrl+C and `rm /tmp/demo.stop`. One sync is enough: the
+   data stays on the server (the phones then say "Updated N days ago").
 
 ## TallyPrime setup
 
@@ -316,7 +354,7 @@ internal/config        .env + tally.ini port detection (shared)
 internal/tally         TallyService: XML/TDL requests, parsing, balances, transactions, vouchers (ONLY place that knows Tally XML)
 internal/api           web app REST API, snapshot, filters, exports
 internal/export        CSV and .xlsx writers
-internal/cloud         provider-neutral cloud contract + models;  cloud/rest (the server's PostgREST + GoTrue API), cloud/memory (tests, dry run)
+internal/cloud         provider-neutral cloud contract + models;  cloud/hosted (uploads through the WholeFlow app API), cloud/wire (the upload format, shared with the server), cloud/memory (tests, dry run)
 internal/syncer        settings, local state, transformer, engine, backoff, scheduler
 internal/auth          login: PBKDF2 hashes, sessions, lockout
 internal/secrets       DPAPI encryption of the PC key

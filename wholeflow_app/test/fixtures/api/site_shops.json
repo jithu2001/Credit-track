@@ -1,0 +1,14 @@
+{
+  "shops": [
+    {
+      "area": null,
+      "name": "Beta Traders",
+      "phone": null,
+      "receivable": "-50.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a002",
+      "site_id": "e054355e-6fa4-4064-8c97-34d59afcfe42",
+      "site_name": "Hills"
+    }
+  ]
+}
+

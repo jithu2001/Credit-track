@@ -1,0 +1,26 @@
+{
+  "has_more": false,
+  "page": 0,
+  "page_size": 50,
+  "shops": [
+    {
+      "area": null,
+      "name": "Alpha Stores",
+      "phone": "9800000001",
+      "receivable": "1100.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a001",
+      "site_id": "e0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town"
+    },
+    {
+      "area": null,
+      "name": "Beta Traders",
+      "phone": null,
+      "receivable": "-50.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a002",
+      "site_id": null,
+      "site_name": null
+    }
+  ]
+}
+

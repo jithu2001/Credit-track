@@ -92,7 +92,10 @@
         const body = await res.json().catch(() => null);
         if (!res.ok) throw new Error(body?.error?.message || 'Something went wrong. Please try again.');
         form.hidden = true;
-        $('#contactDone').hidden = false;
+        const done = $('#contactDone');
+        done.hidden = false;
+        done.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        $('h2', done).focus({ preventScroll: true });
       } catch (e) {
         fail(e instanceof TypeError ? 'Could not send. Check your internet connection and try again.' : e.message);
         btn.disabled = false;
