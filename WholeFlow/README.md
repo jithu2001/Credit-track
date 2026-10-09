@@ -244,6 +244,37 @@ Documentation:
 
 # Web app reference
 
+## Demo business for Play reviewers
+
+Google Play reviewers and closed-test testers sign in to a **demo business**
+with invented data only: "Demo Distributors", 32 shops in fictional towns,
+bills and payments from April to October 2026, stock, suppliers and purchase
+bills, no phone numbers. The data comes from a fake TallyPrime
+(`internal/syncer/demotally_test.go`), synced by a normal Tally PC app.
+
+1. Admin app → **New business**: name `Demo Distributors`, short name `demo`,
+   owner `Demo Owner` / `owner@example.com` (`example.com` can never be a real
+   person's address). Keep the reference key, activation code and temporary
+   password.
+2. On a Linux or Mac computer, start the fake Tally and a PC app pointed at it
+   (the PC app talks to the live server by default):
+   ```bash
+   touch /tmp/demo.stop
+   WF_DEMO_TALLY=127.0.0.1:19000 WF_DEMO_TALLY_STOP=/tmp/demo.stop \
+     go test ./internal/syncer -run TestDemoTally -timeout 12h -v &
+   go build -o /tmp/wholeflow-demo ./cmd/server
+   mkdir -p /tmp/wf-demo && cd /tmp/wf-demo && TALLY_HOST=127.0.0.1 TALLY_PORT=19000 \
+     WHOLEFLOW_DATA_DIR=/tmp/wf-demo /tmp/wholeflow-demo run
+   ```
+3. Open http://127.0.0.1:8080, sign in with an installer account, Cloud Sync
+   → reference key + activation code → tick **Demo Distributors** → **Sync now**.
+4. Owner app: reference key, `owner@example.com`, temporary password → set the
+   permanent password given to Google (Play Console → App content → App
+   access). Add a staff login (`staff@example.com`, a site, a visit plan) and
+   sign in with it once in the Staff app.
+5. Stop both with Ctrl+C and `rm /tmp/demo.stop`. One sync is enough: the
+   data stays on the server (the phones then say "Updated N days ago").
+
 ## TallyPrime setup
 
 1. TallyPrime running with the company open.
