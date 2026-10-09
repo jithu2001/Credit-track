@@ -14,6 +14,28 @@ tools/og.html           source of assets/img/og.png (not deployed)
 deploy.sh               copies the site to the server
 ```
 
+## Run locally
+
+Serve the `website` folder with any static web server. Opening `index.html`
+straight from the disk (`file://…`) does not work: the pages load their files
+from `/assets/…`, which needs a server whose root is this folder.
+
+```bash
+cd website
+python3 -m http.server 8000      # then open http://localhost:8000
+```
+
+Edits show on reload (Ctrl+Shift+R if the browser keeps an old `site.css` or
+`site.js`). Stop the server with Ctrl+C. The privacy page is
+http://localhost:8000/privacy.html; any unknown path shows Python's own
+404, not `404.html` (nginx serves that one on the server).
+
+**Contact form:** locally there is no `/api/contact`, so sending shows
+"Something went wrong. Please try again." That is expected. The checks in the
+browser (name, mobile number, email) still work. To try the real send, use the
+live site, or run the control service (`wholeflow-control serve`) and post to
+`http://127.0.0.1:8100/control/leads` directly.
+
 ## Contact form
 
 The contact section is a form (name, business, mobile, email, number of Tally companies, city, message).
