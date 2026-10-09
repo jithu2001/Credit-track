@@ -276,7 +276,7 @@ In the admin app:
   cannot open the admin app). Save its password.
 - **Settings:** your contact details for the subscription banners; leave
   *Minimum phone app build* at 0 for now; set *Latest Tally PC version* to
-  `0.6.0`.
+  `0.1.0`.
 
 ## 10. App API
 
@@ -369,14 +369,14 @@ migrations including the lockdown.)
 **Tally PC** (laptop, then the customer's PC):
 
 ```bash
-WholeFlow/deploy/build-release.sh          # → WholeFlow/dist/WholeFlow-0.6.0.zip
+WholeFlow/deploy/build-release.sh          # → WholeFlow/dist/WholeFlow-0.1.0.zip
 ```
 
 On the Tally PC: extract the zip, double-click `Install-WholeFlow.cmd`
 (accept the UAC prompt), open http://127.0.0.1:8080, sign in with the
 **installer** account, Cloud Sync → enter the reference key and activation
 code → tick the Tally companies → turn sync on → **Sync now**. The admin app's
-business page and Server health then show the PC as online, version 0.6.0.
+business page and Server health then show the PC as online, version 0.1.0.
 
 **Phone apps** — release builds need the upload key once (laptop):
 

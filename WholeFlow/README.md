@@ -199,6 +199,12 @@ An update replaces only `wholeflow.exe`. The Cloud Sync settings, the encrypted 
    | 0.5.1 | none | new look for the PC's pages, matching the admin and phone apps (Material 3, side navigation) |
    | 0.6.0 | none (needs the WholeFlow app API on the server) | uploads go through the WholeFlow app API instead of the data API (PostgREST); purchase bills and their lines are saved in one step; the PC no longer manages mobile app logins (the owner's login comes from WholeFlow, staff are added in the Owner app) |
 
+   Numbering restarted for the first production release on the fresh server (9 October 2026); the versions above were test releases:
+
+   | Version | Migration to apply | What it adds |
+   |---|---|---|
+   | 0.1.0 | all (`0001`–`0009`; a new business gets them when it is created) | first production release: the same as test release 0.6.0 |
+
    Skipping a migration does not break the sync: shops and transactions still go through, and the new parts show a warning on the Cloud Sync page until the migration is applied.
 
 **On each client PC** (in person or over AnyDesk / TeamViewer):
