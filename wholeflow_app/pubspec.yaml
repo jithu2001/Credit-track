@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # Every Play Store upload needs a higher build number (after the +): it is the
 # Android versionCode. tool/build_release.sh refuses one already released.
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.13.2
