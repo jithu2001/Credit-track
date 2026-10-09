@@ -3,11 +3,20 @@
 //
 //   WF_SCREENSHOTS=1 flutter test test/marketing --update-goldens
 //
-// Output: test/marketing/out/*.png at 1080×2400 (360×800 logical, ×3).
+// Output: test/marketing/out/*.png at 360×800 (the website scales them).
+//
+// Google Play phone screenshots (9:16, 1080×1920, captured at ×3):
+//
+//   WF_SCREENSHOTS=play flutter test test/marketing
+//
+// Output: test/marketing/out/play/*.png (owner-* for WholeFlow Owner,
+// staff-* for WholeFlow Staff).
 // Every name and amount here is invented: no real business, phone or key.
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
@@ -55,6 +64,9 @@ import '../stock_like_server.dart';
 import '../widget/helpers.dart';
 
 final _skip = Platform.environment['WF_SCREENSHOTS'] == null;
+
+/// Play Store mode: 9:16 screens written at full resolution.
+final _play = Platform.environment['WF_SCREENSHOTS'] == 'play';
 
 const _company = Company(id: 'co', companyName: 'Periyar Traders (FY 2026-27)', syncStatus: 'SYNCED');
 const _staff = AppUser(id: 'staff-1', businessId: 'biz', role: UserRole.staff, name: 'Anand', requiresCheckIn: true);
@@ -445,7 +457,7 @@ Future<void> _shot(
 }) async {
   debugDisableShadows = false; // real elevation shadows in the picture
   tester.view.devicePixelRatio = 3;
-  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.physicalSize = _play ? const Size(1080, 1920) : const Size(1080, 2400);
   addTearDown(tester.view.reset);
   final items = user.isOwner ? navItemsFor(UserRole.owner) : staffNavItemsFor(checksIn: true);
   await tester.pumpWidget(
@@ -466,7 +478,18 @@ Future<void> _shot(
     await then();
     await tester.pumpAndSettle();
   }
-  await expectLater(find.byKey(const Key('shot')), matchesGoldenFile('out/$name.png'));
+  if (_play) {
+    final boundary = tester.renderObject<RenderRepaintBoundary>(find.byKey(const Key('shot')));
+    await tester.runAsync(() async {
+      final image = await boundary.toImage(pixelRatio: 3);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      File('test/marketing/out/play/$name.png')
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(png!.buffer.asUint8List());
+    });
+  } else {
+    await expectLater(find.byKey(const Key('shot')), matchesGoldenFile('out/$name.png'));
+  }
   debugDisableShadows = true; // the test framework checks it is back to its default
 }
 
@@ -508,5 +531,8 @@ void main() {
     testWidgets('sites', (t) => _shot(t, 'sites', const SitesScreen(), nav: 2));
     testWidgets('stock', (t) => _shot(t, 'stock', const StockScreen(), nav: 3));
     testWidgets('staff visits', (t) => _shot(t, 'staff-visits', const StaffVisitsScreen(), user: _staff, nav: 2));
+    testWidgets('staff dashboard', (t) => _shot(t, 'staff-dashboard', const DashboardScreen(), user: _staff));
+    testWidgets('staff shops', (t) => _shot(t, 'staff-shops', const ShopsScreen(), user: _staff, nav: 1));
+    testWidgets('staff stock', (t) => _shot(t, 'staff-stock', const StockScreen(), user: _staff, nav: 3));
   });
 }
