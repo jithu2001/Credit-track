@@ -12,6 +12,8 @@ GoTrue and PostgREST containers are retired step by step
 management is `/b/<slug>/api/v1/staff`). New businesses get no containers.
 Deploy order: API_PLAN.md section 5 plus **"Deploying the hardening"** below.
 
+**New server from scratch (wipe and reinstall):** [../../docs/DEPLOY_FRESH_SERVER.md](../../docs/DEPLOY_FRESH_SERVER.md).
+
 Live server: `75.119.130.27` (Contabo, Germany, 4 vCPU / 8 GB RAM, Ubuntu 24.04),
 `api.jitsuji.xyz`, `admin.jitsuji.xyz`, `wholeflow.jitsuji.xyz`, files in `/opt/wholeflow`.
 SSH: `ssh wholeflow` (key `~/.ssh/wholeflow_vps`; password login is off).

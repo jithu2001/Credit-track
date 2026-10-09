@@ -125,6 +125,8 @@ Follow these in order to rebuild everything from nothing. The live system was bu
 
 ### 4.2 Server
 
+> **Current, complete guide for a fresh production server** (app API, two-step admin sign-in, hardened kit): [WholeFlow/docs/DEPLOY_FRESH_SERVER.md](WholeFlow/docs/DEPLOY_FRESH_SERVER.md). The steps below are the original setup and may lag behind it.
+
 #### Step 1: DNS
 
 At your domain registrar, make sure the domain uses the registrar's nameservers. Then add two **A records** pointing at the server's IP:
