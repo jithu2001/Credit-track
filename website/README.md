@@ -6,7 +6,7 @@ The public site at **https://wholeflow.jitsuji.xyz**. Plain HTML, CSS and a litt
 index.html              the page (copy, SEO tags, JSON-LD: SoftwareApplication, Organization, FAQPage)
 404.html                not-found page
 assets/css/site.css     styles, including the self-hosted fonts (@font-face)
-assets/js/site.js       scroll-driven phone screens, count-up, reveal, contact form
+assets/js/site.js       scroll-driven phone screens, count-up, reveals, mobile menu, price calculator, contact form
 assets/fonts/           Fraunces, IBM Plex Sans, IBM Plex Mono (OFL), latin + latin-ext (₹)
 assets/img/             app screenshots (720 px and -360 versions), icons, og.png (1200×630)
 robots.txt, sitemap.xml, site.webmanifest, favicon.ico
