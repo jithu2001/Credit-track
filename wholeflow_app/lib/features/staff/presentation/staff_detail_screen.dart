@@ -90,6 +90,54 @@ class _LoadedState extends ConsumerState<_Loaded> {
     );
   }
 
+  /// Deleting asks twice: first what it removes (with Disable offered instead),
+  /// then the owner types the staff member's name to unlock the button.
+  Future<void> _delete() async {
+    final name = m.displayName;
+    final step1 = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.delete_forever_outlined, color: context.colors.error),
+        title: Text('Delete $name?'),
+        content: Text(
+          'This permanently removes their account, the companies and sites they can see, '
+          'and all their visit plans and shop check-ins. They are signed out on every phone. '
+          "This can't be undone."
+          '${m.isActive ? '\n\nTo stop them signing in but keep their history, disable the account instead.' : ''}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          if (m.isActive) TextButton(onPressed: () => Navigator.pop(context, 'disable'), child: const Text('Disable instead')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'delete'),
+            style: TextButton.styleFrom(foregroundColor: context.colors.error),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || step1 == null) return;
+    if (step1 == 'disable') return _toggleActive();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _ConfirmDeleteDialog(name: name),
+    );
+    if (!mounted || confirmed != true) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(staffRepositoryProvider).delete(m.id);
+      ref.invalidate(staffMembersProvider);
+      if (!mounted) return;
+      showMessage(context, '$name deleted');
+      context.canPop() ? context.pop() : context.go('/staff');
+    } on AppFailure catch (f) {
+      if (mounted) {
+        showMessage(context, f.message);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   Future<void> _resetPassword() async {
     final password = generatePassword();
     final ok = await showDialog<bool>(
@@ -226,10 +274,86 @@ class _LoadedState extends ConsumerState<_Loaded> {
                 label: Text(m.isActive ? 'Disable account' : 'Enable account'),
                 style: m.isActive ? OutlinedButton.styleFrom(foregroundColor: context.colors.error) : null,
               ),
+              const SizedBox(height: Insets.s),
+              TextButton.icon(
+                onPressed: _busy ? null : _delete,
+                icon: const Icon(Icons.delete_forever_outlined),
+                label: const Text('Delete account'),
+                style: TextButton.styleFrom(foregroundColor: context.colors.error),
+              ),
             ],
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Second step of deleting: the Delete button only works once the staff
+/// member's name has been typed exactly as shown.
+class _ConfirmDeleteDialog extends StatefulWidget {
+  const _ConfirmDeleteDialog({required this.name});
+
+  final String name;
+
+  @override
+  State<_ConfirmDeleteDialog> createState() => _ConfirmDeleteDialogState();
+}
+
+class _ConfirmDeleteDialogState extends State<_ConfirmDeleteDialog> {
+  final _typed = TextEditingController();
+
+  @override
+  void dispose() {
+    _typed.dispose();
+    super.dispose();
+  }
+
+  bool get _matches => _typed.text.trim() == widget.name.trim();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Confirm delete'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text.rich(
+            TextSpan(
+              children: [
+                const TextSpan(text: 'Type '),
+                TextSpan(
+                  text: widget.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const TextSpan(text: ' to delete this account.'),
+              ],
+            ),
+          ),
+          const SizedBox(height: Insets.m),
+          TextField(
+            controller: _typed,
+            autofocus: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
+            decoration: const InputDecoration(labelText: 'Staff name', border: OutlineInputBorder()),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) {
+              if (_matches) Navigator.pop(context, true);
+            },
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _matches ? () => Navigator.pop(context, true) : null,
+          style: FilledButton.styleFrom(backgroundColor: context.colors.error, foregroundColor: context.colors.onError),
+          child: const Text('Delete'),
+        ),
+      ],
     );
   }
 }

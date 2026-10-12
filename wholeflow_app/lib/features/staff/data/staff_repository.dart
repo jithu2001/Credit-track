@@ -69,6 +69,10 @@ class StaffRepository {
   Future<void> resetPassword(String userId, String password) =>
       _run(() => _api.post('staff/$userId/password', {'password': password}));
 
+  /// Removes the staff member for good: their login, access, visit plans and
+  /// check-in history. Their phones are signed out at once.
+  Future<void> delete(String userId) => _run(() => _api.delete('staff/$userId'));
+
   Future<void> _run(Future<Object?> Function() call) async {
     try {
       await call();

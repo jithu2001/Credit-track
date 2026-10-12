@@ -42,8 +42,10 @@ import 'package:wholeflow_app/features/visits/presentation/check_in_screen.dart'
 import 'package:wholeflow_app/features/visits/presentation/plans_screen.dart';
 import 'package:wholeflow_app/features/visits/presentation/staff_visits_screen.dart';
 import 'package:wholeflow_app/core/location/location_service.dart';
+import 'package:wholeflow_app/features/staff/data/staff_repository.dart';
 import 'package:wholeflow_app/features/staff/domain/staff.dart';
 import 'package:wholeflow_app/features/staff/presentation/staff_providers.dart';
+import 'package:wholeflow_app/features/staff/presentation/staff_detail_screen.dart';
 import 'package:wholeflow_app/features/staff/presentation/staff_form_screen.dart';
 
 import 'helpers.dart';
@@ -756,6 +758,83 @@ void main() {
     });
   });
 
+  group('staff delete', () {
+    const ravi = StaffMember(
+      id: 'staff-1',
+      role: UserRole.staff,
+      name: 'Ravi Kumar',
+      email: 'ravi@example.com',
+      companies: [CompanyAccess(userId: 'staff-1', companyId: 'co-a')],
+    );
+
+    Future<_FakeStaffRepository> open(WidgetTester tester) async {
+      final repo = _FakeStaffRepository();
+      await pumpRoutedScreen(
+        tester,
+        const StaffDetailScreen(userId: 'staff-1'),
+        overrides: [
+          ...await baseOverrides(companies: const [companyA]),
+          staffMembersProvider.overrideWith((ref) async => const [ravi]),
+          staffRepositoryProvider.overrideWithValue(repo),
+        ],
+        size: const Size(400, 1200),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Delete account'));
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      return repo;
+    }
+
+    testWidgets('asks twice and needs the name typed before deleting', (tester) async {
+      final repo = await open(tester);
+      expect(find.text('Delete Ravi Kumar?'), findsOneWidget);
+      expect(find.text('Disable instead'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      FilledButton deleteButton() => tester.widget(find.widgetWithText(FilledButton, 'Delete'));
+      expect(deleteButton().onPressed, isNull, reason: 'nothing typed yet');
+      await tester.enterText(find.byType(TextField), 'ravi kumar');
+      await tester.pump();
+      expect(deleteButton().onPressed, isNull, reason: 'must match exactly');
+      await tester.enterText(find.byType(TextField), 'Ravi Kumar ');
+      await tester.pump();
+      expect(deleteButton().onPressed, isNotNull);
+      expect(repo.deleted, isEmpty, reason: 'nothing deleted before the last tap');
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, ['staff-1']);
+      expect(find.text('base page'), findsOneWidget, reason: 'went back to the list');
+    });
+
+    testWidgets('cancelling either step deletes nothing; Disable instead disables', (tester) async {
+      final repo = await open(tester);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Ravi Kumar');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, isEmpty);
+
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Disable instead'));
+      await tester.pumpAndSettle();
+      expect(find.text('Disable Ravi Kumar?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Disable'));
+      await tester.pumpAndSettle();
+      expect(repo.active, {'staff-1': false});
+      expect(repo.deleted, isEmpty);
+    });
+  });
+
   testWidgets('staff with no company see the not-assigned screen', (tester) async {
     await pumpScreen(tester, const NoCompanyView(isOwner: false), overrides: await baseOverrides(user: staffUser));
     await tester.pump();
@@ -956,4 +1035,18 @@ void main() {
       });
     }
   });
+}
+
+class _FakeStaffRepository implements StaffRepository {
+  final deleted = <String>[];
+  final active = <String, bool>{};
+
+  @override
+  Future<void> delete(String userId) async => deleted.add(userId);
+
+  @override
+  Future<void> setActive(String userId, bool isActive) async => active[userId] = isActive;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

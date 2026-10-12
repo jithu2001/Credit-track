@@ -205,6 +205,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/check-in", s.handleWrite(s.setStaffCheckIn))
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/active", s.handleWrite(s.setStaffActive))
 	mux.HandleFunc("POST /b/{slug}/api/v1/staff/{id}/password", s.handleWrite(s.resetStaffPassword))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.deleteStaff))
 	mux.HandleFunc("POST /b/{slug}/api/v1/client-errors", s.clientError)
 	return s.versionGate(mux)
 }

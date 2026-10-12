@@ -25,6 +25,7 @@ import (
 //	PUT  /b/{slug}/api/v1/staff/{id}/check-in           {"required"}
 //	PUT  /b/{slug}/api/v1/staff/{id}/active             {"active"}   (also blocks or unblocks their login)
 //	POST /b/{slug}/api/v1/staff/{id}/password           {"password"} (temporary; they change it at sign-in)
+//	DELETE /b/{slug}/api/v1/staff/{id}                  removes the login and everything of theirs (see deleteStaff)
 //
 // A company entry is {"company_id", "full_company", "site_ids", "can_view_transactions"}.
 // After the owner check, changes run as the business's service role (as the
@@ -376,6 +377,22 @@ func (s *Server) setStaffActive(r *request) (any, error) {
 			})
 		}
 		return map[string]any{"id": id, "is_active": *in.Active}, nil
+	})
+}
+
+// deleteStaff removes a staff member for good. Deleting the login cascades
+// (foreign keys) to their users row, company and site access, visit plans,
+// tasks, check-ins and failed attempts, all in the one login transaction;
+// rows they only created or approved keep existing without the name. Their
+// sessions go with the login, so their phones are signed out at once.
+func (s *Server) deleteStaff(r *request) (any, error) {
+	return s.staffChange(r, func(id, _, _ string) (any, error) {
+		err := inAuthTx(r.Context(), r.tenant, func(tx pgx.Tx) error { return authn.DeleteUser(r.Context(), tx, id) })
+		if err != nil {
+			return nil, err
+		}
+		r.tenant.forgetSessions()
+		return map[string]any{"id": id, "deleted": true}, nil
 	})
 }
 

@@ -801,6 +801,27 @@ func TestIntegration(t *testing.T) {
 		var name string
 		_ = db.QueryRow(context.Background(), `select name from public.users where id = $1`, newID).Scan(&name)
 		eqv(t, name, "Renamed", "renamed in the database")
+
+		code, _ = send("DELETE", staffPath, token(staffA), "")
+		eqv(t, code, 403, "staff can't delete staff")
+		code, _ = send("DELETE", "/b/apitest/api/v1/staff/"+ownerA, token(ownerA), "")
+		eqv(t, code, 403, "owner accounts can't be deleted here")
+		code, _ = send("DELETE", "/b/apitest/api/v1/staff/"+ownerB, token(ownerA), "")
+		eqv(t, code, 404, "other business's user can't be deleted")
+		mustExec(t, db, `insert into auth.sessions (id, user_id, created_at, updated_at, aal) values ('5e55a000-0000-0000-0000-0000000000a2', $1, now(), now(), 'aal1')`, newID)
+		code, out = send("DELETE", staffPath, token(ownerA), "")
+		if code != 200 {
+			t.Fatalf("delete: %d %v", code, out)
+		}
+		var logins, rows, access, sessions int
+		_ = db.QueryRow(context.Background(), `select (select count(*) from auth.users where id = $1), (select count(*) from public.users where id = $1),
+			(select count(*) from public.staff_company_access where user_id = $1), (select count(*) from auth.sessions where user_id = $1)`, newID).
+			Scan(&logins, &rows, &access, &sessions)
+		eqv(t, [4]int{logins, rows, access, sessions}, [4]int{0, 0, 0, 0}, "login, staff row, access and sessions gone")
+		code, _ = send("DELETE", staffPath, token(ownerA), "")
+		eqv(t, code, 404, "already deleted")
+		code, _ = send("POST", "/b/apitest/api/v1/staff", token(ownerA), body)
+		eqv(t, code, 200, "the email can be used again")
 	})
 
 	t.Run("Tally PC uploads through the API", func(t *testing.T) {
