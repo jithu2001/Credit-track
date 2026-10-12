@@ -134,20 +134,23 @@ class _PausedScreenState extends ConsumerState<PausedScreen> with WidgetsBinding
   }
 }
 
-/// Asks, then closes this business and shows the connect screen.
-Future<void> confirmSwitchBusiness(BuildContext context, WidgetRef ref) async {
+/// Asks, then closes this business and shows the connect screen. Before
+/// signing in ([signedIn] false) it is "use a different reference key".
+Future<void> confirmSwitchBusiness(BuildContext context, WidgetRef ref, {bool signedIn = true}) async {
   final name = ref.read(businessConnectionProvider).businessName;
   final ok = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Switch business?'),
+      title: Text(signedIn ? 'Switch business?' : 'Change business?'),
       content: Text(
-        'You will be signed out${name.isEmpty ? '' : ' of $name'}. '
-        'You need the other business\'s reference key to connect.',
+        signedIn
+            ? 'You will be signed out${name.isEmpty ? '' : ' of $name'}. '
+                  'You need the other business\'s reference key to connect.'
+            : 'Go back and enter a different reference key${name.isEmpty ? '' : ' instead of $name\'s'}?',
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Switch')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(signedIn ? 'Switch' : 'Change')),
       ],
     ),
   );

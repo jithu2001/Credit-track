@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/connection/business_connection.dart';
 import '../../../core/errors/app_failure.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/states.dart';
+import '../../subscription/presentation/paused_screen.dart' show confirmSwitchBusiness;
 import 'password_form.dart';
 import 'session_controller.dart';
 
@@ -76,92 +78,116 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionControllerProvider).value;
     final notice = _error ?? (session is SignedOut ? session.message : null);
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(Insets.xl),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: AutofillGroup(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Icon(Icons.account_balance_wallet_rounded, size: 56, color: context.colors.primary),
-                      const SizedBox(height: Insets.l),
-                      Text('WholeFlow', style: context.text.headlineMedium, textAlign: TextAlign.center),
-                      const SizedBox(height: Insets.xs),
-                      Text(
-                        'Shop balances from Tally, wherever you are',
-                        style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: Insets.xxl),
-                      if (notice != null) ...[
-                        Card.filled(
-                          key: const Key('login-error'),
-                          color: context.colors.errorContainer,
-                          child: Padding(
-                            padding: const EdgeInsets.all(Insets.m),
-                            child: Row(
-                              children: [
-                                Icon(Icons.error_outline_rounded, color: context.colors.onErrorContainer),
-                                const SizedBox(width: Insets.m),
-                                Expanded(
-                                  child: Text(notice, style: TextStyle(color: context.colors.onErrorContainer)),
-                                ),
-                              ],
+    final business = ref.watch(businessConnectionProvider).businessName;
+    // Back (gesture or button) offers the reference-key screen again instead
+    // of closing the app: there is nothing else to go back to from here.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !_busy) confirmSwitchBusiness(context, ref, signedIn: false);
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(Insets.xl),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AutofillGroup(
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Icon(Icons.account_balance_wallet_rounded, size: 56, color: context.colors.primary),
+                        const SizedBox(height: Insets.l),
+                        Text('WholeFlow', style: context.text.headlineMedium, textAlign: TextAlign.center),
+                        const SizedBox(height: Insets.xs),
+                        Text(
+                          'Shop balances from Tally, wherever you are',
+                          style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: Insets.xxl),
+                        if (notice != null) ...[
+                          Card.filled(
+                            key: const Key('login-error'),
+                            color: context.colors.errorContainer,
+                            child: Padding(
+                              padding: const EdgeInsets.all(Insets.m),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.error_outline_rounded, color: context.colors.onErrorContainer),
+                                  const SizedBox(width: Insets.m),
+                                  Expanded(
+                                    child: Text(notice, style: TextStyle(color: context.colors.onErrorContainer)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
+                          const SizedBox(height: Insets.l),
+                        ],
+                        TextFormField(
+                          key: const Key('login-email'),
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email, AutofillHints.username],
+                          autocorrect: false,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
+                          validator: (v) => (v == null || !v.contains('@')) ? 'Enter your email' : null,
                         ),
                         const SizedBox(height: Insets.l),
-                      ],
-                      TextFormField(
-                        key: const Key('login-email'),
-                        controller: _email,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email, AutofillHints.username],
-                        autocorrect: false,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined)),
-                        validator: (v) => (v == null || !v.contains('@')) ? 'Enter your email' : null,
-                      ),
-                      const SizedBox(height: Insets.l),
-                      TextFormField(
-                        key: const Key('login-password'),
-                        controller: _password,
-                        obscureText: _obscure,
-                        autofillHints: const [AutofillHints.password],
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _submit(),
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(Icons.lock_outline_rounded),
-                          suffixIcon: IconButton(
-                            tooltip: _obscure ? 'Show password' : 'Hide password',
-                            icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                            onPressed: () => setState(() => _obscure = !_obscure),
+                        TextFormField(
+                          key: const Key('login-password'),
+                          controller: _password,
+                          obscureText: _obscure,
+                          autofillHints: const [AutofillHints.password],
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _submit(),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock_outline_rounded),
+                            suffixIcon: IconButton(
+                              tooltip: _obscure ? 'Show password' : 'Hide password',
+                              icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                              onPressed: () => setState(() => _obscure = !_obscure),
+                            ),
                           ),
+                          validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
                         ),
-                        validator: (v) => (v == null || v.isEmpty) ? 'Enter your password' : null,
-                      ),
-                      const SizedBox(height: Insets.xl),
-                      FilledButton(
-                        key: const Key('login-submit'),
-                        onPressed: _busy ? null : _submit,
-                        child: _busy
-                            ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                            : const Text('Sign in'),
-                      ),
-                      const SizedBox(height: Insets.l),
-                      Text(
-                        'Forgot password? Ask your business owner to reset it.',
-                        style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
+                        const SizedBox(height: Insets.xl),
+                        FilledButton(
+                          key: const Key('login-submit'),
+                          onPressed: _busy ? null : _submit,
+                          child: _busy
+                              ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                              : const Text('Sign in'),
+                        ),
+                        const SizedBox(height: Insets.l),
+                        Text(
+                          'Forgot password? Ask your business owner to reset it.',
+                          style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: Insets.xl),
+                        const Divider(),
+                        const SizedBox(height: Insets.s),
+                        Text(
+                          business.isEmpty ? 'Connected to your business' : 'Connected to $business',
+                          key: const Key('login-business'),
+                          style: context.text.bodyMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                        TextButton.icon(
+                          key: const Key('login-change-business'),
+                          onPressed: _busy ? null : () => confirmSwitchBusiness(context, ref, signedIn: false),
+                          icon: const Icon(Icons.key_rounded),
+                          label: const Text('Use a different reference key'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wholeflow_app/core/connection/business_connection.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
@@ -175,6 +176,53 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text(inactiveAccountMessage), findsOneWidget);
       expect(repo.signedIn, isFalse);
+    });
+
+    group('back to the reference key', () {
+      Future<List<String>> open(WidgetTester tester) async {
+        final switched = <String>[];
+        await pumpScreen(
+          tester,
+          const LoginScreen(),
+          overrides: [
+            authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+            businessConnectionProvider.overrideWithValue(
+              const BusinessConnection(businessName: 'JMJ Marketing', baseUrl: 'https://x', anonKey: 'k', referenceKey: 'R'),
+            ),
+            switchBusinessProvider.overrideWithValue(() async => switched.add('switch')),
+          ],
+          size: const Size(400, 1000),
+        );
+        return switched;
+      }
+
+      testWidgets('the sign-in screen names the business and can change it', (tester) async {
+        final switched = await open(tester);
+        expect(find.text('Connected to JMJ Marketing'), findsOneWidget);
+        await tester.ensureVisible(find.byKey(const Key('login-change-business')));
+        await tester.tap(find.byKey(const Key('login-change-business')));
+        await tester.pumpAndSettle();
+        expect(find.text('Change business?'), findsOneWidget);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(switched, isEmpty, reason: 'cancel keeps the business');
+
+        await tester.tap(find.byKey(const Key('login-change-business')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Change'));
+        await tester.pumpAndSettle();
+        expect(switched, ['switch']);
+      });
+
+      testWidgets('Android back asks to change business instead of closing', (tester) async {
+        final switched = await open(tester);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('Change business?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Change'));
+        await tester.pumpAndSettle();
+        expect(switched, ['switch']);
+      });
     });
   });
 
