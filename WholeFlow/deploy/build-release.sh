@@ -2,8 +2,13 @@
 # Builds the WholeFlow release package for client Tally PCs from Linux/macOS:
 # the same result as deploy\Build-Release.ps1 on Windows.
 #
-#   deploy/build-release.sh            # vet + tests, then build and zip
+#   deploy/build-release.sh            # next version (0.6.0 -> 0.6.1), vet + tests, build and zip
 #   deploy/build-release.sh --skip-tests
+#   deploy/build-release.sh --no-bump  # rebuild the version in settings.go as it is
+#
+# Each run raises the last number of the version in internal/syncer/settings.go
+# (the version the PC reports to the server). If the build fails the old
+# version is put back. Commit settings.go afterwards with the release.
 #
 # Releases are unsigned for now (installed by hand on each PC). To sign with
 # an Authenticode certificate later (so Windows SmartScreen and antivirus
@@ -18,13 +23,26 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."                       # the WholeFlow folder
 
-skip_tests=0
+skip_tests=0 bump=1
 for a in "$@"; do
   case $a in
     --skip-tests) skip_tests=1 ;;
+    --no-bump) bump=0 ;;
     *) echo "unknown option $a" >&2; exit 2 ;;
   esac
 done
+
+settings=internal/syncer/settings.go
+if [[ $bump = 1 ]]; then
+  old=$(sed -n 's/^const Version = "\(.*\)"/\1/p' "$settings")
+  [[ $old =~ ^([0-9]+\.[0-9]+)\.([0-9]+)$ ]] || { echo "version '$old' in $settings is not x.y.z" >&2; exit 1; }
+  new="${BASH_REMATCH[1]}.$((BASH_REMATCH[2] + 1))"
+  cp "$settings" "$settings.bak"
+  # A failed build must not use up the number: put the old version back.
+  trap '[[ -f $settings.bak ]] && mv "$settings.bak" "$settings" && echo "build failed: version left at $old" >&2' EXIT
+  sed -i "s/^const Version = \"$old\"/const Version = \"$new\"/" "$settings"
+  echo "version $old -> $new"
+fi
 
 if [[ $skip_tests = 0 ]]; then
   echo "go vet ./..."; go vet ./...
@@ -67,3 +85,7 @@ echo "  $(pwd)/$zip"
 echo "  wholeflow.exe SHA-256 $hash"
 echo
 echo "On each client PC: extract the zip, double-click Install-WholeFlow.cmd, accept the UAC prompt (see README.txt)."
+if [[ $bump = 1 ]]; then
+  rm -f "$settings.bak"; trap - EXIT
+  echo "Commit the new version: git commit -m 'Tally PC $version' $settings"
+fi
