@@ -409,16 +409,16 @@ func (e *Engine) syncCompany(ctx context.Context, prov cloud.Provider, set Setti
 		switch {
 		case cursor == 0:
 			cr.Mode = "full"
-		case lastReconcile == nil || e.now().Sub(*lastReconcile) >= time.Duration(set.Sync.FullReconcileHours)*time.Hour:
+		case set.Sync.FullReadDue(lastReconcile, e.now()):
 			cr.Mode = "reconcile"
 		default:
 			cr.Mode = "incremental"
 		}
 		// A shop that is new in the cloud (created in Tally, moved into a shop
-		// group, restored) has history older than the cursor: read everything.
-		if cr.Mode == "incremental" && cr.Shops.Created > 0 {
-			cr.Mode = "reconcile"
-		}
+		// group, restored) may have history older than the cursor. It arrives
+		// with the day's full read, not now: re-reading every voucher would
+		// stop TallyPrime responding for seconds, at a busy time. The shop's
+		// balance is right at once (it comes with the shop).
 		// full and reconcile re-read every voucher, so gaps (unparsed amounts,
 		// ledgers that became shops, post-dated vouchers) heal on schedule.
 		since := cursor

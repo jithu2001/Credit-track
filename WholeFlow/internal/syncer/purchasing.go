@@ -79,8 +79,7 @@ func (e *Engine) syncPurchasing(ctx context.Context, prov cloud.Provider, set Se
 		switch {
 		case prev.PurchaseCursor == 0:
 			mode = "full"
-		case prev.LastPurchaseReconcileAt == nil ||
-			e.now().Sub(*prev.LastPurchaseReconcileAt) >= time.Duration(set.Sync.FullReconcileHours)*time.Hour:
+		case set.Sync.FullReadDue(prev.LastPurchaseReconcileAt, e.now()):
 			mode = "reconcile"
 		}
 		st, cursor, active, err := e.syncPurchases(ctx, pp, set, tc, cloudID, mode, prev.PurchaseCursor, supplierIDByName, itemIDByName, &res)

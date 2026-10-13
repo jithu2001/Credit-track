@@ -3,10 +3,12 @@ package syncer
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
-// A ledger that becomes a shop later (moved into Sundry Debtors) must get its
-// old vouchers, although their AlterIDs are below the cursor.
+// A ledger that becomes a shop later (moved into Sundry Debtors) gets its old
+// vouchers (AlterIDs below the cursor) with the day's full read, not at once:
+// re-reading every voucher would stop TallyPrime responding at a busy time.
 func TestNewShopGetsHistory(t *testing.T) {
 	c := sampleCompany("C1", "JMJ")
 	c.Ledgers = append(c.Ledgers, fakeLedger{Name: "SHOP FOUR", GUID: "C1-L4", Parent: "Suspense", Closing: "-700.00"})
@@ -19,8 +21,15 @@ func TestNewShopGetsHistory(t *testing.T) {
 	}
 	h.fake.edit(func() { c.Ledgers[len(c.Ledgers)-1].Parent = "Sundry Debtors" })
 	cr := h.run().Companies[0]
-	if cr.Mode != "reconcile" || cr.Shops.Created != 1 {
-		t.Fatalf("a new shop must force a reconcile: mode %s shops %+v", cr.Mode, cr.Shops)
+	if cr.Mode != "incremental" || cr.Shops.Created != 1 {
+		t.Fatalf("a new shop must not force a full read: mode %s shops %+v", cr.Mode, cr.Shops)
+	}
+	if got := h.store.Transactions("C1-V9"); len(got) != 0 {
+		t.Fatalf("old voucher read before the day's full read: %+v", got)
+	}
+	h.clock = h.clock.Add(24 * time.Hour) // the next day's window
+	if cr = h.run().Companies[0]; cr.Mode != "reconcile" {
+		t.Fatalf("next day: mode %s, want reconcile", cr.Mode)
 	}
 	if got := h.store.Transactions("C1-V9"); len(got) != 1 || got[0].Amount != 700 {
 		t.Fatalf("old voucher of the new shop missing: %+v", got)

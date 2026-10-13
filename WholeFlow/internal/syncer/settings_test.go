@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"wholeflow/internal/secrets"
 )
@@ -246,5 +247,42 @@ func TestOldFieldsDroppedFromConnectedPC(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, settingsFileName)); strings.Contains(string(b), "supabase") || strings.Contains(string(b), "service-key") {
 		t.Fatalf("old fields still in config.json: %s", b)
+	}
+}
+
+func TestFullReadDue(t *testing.T) {
+	ist := time.FixedZone("IST", 5*3600+1800)
+	at := func(day, h, m int) time.Time { return time.Date(2026, 10, day, h, m, 0, 0, ist) }
+	ptr := func(t time.Time) *time.Time { return &t }
+	def := SyncSettings{} // default hour: 13:00
+	eight := 8
+	cases := []struct {
+		name string
+		s    SyncSettings
+		last *time.Time
+		now  time.Time
+		want bool
+	}{
+		{"never read", def, nil, at(10, 9, 0), true},
+		{"before today's window", def, ptr(at(9, 13, 2)), at(10, 12, 59), false},
+		{"window opens", def, ptr(at(9, 13, 2)), at(10, 13, 0), true},
+		{"already read today", def, ptr(at(10, 13, 1)), at(10, 15, 0), false},
+		{"late in the window", def, ptr(at(9, 13, 2)), at(10, 20, 59), true},
+		{"window closed: wait for tomorrow", def, ptr(at(9, 13, 2)), at(10, 21, 0), false},
+		{"PC was off: not at opening time", def, ptr(at(9, 13, 2)), at(11, 9, 30), false},
+		{"three days without one: any time", def, ptr(at(8, 9, 0)), at(11, 9, 0), true},
+		{"own hour", SyncSettings{ReconcileHour: &eight}, ptr(at(9, 8, 5)), at(10, 8, 0), true},
+		{"own hour, before it", SyncSettings{ReconcileHour: &eight}, ptr(at(9, 8, 5)), at(10, 7, 59), false},
+	}
+	for _, c := range cases {
+		if got := c.s.FullReadDue(c.last, c.now); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	bad := 24
+	s := defaultSettings()
+	s.Sync.ReconcileHour = &bad
+	if s.Validate() == nil {
+		t.Error("hour 24 must be refused")
 	}
 }

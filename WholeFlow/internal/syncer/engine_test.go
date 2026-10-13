@@ -35,7 +35,9 @@ func newHarness(t *testing.T, companies ...*fakeCompany) *harness {
 	h.set.Update(func(s *Settings) error {
 		s.Business = BusinessSettings{ID: bizA, Name: "JMJ Marketing"}
 		s.Cloud.Provider = ProviderMemory
-		s.Sync = SyncSettings{Enabled: true, IntervalSeconds: 300, Transactions: true, FullReconcileHours: 24}
+		// The clock starts at 10:00: the day's full read window opens then.
+		hour := 10
+		s.Sync = SyncSettings{Enabled: true, IntervalSeconds: 300, Transactions: true, ReconcileHour: &hour}
 		for _, c := range companies {
 			s.Companies = append(s.Companies, CompanySetting{TallyID: c.GUID, Name: c.Name, Enabled: true})
 		}

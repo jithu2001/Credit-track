@@ -3,6 +3,7 @@ package syncer
 import (
 	"context"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	gosync "sync"
 	"time"
@@ -102,6 +103,9 @@ func (s *Scheduler) runOnce(ctx context.Context) *RunResult {
 	s.running = true
 	s.mu.Unlock()
 	res := s.Engine.Run(ctx)
+	// A run can briefly need a few hundred MB (a big voucher export): give
+	// it back to Windows now instead of keeping it until the next run.
+	debug.FreeOSMemory()
 	s.mu.Lock()
 	s.running = false
 	s.lastRun = res

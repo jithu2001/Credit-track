@@ -18,7 +18,7 @@ import (
 )
 
 // Version of the sync service, reported to the cloud and the status page.
-const Version = "0.6.0"
+const Version = "0.6.1"
 
 const (
 	// ProviderWholeFlow is the WholeFlow server, connected with a reference
@@ -90,10 +90,13 @@ func (l LinkSettings) Connected() bool {
 }
 
 type SyncSettings struct {
-	Enabled            bool `json:"enabled"`
-	IntervalSeconds    int  `json:"intervalSeconds"`
-	Transactions       bool `json:"transactions"`
-	FullReconcileHours int  `json:"fullReconcileHours"`
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds int  `json:"intervalSeconds"`
+	Transactions    bool `json:"transactions"`
+	// ReconcileHour is the local hour (0-23) from which the day's full read
+	// runs (see FullReadDue); nil means DefaultReconcileHour. It replaces
+	// fullReconcileHours, which older config files may still contain (ignored).
+	ReconcileHour *int `json:"reconcileHour,omitempty"`
 	// Suppliers, Purchases and Inventory switch the purchasing sync steps.
 	// They default to on, also for config files written before they existed.
 	Suppliers bool `json:"suppliers"`
@@ -103,6 +106,32 @@ type SyncSettings struct {
 
 func (s SyncSettings) Interval() time.Duration { return time.Duration(s.IntervalSeconds) * time.Second }
 
+// ReconcileHourOrDefault is ReconcileHour, or DefaultReconcileHour when unset.
+func (s SyncSettings) ReconcileHourOrDefault() int {
+	if s.ReconcileHour == nil {
+		return DefaultReconcileHour
+	}
+	return *s.ReconcileHour
+}
+
+// FullReadDue says whether this run should re-read every voucher (or every
+// purchase bill) to find the ones deleted in Tally, after the last full read
+// at last. That read is the one long Tally request (seconds for a big
+// company, during which TallyPrime stops responding), so it runs once a day
+// in a window starting at ReconcileHour local time, not at whatever time the
+// previous one happened to run. A PC that is off during the window for
+// ReconcileMaxGap does it at its next run, whatever the time.
+func (s SyncSettings) FullReadDue(last *time.Time, now time.Time) bool {
+	if last == nil || now.Sub(*last) >= ReconcileMaxGap {
+		return true
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), s.ReconcileHourOrDefault(), 0, 0, 0, now.Location())
+	if start.After(now) {
+		start = start.AddDate(0, 0, -1)
+	}
+	return last.Before(start) && now.Sub(start) < ReconcileWindow
+}
+
 type CompanySetting struct {
 	TallyID string `json:"tallyId"` // Tally company GUID
 	Name    string `json:"name"`
@@ -110,10 +139,14 @@ type CompanySetting struct {
 }
 
 const (
-	DefaultInterval      = 300
-	MinInterval          = 60
-	MaxInterval          = 86400
-	DefaultReconcileHrs  = 24
+	DefaultInterval = 300
+	MinInterval     = 60
+	MaxInterval     = 86400
+	// The day's full read: from 1 pm local time (lunch, when Tally is least
+	// busy), within 8 hours of it, and after 3 days without one at any time.
+	DefaultReconcileHour = 13
+	ReconcileWindow      = 8 * time.Hour
+	ReconcileMaxGap      = 72 * time.Hour
 	settingsFileVersion  = 1
 	settingsFileName     = "config.json"
 	stateFileName        = "state.json"
@@ -124,7 +157,7 @@ func defaultSettings() Settings {
 	return Settings{
 		Version: settingsFileVersion,
 		Cloud:   CloudSettings{Provider: ProviderWholeFlow},
-		Sync: SyncSettings{Enabled: false, IntervalSeconds: DefaultInterval, Transactions: true, FullReconcileHours: DefaultReconcileHrs,
+		Sync: SyncSettings{Enabled: false, IntervalSeconds: DefaultInterval, Transactions: true,
 			Suppliers: true, Purchases: true, Inventory: true},
 	}
 }
@@ -207,8 +240,8 @@ func (s Settings) Validate() error {
 	if s.Sync.IntervalSeconds < MinInterval || s.Sync.IntervalSeconds > MaxInterval {
 		return fmt.Errorf("sync interval must be between %d and %d seconds", MinInterval, MaxInterval)
 	}
-	if s.Sync.FullReconcileHours < 1 || s.Sync.FullReconcileHours > 24*30 {
-		return errors.New("full reconcile hours must be between 1 and 720")
+	if h := s.Sync.ReconcileHour; h != nil && (*h < 0 || *h > 23) {
+		return errors.New("the daily full read hour must be between 0 and 23")
 	}
 	switch s.Cloud.Provider {
 	case ProviderWholeFlow, ProviderMemory:
@@ -333,9 +366,6 @@ func merge(def, loaded Settings) Settings {
 	out := loaded
 	if out.Sync.IntervalSeconds == 0 {
 		out.Sync.IntervalSeconds = def.Sync.IntervalSeconds
-	}
-	if out.Sync.FullReconcileHours == 0 {
-		out.Sync.FullReconcileHours = def.Sync.FullReconcileHours
 	}
 	if out.Cloud.Provider == "" {
 		out.Cloud.Provider = def.Cloud.Provider

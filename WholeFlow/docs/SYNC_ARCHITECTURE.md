@@ -90,7 +90,9 @@ Modes per company:
 |---|---|---|---|
 | `full` | cursor = 0 (first sync, or state.json lost) | all vouchers | everything not in the snapshot |
 | `incremental` | normal | vouchers with `AlterID > cursor` | entries of touched vouchers that no longer hit a shop |
-| `reconcile` | every `fullReconcileHours` (default 24) | incremental fetch + a light list of every voucher GUID (~7 MB, no entries) | vouchers Tally no longer lists |
+| `reconcile` | once a day, at the first run from `reconcileHour` (local time, default 13 = 1 pm) and within 8 hours of it; after 3 days without one, at the next run. A new shop does not trigger it: its older history arrives with the next one | all vouchers (TallyPrime stops responding while it builds this export: ~11 s for 5,909 vouchers) | vouchers Tally no longer lists; also heals gaps (ledgers that became shops, unparsed amounts) |
+
+Purchase bills follow the same daily rule. The app runs below normal CPU priority on Windows, with a 384 MB soft memory limit (`GOMEMLIMIT` overrides it), and hands memory back to Windows after every run: the daily full read peaks near 200 MB, between runs it is ~20 MB.
 
 The cursor is the highest ALTERID seen in a run and is persisted locally (`state.json`) and in the cloud (`sync_state.last_cursor`) only after the transaction step succeeded.
 
