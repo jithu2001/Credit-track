@@ -141,7 +141,7 @@ class _ShareStatementSheetState extends ConsumerState<ShareStatementSheet> {
     ];
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(Insets.l, 0, Insets.l, Insets.l),
+        padding: const EdgeInsets.fromLTRB(Insets.l, 0, Insets.l, Insets.l).withNavBar(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

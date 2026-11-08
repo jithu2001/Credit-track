@@ -193,6 +193,7 @@ class _Body extends ConsumerWidget {
             itemBuilder: (context, i) => _ShopRow(profile: shown[i], creditDays: days),
           ),
         const SliverToBoxAdapter(child: SizedBox(height: Insets.xxl)),
+        const NavBarSliverSpace(extra: 0),
       ],
     );
   }

@@ -210,7 +210,7 @@ class _StaffFormState extends ConsumerState<_StaffForm> {
         key: _formKey,
         child: ContentWidth(
           child: ListView(
-            padding: const EdgeInsets.all(Insets.l),
+            padding: const EdgeInsets.all(Insets.l).withNavBar(context),
             children: [
               Text('Details', style: context.text.titleMedium),
               const SizedBox(height: Insets.m),

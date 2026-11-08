@@ -135,6 +135,7 @@ class SitesScreen extends ConsumerWidget {
                                   ],
                                   _ => [SliverList.list(children: List.filled(4, const SkeletonTile()))],
                                 },
+                                const NavBarSliverSpace(extra: 0),
                               ],
                             ),
                           ),

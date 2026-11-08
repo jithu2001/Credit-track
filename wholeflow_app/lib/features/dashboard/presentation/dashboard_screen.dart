@@ -82,7 +82,7 @@ class _DashboardBody extends ConsumerWidget {
     final sales = showSales ? ref.watch(monthSalesProvider(company.id)).value : null;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(Insets.l),
+      padding: const EdgeInsets.all(Insets.l).withNavBar(context),
       children: [
         FreshnessBanner(company: company),
         const SizedBox(height: Insets.l),

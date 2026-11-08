@@ -73,7 +73,7 @@ class SiteDetailScreen extends ConsumerWidget {
           },
           child: ContentWidth(
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 96),
+              padding: const EdgeInsets.only(bottom: 96).withNavBar(context),
               children: [
                 Padding(
                   padding: const EdgeInsets.all(Insets.l),

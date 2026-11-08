@@ -91,6 +91,7 @@ class VisitsView extends ConsumerWidget {
               _ => [SliverList.list(children: List.filled(4, const SkeletonTile()))],
             },
             const SliverToBoxAdapter(child: SizedBox(height: 96)),
+            const NavBarSliverSpace(),
           ],
         ),
       ),

@@ -109,7 +109,7 @@ class _DetailsTab extends StatelessWidget {
     return ContentWidth(
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(Insets.l),
+        padding: const EdgeInsets.all(Insets.l).withNavBar(context),
         children: [
           _BalanceCard(shop: shop),
           const SizedBox(height: Insets.l),

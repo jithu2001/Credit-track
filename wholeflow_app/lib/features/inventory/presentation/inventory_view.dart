@@ -283,7 +283,7 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
             controller: scroll,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
+                padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s).withNavBar(context),
                 child: Text('Stock group', style: context.text.titleMedium),
               ),
               const RadioListTile<String>(value: allGroups, title: Text('All groups')),

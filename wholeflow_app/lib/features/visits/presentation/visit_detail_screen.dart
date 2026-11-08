@@ -40,7 +40,7 @@ class VisitDetailScreen extends ConsumerWidget {
       ),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.all(Insets.l),
+          padding: const EdgeInsets.all(Insets.l).withNavBar(context),
           children: [
             Row(
               children: [

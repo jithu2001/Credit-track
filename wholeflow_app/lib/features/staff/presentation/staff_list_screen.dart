@@ -58,7 +58,7 @@ class _StaffListScreenState extends ConsumerState<StaffListScreen> {
     final staffCount = all.where((m) => !m.isOwner).length;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 96),
+      padding: const EdgeInsets.only(bottom: 96).withNavBar(context),
       children: [
         if (companies.length > 1)
           SizedBox(

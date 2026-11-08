@@ -90,7 +90,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         body: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(Insets.xl),
+              padding: const EdgeInsets.all(Insets.xl).withNavBar(context),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 420),
                 child: AutofillGroup(
@@ -240,7 +240,7 @@ class _ForcePasswordChangeScreenState extends ConsumerState<ForcePasswordChangeS
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(Insets.xl),
+            padding: const EdgeInsets.all(Insets.xl).withNavBar(context),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Column(

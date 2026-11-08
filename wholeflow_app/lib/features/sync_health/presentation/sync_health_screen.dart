@@ -33,7 +33,7 @@ class SyncHealthScreen extends ConsumerWidget {
         child: ContentWidth(
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(Insets.l),
+            padding: const EdgeInsets.all(Insets.l).withNavBar(context),
             children: [
               _Section(
                 title: 'Tally PC',

@@ -42,7 +42,7 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Settings')),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: Insets.s),
+          padding: const EdgeInsets.symmetric(vertical: Insets.s).withNavBar(context),
           children: [
             ListTile(
               leading: CircleAvatar(child: Text(user.displayName.characters.first.toUpperCase())),
@@ -165,7 +165,7 @@ class _ChangePasswordSheetState extends ConsumerState<ChangePasswordSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl + MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

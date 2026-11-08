@@ -147,7 +147,7 @@ class _MinimumSheetState extends State<_MinimumSheet> {
   Widget build(BuildContext context) {
     final unit = widget.unit?.trim() ?? '';
     return Padding(
-      padding: EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl + MediaQuery.viewInsetsOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,

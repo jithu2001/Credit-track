@@ -69,7 +69,7 @@ class _Body extends StatelessWidget {
     final s = context.semantic;
     return ContentWidth(
       child: ListView(
-        padding: const EdgeInsets.only(bottom: Insets.xxl),
+        padding: const EdgeInsets.only(bottom: Insets.xxl).withNavBar(context),
         children: [
           const Padding(
             padding: EdgeInsets.only(top: Insets.s),

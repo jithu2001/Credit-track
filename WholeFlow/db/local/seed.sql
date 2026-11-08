@@ -4,7 +4,8 @@
 --
 --   psql postgres://postgres:pw@127.0.0.1:55432/wf_local -v ON_ERROR_STOP=1 -f db/local/seed.sql
 --
--- Owner owner@local.test (cmd/localapi sets the password from LOCAL_PASSWORD).
+-- Owner owner@local.test and staff staff@local.test (cmd/localapi sets both
+-- passwords from LOCAL_PASSWORD).
 -- 24 shops on 3 sites, 3 suppliers, and sales, receipts, returns and
 -- purchases from September 2025 to today, with a slow start, a festive peak
 -- in October and steady growth, so trends have something to show.
@@ -12,15 +13,20 @@
 \set biz '\'b0000000-0000-0000-0000-0000000010ca\''
 \set owner '\'a0000000-0000-0000-0000-0000000010ca\''
 \set co '\'c0000000-0000-0000-0000-0000000010ca\''
+\set staff '\'a0000000-0000-0000-0000-0000000020ca\''
 
 begin;
 delete from public.businesses where id = :biz;
-delete from auth.users where id = :owner;
+delete from auth.users where id in (:owner, :staff);
 
 insert into public.businesses (id, name) values (:biz, 'Local Test Distributors');
 insert into auth.users (id, aud, role, email, email_confirmed_at, created_at, updated_at)
 values (:owner, 'authenticated', 'authenticated', 'owner@local.test', now(), now(), now());
-insert into public.users (id, business_id, role, name, email) values (:owner, :biz, 'OWNER', 'Local Owner', 'owner@local.test');
+insert into auth.users (id, aud, role, email, email_confirmed_at, created_at, updated_at)
+values (:staff, 'authenticated', 'authenticated', 'staff@local.test', now(), now(), now());
+insert into public.users (id, business_id, role, name, email) values
+  (:owner, :biz, 'OWNER', 'Local Owner', 'owner@local.test'),
+  (:staff, :biz, 'STAFF', 'Local Staff', 'staff@local.test');
 insert into public.tally_companies (id, business_id, tally_company_id, company_name, books_from, period_from)
 values (:co, :biz, 'local-co', 'Local Test Distributors', '2025-04-01', '2026-04-01');
 
@@ -111,6 +117,10 @@ from (
   cross join lateral generate_series(1, bills.k) b
 ) p
 where d <= current_date;
+
+-- The staff member sees the whole company and its bills.
+insert into public.staff_company_access (user_id, business_id, company_id, full_company, can_view_transactions)
+values (:staff, :biz, :co, true, true);
 
 insert into public.sync_state (business_id, company_id, entity_type, last_successful_sync_at, last_attempt_at, status)
 values (:biz, :co, 'company', now(), now(), 'ok');

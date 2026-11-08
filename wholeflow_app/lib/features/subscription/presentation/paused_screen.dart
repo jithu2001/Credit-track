@@ -60,7 +60,7 @@ class _PausedScreenState extends ConsumerState<PausedScreen> with WidgetsBinding
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(Insets.xl),
+            padding: const EdgeInsets.all(Insets.xl).withNavBar(context),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 440),
               child: Column(

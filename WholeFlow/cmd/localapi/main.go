@@ -9,8 +9,8 @@
 //	adb reverse tcp:8100 tcp:8100                         # the phone's 127.0.0.1:8100 → this computer
 //
 // Then a local app build (env/local.json, -P wfLocal=true) connects with any
-// reference key and signs in as the seeded owner (owner@local.test) with
-// LOCAL_PASSWORD. It serves the control service's /control/connect and every
+// reference key and signs in as the seeded owner (owner@local.test) or staff
+// member (staff@local.test, Staff app) with LOCAL_PASSWORD. It serves the control service's /control/connect and every
 // app API route for one business, "local".
 package main
 
@@ -35,6 +35,7 @@ const (
 	slug       = "local"
 	businessID = "b0000000-0000-0000-0000-0000000010ca"
 	ownerEmail = "owner@local.test"
+	staffEmail = "staff@local.test"
 	// Signs this laptop's test tokens only.
 	secret = "local-only-secret-local-only-secret-0001"
 )
@@ -62,9 +63,9 @@ func main() {
 		os.Exit(1)
 	}
 	hash, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	tag, err := admin.Exec(ctx, `update auth.users set encrypted_password = $2 where email = $1`, ownerEmail, string(hash))
+	tag, err := admin.Exec(ctx, `update auth.users set encrypted_password = $3 where email in ($1, $2)`, ownerEmail, staffEmail, string(hash))
 	admin.Close(ctx)
-	if err != nil || tag.RowsAffected() != 1 {
+	if err != nil || tag.RowsAffected() != 2 {
 		log.Error("seeded owner not found: run db/local/seed.sql first", "error", err)
 		os.Exit(1)
 	}
@@ -95,7 +96,7 @@ func main() {
 		})
 	})
 	mux.Handle("/", srv.Routes())
-	log.Info("serving", "listen", *listen, "business", base, "owner", ownerEmail)
+	log.Info("serving", "listen", *listen, "business", base, "owner", ownerEmail, "staff", staffEmail)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
 		log.Error("exit", "error", err)
 		os.Exit(1)

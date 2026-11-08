@@ -174,7 +174,7 @@ class _LoadedState extends ConsumerState<_Loaded> {
       ),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.all(Insets.l),
+          padding: const EdgeInsets.all(Insets.l).withNavBar(context),
           children: [
             Card.filled(
               child: Column(

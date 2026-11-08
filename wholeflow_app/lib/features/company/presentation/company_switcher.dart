@@ -69,7 +69,7 @@ Future<void> showCompanyPicker(BuildContext context, WidgetRef ref) {
           shrinkWrap: true,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
+              padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s).withNavBar(context),
               child: Text('Choose company', style: context.text.titleMedium),
             ),
             RadioGroup<String>(
