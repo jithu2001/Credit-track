@@ -121,7 +121,7 @@ class _DetailsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Insets.l),
-          ShopLocationCard(shopId: shop.id),
+          ShopLocationCard(shopId: shop.id, shopName: shop.name),
           const SizedBox(height: Insets.l),
           Card.outlined(
             child: Column(

@@ -340,11 +340,12 @@ void main() {
       receivable: Money(12345600),
     );
 
-    Future<List<Override>> overrides(AppUser user, List<CompanyAccess> access) async => [
+    Future<List<Override>> overrides(AppUser user, List<CompanyAccess> access, {FakeShopLocationRepository? pins}) async => [
       ...await baseOverrides(
         user: user,
         access: access,
         shopRepo: FakeShopRepository(detailShop: detail),
+        locationRepo: pins,
       ),
       transactionRepositoryProvider.overrideWithValue(FakeTransactionRepository()),
     ];
@@ -361,6 +362,21 @@ void main() {
       expect(find.byKey(const Key('edit-location')), findsOneWidget);
     });
 
+    testWidgets('staff get directions to a pinned shop; no button without a pin', (tester) async {
+      final pins = FakeShopLocationRepository(
+        pins: {'s1': const ShopLocation(shopId: 's1', latitude: 9.85, longitude: 76.97, radiusM: 100)},
+      );
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: await overrides(staffUser, const [CompanyAccess(userId: 'staff-1', companyId: 'co-a')], pins: pins),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('shop-directions')), findsOneWidget);
+      expect(find.byKey(const Key('edit-location')), findsNothing);
+    });
+
     testWidgets('staff see no location card while the shop has no pin', (tester) async {
       await pumpScreen(
         tester,
@@ -370,6 +386,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Shop location'), findsNothing);
+      expect(find.byKey(const Key('shop-directions')), findsNothing);
     });
 
     testWidgets('owner sees the Statement tab', (tester) async {
