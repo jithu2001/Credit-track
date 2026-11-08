@@ -158,7 +158,7 @@ done
 ls -la /tmp/wf-build
 ```
 
-`go.mod` pins the Go toolchain (`toolchain go1.27.0`), so the binaries contain
+`go.mod` pins the Go toolchain (`toolchain go1.27.3`), so the binaries contain
 the current Go security fixes.
 
 ## 6. Copy the kit
