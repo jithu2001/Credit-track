@@ -215,6 +215,54 @@ func TestIntegration(t *testing.T) {
 		eqv(t, body["closed_bills"], 1.0, "closed bills")
 	})
 
+	t.Run("owner gets the monthly trend", func(t *testing.T) {
+		code, body := get("/b/apitest/api/v1/reports/monthly?company="+companA+"&months=4", token(ownerA))
+		if code != 200 {
+			t.Fatalf("status %d: %v", code, body)
+		}
+		save("reports_monthly")
+		eqv(t, body["from"], "2026-04-01", "from")
+		eqv(t, body["to"], "2026-07-01", "to (the current month)")
+		months := body["months"].([]any)
+		if len(months) != 4 {
+			t.Fatalf("months = %d", len(months))
+		}
+		apr, may, jul := months[0].(map[string]any), months[1].(map[string]any), months[3].(map[string]any)
+		eqv(t, apr["month"], "2026-04-01", "empty month included")
+		eqv(t, apr["sales"], "0.00", "April sales")
+		eqv(t, may["sales"], "500.00", "May sales")
+		eqv(t, may["bills"], 1.0, "May bills")
+		eqv(t, jul["sales"], "150.00", "July sales")
+		eqv(t, jul["collections"], "1200.00", "July collections")
+		eqv(t, jul["buyers"], 1.0, "July buyers")
+		// Today is 20 Jul: June 1–20 had no sales (the June bill is on the 15th → it counts).
+		eqv(t, body["through_day"], 20.0, "through day")
+		lm := body["same_days_last_month"].(map[string]any)
+		eqv(t, lm["from"], "2026-06-01", "last month from")
+		eqv(t, lm["to"], "2026-06-20", "last month to")
+		eqv(t, lm["sales"], "800.00", "1–20 June sales")
+		ly := body["same_days_last_year"].(map[string]any)
+		eqv(t, ly["from"], "2025-07-01", "last year from")
+		eqv(t, ly["sales"], "0.00", "1–20 July 2025 sales")
+		top := body["top_buyers"].([]any)
+		if len(top) != 2 {
+			t.Fatalf("top buyers = %d", len(top))
+		}
+		first := top[0].(map[string]any)
+		eqv(t, first["name"], "Alpha Stores", "top buyer")
+		eqv(t, first["sales"], "1300.00", "top buyer sales")
+		eqv(t, first["bills"], 2.0, "top buyer bills")
+		eqv(t, first["site_name"], "Town", "top buyer site")
+		eqv(t, first["receivable"], "1100.00", "top buyer owes")
+
+		code, _ = get("/b/apitest/api/v1/reports/monthly?company="+companA+"&months=99", token(ownerA))
+		eqv(t, code, 400, "too many months")
+		code, _ = get("/b/apitest/api/v1/reports/monthly?company="+companA, token(staffA))
+		eqv(t, code, 403, "staff refused")
+		code, _ = get("/b/apitest/api/v1/reports/monthly?company="+companA, token(ownerB))
+		eqv(t, code, 404, "another business's owner")
+	})
+
 	t.Run("staff are refused", func(t *testing.T) {
 		code, body := get(summaryPath, token(staffA))
 		eqv(t, code, 403, "status")

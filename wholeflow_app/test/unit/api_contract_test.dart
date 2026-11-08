@@ -42,6 +42,7 @@ void main() {
     ('GET', RegExp(r'^reports/outstanding$'), 'report_outstanding'),
     ('GET', RegExp(r'^reports/overdue$'), 'report_overdue'),
     ('GET', RegExp(r'^reports/sites$'), 'report_sites'),
+    ('GET', RegExp(r'^reports/monthly$'), 'reports_monthly'),
     ('GET', RegExp(r'^stock$'), 'stock'),
     ('GET', RegExp(r'^stock/[^/]+$'), 'stock_item'),
     ('GET', RegExp(r'^stock/[^/]+/purchases$'), 'stock_item_purchases'),
@@ -113,6 +114,19 @@ void main() {
     expect(dashboard.syncState!.lastSuccessfulSyncAt, isNotNull);
     expect(dashboard.monthSales!.bills, 1);
     expect(dashboard.topDues.single.siteName, 'Town');
+
+    final trend = await DashboardRepository(api).trend('c', months: 4);
+    expect(trend.months.map((m) => m.month.month), [4, 5, 6, 7]);
+    expect(trend.months[1].sales, const Money(50000));
+    expect(trend.months.last.collections, const Money(120000));
+    expect(trend.months.last.buyers, 1);
+    expect(trend.lastMonthSoFar!.to, DateTime(2026, 6, 20));
+    expect(trend.lastMonthSoFar!.sales, const Money(80000));
+    expect(trend.lastYearSoFar!.from, DateTime(2025, 7));
+    expect(trend.lastYearSoFar!.sales, Money.zero);
+    expect(trend.topBuyers.first.name, 'Alpha Stores');
+    expect(trend.topBuyers.first.sales, const Money(130000));
+    expect(trend.topBuyers.first.siteName, 'Town');
   });
 
   test('shops and reports', () async {

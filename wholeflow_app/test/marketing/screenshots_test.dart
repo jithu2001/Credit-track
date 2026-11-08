@@ -34,6 +34,7 @@ import 'package:wholeflow_app/features/company/data/company_repository.dart';
 import 'package:wholeflow_app/features/company/domain/company.dart';
 import 'package:wholeflow_app/features/dashboard/data/dashboard_repository.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
+import 'package:wholeflow_app/features/dashboard/domain/business_trend.dart';
 import 'package:wholeflow_app/features/dashboard/presentation/dashboard_screen.dart';
 import 'package:wholeflow_app/features/home/home_shell.dart';
 import 'package:wholeflow_app/features/home/staff_home_shell.dart';
@@ -242,6 +243,53 @@ class _Dashboard implements DashboardRepository {
       syncState: SyncState(lastSuccessfulSyncAt: now.subtract(const Duration(minutes: 3))),
       monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(684215000), bills: 143),
       topDues: _shops.take(10).toList(),
+    );
+  }
+
+  @override
+  Future<BusinessTrend> trend(String companyId, {int months = 12}) async {
+    final now = DateTime.now();
+    // Lakhs per month, oldest first; the current month ends on this month's sales.
+    const sales = [52, 58, 49, 61, 66, 59, 63, 71, 57, 64, 69, 68.42];
+    final take = sales.sublist(sales.length - months.clamp(1, sales.length));
+    return BusinessTrend(
+      months: [
+        for (final (i, l) in take.indexed)
+          TrendMonth(
+            month: DateTime(now.year, now.month - take.length + 1 + i),
+            sales: Money((l * 10000000).round()),
+            bills: (l * 2.1).round(),
+            buyers: (l * 1.3).round(),
+            collections: Money((l * 9100000).round()),
+            purchases: Money((l * 7400000).round()),
+            purchaseBills: (l / 3).round(),
+          ),
+      ],
+      lastMonthSoFar: SameDays(
+        from: DateTime(now.year, now.month - 1),
+        to: DateTime(now.year, now.month - 1, now.day),
+        sales: const Money(611000000),
+        collections: const Money(590000000),
+        purchases: const Money(470000000),
+      ),
+      lastYearSoFar: SameDays(
+        from: DateTime(now.year - 1, now.month),
+        to: DateTime(now.year - 1, now.month, now.day),
+        sales: const Money(571000000),
+        collections: const Money(520000000),
+        purchases: const Money(430000000),
+      ),
+      topBuyers: [
+        for (final (i, s) in _shops.take(5).indexed)
+          TopBuyer(
+            shopId: s.id,
+            name: s.name,
+            siteName: s.siteName,
+            sales: Money(41000000 - i * 5300000),
+            bills: 24 - i * 3,
+            receivable: s.receivable,
+          ),
+      ],
     );
   }
 }
@@ -499,6 +547,15 @@ void main() {
   group('marketing screenshots', skip: _skip, () {
     testWidgets('owner dashboard', (t) => _shot(t, 'owner-dashboard', const DashboardScreen()));
     testWidgets('owner dashboard dark', (t) => _shot(t, 'owner-dashboard-dark', const DashboardScreen(), dark: true));
+    testWidgets(
+      'owner dashboard trend',
+      (t) => _shot(
+        t,
+        'owner-dashboard-trend',
+        const DashboardScreen(),
+        then: () => t.dragUntilVisible(find.text('Monthly trend'), find.byType(ListView).first, const Offset(0, -300)),
+      ),
+    );
     testWidgets('shops dues', (t) => _shot(t, 'shops-dues', const ShopsScreen(), nav: 1));
     testWidgets(
       'shops overdue',

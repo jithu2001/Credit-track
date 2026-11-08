@@ -1,3 +1,4 @@
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -964,9 +965,61 @@ void main() {
       expect(find.text('₹10,000.00 overdue'), findsOneWidget);
     });
 
+    testWidgets('owner dashboard: monthly trend and top customers instead of top dues', (tester) async {
+      final dashboard = FakeDashboardRepository(topDues: shops);
+      await pumpScreen(
+        tester,
+        const DashboardScreen(),
+        overrides: await baseOverrides(dashboard: dashboard),
+        size: const Size(400, 2600),
+      );
+      await tester.pumpAndSettle();
+      final now = DateTime.now();
+      String mon(int back) => DateFormat('MMM').format(DateTime(now.year, now.month - back));
+
+      expect(find.text('Top dues'), findsNothing);
+      expect(find.text('Monthly trend'), findsOneWidget);
+      expect(dashboard.trendCalls, [6]);
+      // Fake: month i sells ₹10,000 × (i + 1) → this month ₹60,000, last month ₹50,000.
+      expect(find.text('Sales · ${DateFormat('MMMM y').format(now)} (so far)'), findsOneWidget);
+      expect(find.byKey(const Key('trend-value')), findsOneWidget);
+      expect(find.text('₹60,000.00'), findsOneWidget);
+      // This month so far is compared with the same days of last month and of a year ago.
+      expect(find.text('20% vs 1–8 ${mon(1)}'), findsOneWidget);
+      expect(find.text('100% vs 1–8 ${mon(0)} ${now.year - 1}'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsNWidgets(2));
+      expect(find.textContaining('Collected 50% of sales'), findsOneWidget);
+      expect(find.text('Top customers · last 6 months'), findsOneWidget);
+      expect(find.text('Alpha Stores'), findsOneWidget);
+
+      // The oldest month: no month before it to compare with.
+      await tester.tap(find.byKey(const Key('trend-bar-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('₹10,000.00'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsNothing);
+
+      // A whole past month is compared with the whole month before it.
+      await tester.tap(find.byKey(const Key('trend-bar-2')));
+      await tester.pumpAndSettle();
+      expect(find.text('50% vs ${mon(4)}'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('trend-bar-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Collections'));
+      await tester.pumpAndSettle();
+      expect(find.text('₹5,000.00'), findsOneWidget);
+
+      await tester.tap(find.text('12 mo'));
+      await tester.pumpAndSettle();
+      expect(dashboard.trendCalls, [6, 12]);
+      expect(find.text('₹60,000.00'), findsOneWidget, reason: 'back on this month: 12 × ₹5,000 collected');
+      expect(find.text('Top customers · last 12 months'), findsOneWidget);
+    });
+
     testWidgets('staff dashboard has no overdue card', (tester) async {
       await pumpScreen(tester, const DashboardScreen(), overrides: await baseOverrides(user: staffUser));
       await tester.pumpAndSettle();
+      expect(find.text('Monthly trend'), findsNothing);
       expect(find.textContaining('overdue'), findsNothing);
       // Staff without transaction access for the company don't get the sales tile.
       expect(find.text('Sales this month'), findsNothing);

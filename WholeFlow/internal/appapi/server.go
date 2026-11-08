@@ -157,6 +157,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}", s.handle(s.shopDetail))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/outstanding", s.handle(s.outstandingReport))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/overdue", s.handle(s.overdueReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/monthly", s.handle(s.monthlyReport))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock", s.handle(s.stockList))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}", s.handle(s.stockItem))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}/purchases", s.handle(s.stockItemPurchases))
