@@ -93,7 +93,16 @@ void main() {
     expect(find.widgetWithText(Tab, 'Suppliers'), findsOneWidget);
     expect(find.text('1,250 Nos'), findsOneWidget);
     expect(find.text('Low stock'), findsOneWidget);
-    expect(find.textContaining('Value ₹1.5 L'), findsOneWidget);
+    expect(find.text('Total stock value'), findsOneWidget);
+    expect(find.text('₹1,50,000.00'), findsOneWidget);
+    expect(find.textContaining('shown'), findsNothing, reason: 'no filter: total only');
+
+    await tester.enterText(find.byType(SearchBar), 'TUBE');
+    await tester.pumpAndSettle();
+    expect(find.text('₹1,50,000.00'), findsOneWidget, reason: 'the total stays for all stock');
+    expect(find.text('₹0.00 in the 1 item shown'), findsOneWidget);
+    await tester.enterText(find.byType(SearchBar), '');
+    await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(Tab, 'Purchases'));
     await tester.pumpAndSettle();
@@ -115,7 +124,8 @@ void main() {
     expect(find.text('Suppliers'), findsNothing);
     expect(find.text('Inventory'), findsOneWidget);
     expect(find.text('1,250 Nos'), findsOneWidget);
-    expect(find.textContaining('Value'), findsNothing);
+    expect(find.byKey(const Key('stock-value')), findsNothing);
+    expect(find.textContaining('stock value'), findsNothing);
   });
 
   group('minimum stock', () {
