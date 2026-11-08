@@ -45,7 +45,7 @@ final class SessionControllerProvider
   SessionController create() => SessionController();
 }
 
-String _$sessionControllerHash() => r'fcd750510588882d8faa3c4e3f41ef31fc49158f';
+String _$sessionControllerHash() => r'7f2c23c40503f4dae8d3771542235da1ee02f4cf';
 
 /// The app's single source of truth for who is signed in.
 ///

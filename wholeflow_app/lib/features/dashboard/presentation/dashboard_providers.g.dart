@@ -15,11 +15,25 @@ final dashboardProvider = DashboardFamily._();
 
 /// The whole dashboard, fetched in one call; the providers below are its parts.
 
-final class DashboardProvider extends $FunctionalProvider<AsyncValue<Dashboard>, Dashboard, FutureOr<Dashboard>>
+final class DashboardProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<Dashboard>,
+          Dashboard,
+          FutureOr<Dashboard>
+        >
     with $FutureModifier<Dashboard>, $FutureProvider<Dashboard> {
   /// The whole dashboard, fetched in one call; the providers below are its parts.
-  DashboardProvider._({required DashboardFamily super.from, required String super.argument})
-    : super(retry: null, name: r'dashboardProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+  DashboardProvider._({
+    required DashboardFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'dashboardProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$dashboardHash();
@@ -33,7 +47,8 @@ final class DashboardProvider extends $FunctionalProvider<AsyncValue<Dashboard>,
 
   @$internal
   @override
-  $FutureProviderElement<Dashboard> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<Dashboard> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<Dashboard> create(Ref ref) {
@@ -56,13 +71,21 @@ String _$dashboardHash() => r'af18cd935dae508c0793741ca75a8e24f09f3e81';
 
 /// The whole dashboard, fetched in one call; the providers below are its parts.
 
-final class DashboardFamily extends $Family with $FunctionalFamilyOverride<FutureOr<Dashboard>, String> {
+final class DashboardFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<Dashboard>, String> {
   DashboardFamily._()
-    : super(retry: null, name: r'dashboardProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+    : super(
+        retry: null,
+        name: r'dashboardProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
   /// The whole dashboard, fetched in one call; the providers below are its parts.
 
-  DashboardProvider call(String companyId) => DashboardProvider._(argument: companyId, from: this);
+  DashboardProvider call(String companyId) =>
+      DashboardProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'dashboardProvider';
@@ -72,16 +95,23 @@ final class DashboardFamily extends $Family with $FunctionalFamilyOverride<Futur
 final companySummaryProvider = CompanySummaryFamily._();
 
 final class CompanySummaryProvider
-    extends $FunctionalProvider<AsyncValue<CompanySummary?>, CompanySummary?, FutureOr<CompanySummary?>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<CompanySummary?>,
+          CompanySummary?,
+          FutureOr<CompanySummary?>
+        >
     with $FutureModifier<CompanySummary?>, $FutureProvider<CompanySummary?> {
-  CompanySummaryProvider._({required CompanySummaryFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'companySummaryProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CompanySummaryProvider._({
+    required CompanySummaryFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'companySummaryProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$companySummaryHash();
@@ -95,7 +125,9 @@ final class CompanySummaryProvider
 
   @$internal
   @override
-  $FutureProviderElement<CompanySummary?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<CompanySummary?> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<CompanySummary?> create(Ref ref) {
@@ -116,7 +148,8 @@ final class CompanySummaryProvider
 
 String _$companySummaryHash() => r'486c1435253dcfe5a83d8ba365cdfbb4b69cdfc4';
 
-final class CompanySummaryFamily extends $Family with $FunctionalFamilyOverride<FutureOr<CompanySummary?>, String> {
+final class CompanySummaryFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<CompanySummary?>, String> {
   CompanySummaryFamily._()
     : super(
         retry: null,
@@ -126,7 +159,8 @@ final class CompanySummaryFamily extends $Family with $FunctionalFamilyOverride<
         isAutoDispose: true,
       );
 
-  CompanySummaryProvider call(String companyId) => CompanySummaryProvider._(argument: companyId, from: this);
+  CompanySummaryProvider call(String companyId) =>
+      CompanySummaryProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'companySummaryProvider';
@@ -135,16 +169,24 @@ final class CompanySummaryFamily extends $Family with $FunctionalFamilyOverride<
 @ProviderFor(companySyncState)
 final companySyncStateProvider = CompanySyncStateFamily._();
 
-final class CompanySyncStateProvider extends $FunctionalProvider<AsyncValue<SyncState?>, SyncState?, FutureOr<SyncState?>>
+final class CompanySyncStateProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<SyncState?>,
+          SyncState?,
+          FutureOr<SyncState?>
+        >
     with $FutureModifier<SyncState?>, $FutureProvider<SyncState?> {
-  CompanySyncStateProvider._({required CompanySyncStateFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'companySyncStateProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CompanySyncStateProvider._({
+    required CompanySyncStateFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'companySyncStateProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$companySyncStateHash();
@@ -158,7 +200,8 @@ final class CompanySyncStateProvider extends $FunctionalProvider<AsyncValue<Sync
 
   @$internal
   @override
-  $FutureProviderElement<SyncState?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<SyncState?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<SyncState?> create(Ref ref) {
@@ -179,7 +222,8 @@ final class CompanySyncStateProvider extends $FunctionalProvider<AsyncValue<Sync
 
 String _$companySyncStateHash() => r'7911faec3dd03704fabc039deb61dbcb86fee44f';
 
-final class CompanySyncStateFamily extends $Family with $FunctionalFamilyOverride<FutureOr<SyncState?>, String> {
+final class CompanySyncStateFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<SyncState?>, String> {
   CompanySyncStateFamily._()
     : super(
         retry: null,
@@ -189,7 +233,8 @@ final class CompanySyncStateFamily extends $Family with $FunctionalFamilyOverrid
         isAutoDispose: true,
       );
 
-  CompanySyncStateProvider call(String companyId) => CompanySyncStateProvider._(argument: companyId, from: this);
+  CompanySyncStateProvider call(String companyId) =>
+      CompanySyncStateProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'companySyncStateProvider';
@@ -202,11 +247,25 @@ final monthSalesProvider = MonthSalesFamily._();
 
 /// Null for staff who may not see the company's transactions.
 
-final class MonthSalesProvider extends $FunctionalProvider<AsyncValue<MonthSales?>, MonthSales?, FutureOr<MonthSales?>>
+final class MonthSalesProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<MonthSales?>,
+          MonthSales?,
+          FutureOr<MonthSales?>
+        >
     with $FutureModifier<MonthSales?>, $FutureProvider<MonthSales?> {
   /// Null for staff who may not see the company's transactions.
-  MonthSalesProvider._({required MonthSalesFamily super.from, required String super.argument})
-    : super(retry: null, name: r'monthSalesProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+  MonthSalesProvider._({
+    required MonthSalesFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'monthSalesProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$monthSalesHash();
@@ -220,7 +279,9 @@ final class MonthSalesProvider extends $FunctionalProvider<AsyncValue<MonthSales
 
   @$internal
   @override
-  $FutureProviderElement<MonthSales?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<MonthSales?> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<MonthSales?> create(Ref ref) {
@@ -243,13 +304,21 @@ String _$monthSalesHash() => r'18bde73778c0d980bc4142f607bf0196acc4dbb5';
 
 /// Null for staff who may not see the company's transactions.
 
-final class MonthSalesFamily extends $Family with $FunctionalFamilyOverride<FutureOr<MonthSales?>, String> {
+final class MonthSalesFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<MonthSales?>, String> {
   MonthSalesFamily._()
-    : super(retry: null, name: r'monthSalesProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+    : super(
+        retry: null,
+        name: r'monthSalesProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
   /// Null for staff who may not see the company's transactions.
 
-  MonthSalesProvider call(String companyId) => MonthSalesProvider._(argument: companyId, from: this);
+  MonthSalesProvider call(String companyId) =>
+      MonthSalesProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'monthSalesProvider';
@@ -259,10 +328,25 @@ final class MonthSalesFamily extends $Family with $FunctionalFamilyOverride<Futu
 final topDuesProvider = TopDuesFamily._();
 
 final class TopDuesProvider
-    extends $FunctionalProvider<AsyncValue<List<ShopSummary>>, List<ShopSummary>, FutureOr<List<ShopSummary>>>
-    with $FutureModifier<List<ShopSummary>>, $FutureProvider<List<ShopSummary>> {
-  TopDuesProvider._({required TopDuesFamily super.from, required String super.argument})
-    : super(retry: null, name: r'topDuesProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<ShopSummary>>,
+          List<ShopSummary>,
+          FutureOr<List<ShopSummary>>
+        >
+    with
+        $FutureModifier<List<ShopSummary>>,
+        $FutureProvider<List<ShopSummary>> {
+  TopDuesProvider._({
+    required TopDuesFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'topDuesProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$topDuesHash();
@@ -276,7 +360,9 @@ final class TopDuesProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<ShopSummary>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<ShopSummary>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<ShopSummary>> create(Ref ref) {
@@ -297,11 +383,19 @@ final class TopDuesProvider
 
 String _$topDuesHash() => r'f354028bfc468b0bd95472cf7b32880ebb0bf4f2';
 
-final class TopDuesFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<ShopSummary>>, String> {
+final class TopDuesFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<List<ShopSummary>>, String> {
   TopDuesFamily._()
-    : super(retry: null, name: r'topDuesProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+    : super(
+        retry: null,
+        name: r'topDuesProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
-  TopDuesProvider call(String companyId) => TopDuesProvider._(argument: companyId, from: this);
+  TopDuesProvider call(String companyId) =>
+      TopDuesProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'topDuesProvider';

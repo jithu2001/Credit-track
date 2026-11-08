@@ -12,7 +12,8 @@ part of 'settings_screen.dart';
 @ProviderFor(businessName)
 final businessNameProvider = BusinessNameProvider._();
 
-final class BusinessNameProvider extends $FunctionalProvider<AsyncValue<String?>, String?, FutureOr<String?>>
+final class BusinessNameProvider
+    extends $FunctionalProvider<AsyncValue<String?>, String?, FutureOr<String?>>
     with $FutureModifier<String?>, $FutureProvider<String?> {
   BusinessNameProvider._()
     : super(
@@ -30,7 +31,8 @@ final class BusinessNameProvider extends $FunctionalProvider<AsyncValue<String?>
 
   @$internal
   @override
-  $FutureProviderElement<String?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<String?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<String?> create(Ref ref) {
@@ -43,7 +45,8 @@ String _$businessNameHash() => r'7e9c8588eace1e142a4df7fba1febbbb51dcdf6b';
 @ProviderFor(appVersion)
 final appVersionProvider = AppVersionProvider._();
 
-final class AppVersionProvider extends $FunctionalProvider<AsyncValue<String>, String, FutureOr<String>>
+final class AppVersionProvider
+    extends $FunctionalProvider<AsyncValue<String>, String, FutureOr<String>>
     with $FutureModifier<String>, $FutureProvider<String> {
   AppVersionProvider._()
     : super(
@@ -61,7 +64,8 @@ final class AppVersionProvider extends $FunctionalProvider<AsyncValue<String>, S
 
   @$internal
   @override
-  $FutureProviderElement<String> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<String> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<String> create(Ref ref) {
