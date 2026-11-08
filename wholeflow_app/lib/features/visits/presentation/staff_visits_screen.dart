@@ -97,7 +97,7 @@ class _TodayList extends StatelessWidget {
     final sites = {for (final t in tasks) t.siteName};
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: Insets.xxl),
+      padding: const EdgeInsets.only(bottom: Insets.xxl).withNavBar(context),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(Insets.l, Insets.s, Insets.l, Insets.l),
@@ -173,7 +173,7 @@ class VisitHistoryList extends StatelessWidget {
     final days = byDay.keys.toList()..sort((a, b) => b.compareTo(a));
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: Insets.xxl),
+      padding: const EdgeInsets.only(bottom: Insets.xxl).withNavBar(context),
       children: [
         for (final d in days) ...[
           Container(

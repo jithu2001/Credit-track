@@ -18,6 +18,7 @@ import 'package:wholeflow_app/features/company/data/company_repository.dart';
 import 'package:wholeflow_app/features/company/domain/company.dart';
 import 'package:wholeflow_app/features/dashboard/data/dashboard_repository.dart';
 import 'package:wholeflow_app/features/dashboard/domain/dashboard_models.dart';
+import 'package:wholeflow_app/features/dashboard/domain/business_trend.dart';
 import 'package:wholeflow_app/features/outstanding/data/overdue_repository.dart';
 import 'package:wholeflow_app/features/outstanding/domain/overdue_report.dart';
 import 'package:wholeflow_app/features/shop_detail/data/transaction_repository.dart';
@@ -412,20 +413,72 @@ class FakeTransactionRepository implements TransactionRepository {
 }
 
 class FakeDashboardRepository implements DashboardRepository {
-  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const []});
+  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const [], this.today});
 
   final CompanySummary? summaryRow;
   final SyncState? state;
   final List<ShopSummary> topDues;
 
+  /// The day the figures are for (default: today). Golden tests fix it, so
+  /// month names in the picture don't change from month to month.
+  final DateTime? today;
+
   @override
   Future<Dashboard> load(String companyId) async {
-    final now = DateTime.now();
+    final now = today ?? DateTime.now();
     return Dashboard(
       summary: summaryRow,
       syncState: state,
       monthSales: MonthSales(month: DateTime(now.year, now.month), amount: const Money(4567800), bills: 12),
       topDues: topDues,
+    );
+  }
+
+  /// Months asked for, in order.
+  final trendCalls = <int>[];
+
+  /// Sales of ₹10,000 × (1 + i) in month i (oldest first), so each month is
+  /// above the last; collections are half the sales; purchases ₹5,000 a month.
+  @override
+  Future<BusinessTrend> trend(String companyId, {int months = 12}) async {
+    trendCalls.add(months);
+    final now = today ?? DateTime.now();
+    return BusinessTrend(
+      months: [
+        for (var i = 0; i < months; i++)
+          TrendMonth(
+            month: DateTime(now.year, now.month - months + 1 + i),
+            sales: Money(1000000 * (i + 1)),
+            bills: i + 1,
+            buyers: 1,
+            collections: Money(500000 * (i + 1)),
+            purchases: const Money(500000),
+            purchaseBills: 2,
+          ),
+      ],
+      // Same days of last month: ₹50,000 sold → this month (₹10,000 × months) is up 20% at 6 months.
+      lastMonthSoFar: SameDays(
+        from: DateTime(now.year, now.month - 1),
+        to: DateTime(now.year, now.month - 1, 8),
+        sales: const Money(5000000),
+        collections: const Money(2500000),
+        purchases: const Money(500000),
+      ),
+      lastYearSoFar: SameDays(
+        from: DateTime(now.year - 1, now.month),
+        to: DateTime(now.year - 1, now.month, 8),
+        sales: const Money(3000000),
+      ),
+      topBuyers: const [
+        TopBuyer(
+          shopId: 's1',
+          name: 'Alpha Stores',
+          siteName: 'Town',
+          sales: Money(9000000),
+          bills: 9,
+          receivable: Money(150000),
+        ),
+      ],
     );
   }
 }

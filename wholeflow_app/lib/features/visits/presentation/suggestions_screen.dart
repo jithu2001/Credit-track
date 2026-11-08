@@ -38,7 +38,7 @@ class SuggestionsScreen extends ConsumerWidget {
           AsyncValue(:final value?) => ContentWidth(
             child: ListView.separated(
               physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(Insets.l),
+              padding: const EdgeInsets.all(Insets.l).withNavBar(context),
               itemCount: value.length,
               separatorBuilder: (_, _) => const SizedBox(height: Insets.l),
               itemBuilder: (context, i) => _SuggestionCard(s: value[i]),

@@ -38,6 +38,7 @@ Future<void> refreshCompanyData(WidgetRef ref) async {
     ..invalidate(companySyncStateProvider)
     ..invalidate(topDuesProvider)
     ..invalidate(monthSalesProvider)
+    ..invalidate(businessTrendProvider)
     ..invalidate(shopListProvider)
     ..invalidate(outstandingReportProvider)
     ..invalidate(overdueReportProvider)

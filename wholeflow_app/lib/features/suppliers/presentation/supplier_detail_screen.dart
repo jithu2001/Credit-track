@@ -87,7 +87,7 @@ class _DetailsTab extends ConsumerWidget {
     return ContentWidth(
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(Insets.l),
+        padding: const EdgeInsets.all(Insets.l).withNavBar(context),
         children: [
           _PayableCard(supplier: s),
           const SizedBox(height: Insets.l),

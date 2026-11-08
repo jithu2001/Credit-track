@@ -23,7 +23,7 @@ class StaffSettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Settings')),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: Insets.s),
+          padding: const EdgeInsets.symmetric(vertical: Insets.s).withNavBar(context),
           children: [
             ListTile(
               leading: CircleAvatar(child: Text(user.displayName.characters.first.toUpperCase())),
@@ -76,7 +76,9 @@ class StaffSettingsScreen extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const SafeArea(child: ChangePasswordSheet()),
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (_) => const ChangePasswordSheet(),
     );
   }
 

@@ -1,4 +1,5 @@
-// WholeFlow product site: scroll-driven phone screens, count-up, small reveals.
+// WholeFlow product site: scroll-driven phone screens, count-up, small reveals,
+// mobile menu and the price calculator.
 (() => {
   'use strict';
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -11,6 +12,37 @@
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
+  // Mobile menu: the button only appears when the script runs, so without
+  // JavaScript the header still has its "Talk to us" link.
+  const menuBtn = $('.menu-btn');
+  const nav = $('#menu');
+  if (menuBtn && nav) {
+    menuBtn.hidden = false;
+    const setMenu = open => {
+      top.classList.toggle('menu-open', open);
+      menuBtn.setAttribute('aria-expanded', String(open));
+      menuBtn.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
+    };
+    menuBtn.addEventListener('click', () => setMenu(!top.classList.contains('menu-open')));
+    nav.addEventListener('click', e => { if (e.target.closest('a')) setMenu(false); });
+    addEventListener('keydown', e => {
+      if (e.key === 'Escape' && top.classList.contains('menu-open')) { setMenu(false); menuBtn.focus(); }
+    });
+    document.addEventListener('click', e => { if (!top.contains(e.target)) setMenu(false); });
+    matchMedia('(min-width: 861px)').addEventListener('change', e => { if (e.matches) setMenu(false); });
+  }
+
+  // The nav link of the section in the middle of the window is marked.
+  const navLinks = $$('.nav a[href^="#"]');
+  const spy = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      navLinks.forEach(a => a.classList.toggle('is-active', a.getAttribute('href') === '#' + e.target.id));
+    }
+  }, { rootMargin: '-45% 0px -50% 0px' });
+  // Every section is watched, so sections without a link clear the mark.
+  $$('main > section').forEach(s => spy.observe(s));
+
   // Sections that animate once when they come into view.
   const once = new IntersectionObserver(entries => {
     for (const e of entries) {
@@ -19,7 +51,16 @@
       once.unobserve(e.target);
     }
   }, { threshold: 0.35 });
-  $$('.flow, .field, .reveal').forEach(el => once.observe(el));
+  $$('.flow, .field, .trust, .reveal').forEach(el => once.observe(el));
+  // Groups can be taller than the window on phones, so they start earlier.
+  const groups = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      e.target.classList.add('in-view');
+      groups.unobserve(e.target);
+    }
+  }, { threshold: 0.12 });
+  $$('.reveal-group').forEach(el => groups.observe(el));
 
   // The flow diagram's moving packets: SMIL animations, paused for reduced motion.
   const flowSvg = $('.flow-svg');
@@ -28,10 +69,8 @@
   // Feature steps switch the sticky phone's screen.
   const screens = $$('.screen');
   const steps = $$('.story-step');
-  const show = name => {
-    screens.forEach(s => s.classList.toggle('is-on', s.dataset.screen === name));
-    steps.forEach(s => s.classList.toggle('is-on', s.dataset.screen === name));
-  };
+  const marks = [...screens, ...steps, ...$$('.story-dots span')];
+  const show = name => marks.forEach(s => s.classList.toggle('is-on', s.dataset.screen === name));
   if (steps.length) {
     // The step nearest the middle of the window decides the screen.
     let queued = false;
@@ -66,6 +105,32 @@
     };
     amount.textContent = fmt.format(0);
     requestAnimationFrame(tick);
+  }
+
+  // Price calculator: ₹600 for the first company, ₹200 for each one after.
+  // Without JavaScript the table of examples shows instead.
+  const calc = $('.calc');
+  if (calc) {
+    const n = $('#calcN'), total = $('#calcTotal'), bars = $$('.calc-bars span', calc);
+    const [less, more] = $$('.step-btn', calc);
+    const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+    let count = 1;
+    const render = () => {
+      n.textContent = count;
+      total.textContent = inr.format(600 + 200 * (count - 1));
+      bars.forEach((b, i) => b.classList.toggle('on', i < count));
+      less.disabled = count <= 1;
+      more.disabled = count >= bars.length;
+    };
+    $$('.step-btn', calc).forEach(b => b.addEventListener('click', () => {
+      count = Math.min(bars.length, Math.max(1, count + Number(b.dataset.step)));
+      render();
+      // A button that just reached its limit is disabled; keep focus usable.
+      if (b.disabled) (b === less ? more : less).focus();
+    }));
+    $('.plan-eg').hidden = true;
+    calc.hidden = false;
+    render();
   }
 
   // Contact form: posts to /api/contact (nginx forwards it to the WholeFlow

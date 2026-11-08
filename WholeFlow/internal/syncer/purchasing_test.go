@@ -107,7 +107,7 @@ func TestPurchasingSync(t *testing.T) {
 		t.Fatalf("local state after run 2: %+v", st)
 	}
 
-	// 3. a bill deleted in Tally disappears at the next reconcile (after FullReconcileHours)
+	// 3. a bill deleted in Tally disappears at the next day's full read
 	h.fake.edit(func() {
 		var keep []fakeVoucher
 		for _, v := range c.Vouchers {

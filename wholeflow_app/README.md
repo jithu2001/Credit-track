@@ -57,19 +57,15 @@ cp android/key.properties.example android/key.properties   # then fill in the pa
 
 **Each release:**
 
-1. Raise the build number in `pubspec.yaml` (`version: 1.0.1+2`: the part after `+` is the Android versionCode and must go up with every upload).
-2. Build both bundles:
+1. Build both apps. The script raises the version itself (`1.0.5` → `1.0.6`, and the build number after `+`, which is the Android versionCode, above every one used before), and puts it back if the build fails:
 
    ```bash
-   tool/build_release.sh
-   # which runs, for each flavor:
-   flutter build appbundle --release --flavor owner -t lib/main_owner.dart \
-     --obfuscate --split-debug-info=build/symbols/owner --dart-define-from-file=env/hosted.json
-   flutter build appbundle --release --flavor staff -t lib/main_staff.dart \
-     --obfuscate --split-debug-info=build/symbols/staff --dart-define-from-file=env/hosted.json
+   tool/build_release.sh            # or --no-bump to rebuild the current version
    ```
 
-3. Upload `build/app/outputs/bundle/<flavor>Release/app-<flavor>-release.aab`, keep `build/symbols/<flavor>/` for that version (needed to read obfuscated stack traces with `flutter symbolize`), and tag it: `git tag app-<version>`.
+   It runs, for each flavor, `flutter build appbundle` and `flutter build apk` (`--release --obfuscate --dart-define-from-file=env/hosted.json`) and collects the results in `build/release/<version>/`: `WholeFlow-<Owner|Staff>-<version>.aab` for Play Console and `.apk` for installing directly.
+
+2. Upload the two `.aab` files, keep `build/symbols/` for that version (needed to read obfuscated stack traces with `flutter symbolize`), then commit `pubspec.yaml` and tag it: `git tag app-<version>`.
 
 `-P wfLocal=true` (local server testing) is refused for release builds.
 

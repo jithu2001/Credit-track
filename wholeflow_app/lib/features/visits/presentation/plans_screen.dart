@@ -49,7 +49,7 @@ class PlansScreen extends ConsumerWidget {
         ),
         AsyncValue(:final value?) => ContentWidth(
           child: ListView.separated(
-            padding: const EdgeInsets.only(bottom: 96),
+            padding: const EdgeInsets.only(bottom: 96).withNavBar(context),
             itemCount: value.length,
             separatorBuilder: (_, _) => const Divider(height: 1, indent: Insets.l),
             itemBuilder: (context, i) => _PlanTile(plan: value[i], companyId: company!.id),
@@ -181,7 +181,7 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
           ? const SkeletonList()
           : ContentWidth(
               child: ListView(
-                padding: const EdgeInsets.all(Insets.l),
+                padding: const EdgeInsets.all(Insets.l).withNavBar(context),
                 children: [
                   if (checkers.isEmpty)
                     Card.filled(

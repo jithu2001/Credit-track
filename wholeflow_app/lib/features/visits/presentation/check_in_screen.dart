@@ -180,7 +180,7 @@ class _CheckInScreenState extends ConsumerState<CheckInScreen> {
       appBar: AppBar(title: Text(t.shopName, maxLines: 1, overflow: TextOverflow.ellipsis)),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.all(Insets.l),
+          padding: const EdgeInsets.all(Insets.l).withNavBar(context),
           children: [
             Text(t.siteName, style: muted),
             const SizedBox(height: Insets.m),

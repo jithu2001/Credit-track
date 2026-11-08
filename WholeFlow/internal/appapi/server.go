@@ -157,6 +157,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /b/{slug}/api/v1/shops/{id}", s.handle(s.shopDetail))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/outstanding", s.handle(s.outstandingReport))
 	mux.HandleFunc("GET /b/{slug}/api/v1/reports/overdue", s.handle(s.overdueReport))
+	mux.HandleFunc("GET /b/{slug}/api/v1/reports/monthly", s.handle(s.monthlyReport))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock", s.handle(s.stockList))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}", s.handle(s.stockItem))
 	mux.HandleFunc("GET /b/{slug}/api/v1/stock/{id}/purchases", s.handle(s.stockItemPurchases))
@@ -205,6 +206,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/check-in", s.handleWrite(s.setStaffCheckIn))
 	mux.HandleFunc("PUT /b/{slug}/api/v1/staff/{id}/active", s.handleWrite(s.setStaffActive))
 	mux.HandleFunc("POST /b/{slug}/api/v1/staff/{id}/password", s.handleWrite(s.resetStaffPassword))
+	mux.HandleFunc("DELETE /b/{slug}/api/v1/staff/{id}", s.handleWrite(s.deleteStaff))
 	mux.HandleFunc("POST /b/{slug}/api/v1/client-errors", s.clientError)
 	return s.versionGate(mux)
 }

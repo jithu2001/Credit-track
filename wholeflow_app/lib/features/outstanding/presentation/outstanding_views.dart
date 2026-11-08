@@ -250,7 +250,7 @@ class _ReportList extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
-          padding: const EdgeInsets.all(Insets.l),
+          padding: const EdgeInsets.all(Insets.l).withNavBar(context),
           sliver: SliverToBoxAdapter(
             child: _TotalCard(
               label: 'Grand total',
@@ -332,6 +332,7 @@ class OverdueView extends StatelessWidget {
           _ => [SliverList.list(children: List.filled(6, const SkeletonTile()))],
         },
         const SliverToBoxAdapter(child: SizedBox(height: Insets.xxl)),
+        const NavBarSliverSpace(),
       ],
     );
   }

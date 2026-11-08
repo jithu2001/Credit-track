@@ -18,9 +18,8 @@ import '../../analytics/presentation/analytics_providers.dart';
 import '../../auth/presentation/session_controller.dart';
 import '../../home/account_button.dart';
 import '../../home/refresh.dart';
-import '../../shops/presentation/shop_tile.dart';
 import '../../visits/presentation/visits_today_card.dart';
-import '../../shops/presentation/shop_list_controller.dart';
+import 'business_trend_card.dart';
 import 'dashboard_providers.dart';
 import 'freshness_banner.dart';
 
@@ -79,12 +78,11 @@ class _DashboardBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(companySummaryProvider(company.id));
-    final top = ref.watch(topDuesProvider(company.id));
     final showSales = ref.watch(canViewTransactionsProvider(company.id));
     final sales = showSales ? ref.watch(monthSalesProvider(company.id)).value : null;
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(Insets.l),
+      padding: const EdgeInsets.all(Insets.l).withNavBar(context),
       children: [
         FreshnessBanner(company: company),
         const SizedBox(height: Insets.l),
@@ -123,38 +121,11 @@ class _DashboardBody extends ConsumerWidget {
           StockAlertCard(companyId: company.id),
           VisitsTodayCard(companyId: company.id),
         ],
-        const SizedBox(height: Insets.xl),
-        Row(
-          children: [
-            Expanded(child: Text('Top dues', style: context.text.titleMedium)),
-            TextButton(
-              onPressed: () {
-                ref.read(shopsViewControllerProvider.notifier).set(ShopsView.dues);
-                context.go('/shops');
-              },
-              child: const Text('View all'),
-            ),
-          ],
-        ),
-        const SizedBox(height: Insets.s),
-        Card.outlined(
-          child: switch (top) {
-            AsyncValue(:final value?) when value.isEmpty => const Padding(
-              padding: EdgeInsets.all(Insets.xl),
-              child: Text('No shop owes anything right now.', textAlign: TextAlign.center),
-            ),
-            AsyncValue(:final value?) => Column(
-              children: [
-                for (final (i, shop) in value.indexed) ...[if (i > 0) const Divider(height: 1), ShopTile(shop: shop)],
-              ],
-            ),
-            AsyncValue(:final error?) => Padding(
-              padding: const EdgeInsets.all(Insets.l),
-              child: ErrorState(error: error, onRetry: () => ref.invalidate(topDuesProvider(company.id))),
-            ),
-            _ => const Column(children: [SkeletonTile(), SkeletonTile(), SkeletonTile()]),
-          },
-        ),
+        if (ref.watch(currentUserProvider)?.isOwner ?? false) ...[
+          const SizedBox(height: Insets.xl),
+          BusinessTrendCard(companyId: company.id),
+          TopBuyersCard(companyId: company.id),
+        ],
       ],
     );
   }

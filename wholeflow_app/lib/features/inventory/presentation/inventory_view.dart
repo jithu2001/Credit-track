@@ -231,12 +231,22 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
       separatorBuilder: (_, i) => i == 0 ? const SizedBox.shrink() : const Divider(height: 1, indent: Insets.l),
       itemBuilder: (context, i) {
         if (i == 0) {
-          return _SummaryLine(
+          final line = _SummaryLine(
             count: shown.length,
             total: all.length,
-            value: isOwner ? shownValue : null,
             syncedAt: summary.syncedAt,
             hint: isOwner && _selected == null ? 'Long-press items to set minimum stock' : null,
+          );
+          if (!isOwner) return line;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _StockValueCard(
+                total: summary.value,
+                shown: shown.length == all.length ? null : (value: shownValue, count: shown.length),
+              ),
+              line,
+            ],
           );
         }
         final item = shown[i - 1];
@@ -273,7 +283,7 @@ class _InventoryViewState extends ConsumerState<InventoryView> with AutomaticKee
             controller: scroll,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s),
+                padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.s).withNavBar(context),
                 child: Text('Stock group', style: context.text.titleMedium),
               ),
               const RadioListTile<String>(value: allGroups, title: Text('All groups')),
@@ -355,12 +365,59 @@ class _SelectionBar extends StatelessWidget {
   }
 }
 
+/// Owner: the total value of all stock (Tally's closing values, summed on the
+/// server) and, while a search or filter is on, the value of the items shown.
+class _StockValueCard extends StatelessWidget {
+  const _StockValueCard({required this.total, this.shown});
+
+  final Money total;
+  final ({Money value, int count})? shown;
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = context.colors.onSurface;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.l, Insets.m, Insets.l, 0),
+      child: Card.filled(
+        key: const Key('stock-value'),
+        margin: EdgeInsets.zero,
+        color: context.colors.surfaceContainerHigh,
+        child: Padding(
+          padding: const EdgeInsets.all(Insets.l),
+          child: Row(
+            children: [
+              Icon(Icons.currency_rupee_rounded, color: fg),
+              const SizedBox(width: Insets.m),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Total stock value', style: context.text.labelLarge?.copyWith(color: fg)),
+                    Text(
+                      formatInr(total),
+                      style: context.text.headlineSmall?.copyWith(color: fg, fontWeight: FontWeight.w600),
+                    ),
+                    if (shown case final s?)
+                      Text(
+                        '${formatInr(s.value)} in the ${plural(s.count, 'item')} shown',
+                        style: context.text.bodySmall?.copyWith(color: fg),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SummaryLine extends StatelessWidget {
-  const _SummaryLine({required this.count, required this.total, this.value, this.syncedAt, this.hint});
+  const _SummaryLine({required this.count, required this.total, this.syncedAt, this.hint});
 
   final int count;
   final int total;
-  final Money? value;
   final DateTime? syncedAt;
   final String? hint;
 
@@ -368,7 +425,6 @@ class _SummaryLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final parts = [
       count == total ? plural(total, 'item') : '$count of ${plural(total, 'item')}',
-      if (value != null) 'Value ${formatInrCompact(value!)}',
       if (syncedAt != null) 'Synced ${timeAgo(syncedAt!)}',
       ?hint,
     ];

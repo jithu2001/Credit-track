@@ -26,6 +26,25 @@ abstract final class Insets {
   static const double maxContentWidth = 840;
 }
 
+/// Android 15+ draws the app under the system navigation bar (gesture handle
+/// or buttons). Scrolling content with its own padding adds the bar's height
+/// at the bottom so its last item can scroll clear of the bar. Inside the home
+/// tabs the bar is already behind the app's NavigationBar, so this adds 0.
+extension NavBarPadding on EdgeInsets {
+  EdgeInsets withNavBar(BuildContext context) => copyWith(bottom: bottom + MediaQuery.paddingOf(context).bottom);
+}
+
+/// The last sliver of a CustomScrollView (which, unlike ListView, never
+/// leaves room for the system navigation bar by itself): [extra] plus the bar.
+class NavBarSliverSpace extends StatelessWidget {
+  const NavBarSliverSpace({super.key, this.extra = Insets.l});
+
+  final double extra;
+
+  @override
+  Widget build(BuildContext context) => SliverToBoxAdapter(child: SizedBox(height: extra + MediaQuery.paddingOf(context).bottom));
+}
+
 /// Colours with a business meaning: amount owed (Dr), in credit (Cr), and
 /// sync warnings. Always paired with a text label, never colour alone.
 @immutable

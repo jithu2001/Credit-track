@@ -14,7 +14,8 @@ part of 'visit_providers.dart';
 final visitDayControllerProvider = VisitDayControllerProvider._();
 
 /// The day the owner's Visits view shows. A view setting only.
-final class VisitDayControllerProvider extends $NotifierProvider<VisitDayController, DateTime> {
+final class VisitDayControllerProvider
+    extends $NotifierProvider<VisitDayController, DateTime> {
   /// The day the owner's Visits view shows. A view setting only.
   VisitDayControllerProvider._()
     : super(
@@ -36,11 +37,15 @@ final class VisitDayControllerProvider extends $NotifierProvider<VisitDayControl
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(DateTime value) {
-    return $ProviderOverride(origin: this, providerOverride: $SyncValueProvider<DateTime>(value));
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DateTime>(value),
+    );
   }
 }
 
-String _$visitDayControllerHash() => r'979cfcee6e17cd2ce65088ccaa94393a740d412b';
+String _$visitDayControllerHash() =>
+    r'979cfcee6e17cd2ce65088ccaa94393a740d412b';
 
 /// The day the owner's Visits view shows. A view setting only.
 
@@ -50,7 +55,14 @@ abstract class _$VisitDayController extends $Notifier<DateTime> {
   @override
   WhenComplete runBuild() {
     final ref = this.ref as $Ref<DateTime, DateTime>;
-    final element = ref.element as $ClassProviderElement<AnyNotifier<DateTime, DateTime>, DateTime, Object?, Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<DateTime, DateTime>,
+              DateTime,
+              Object?,
+              Object?
+            >;
     return element.handleCreate(ref, build);
   }
 }
@@ -63,17 +75,24 @@ final companyDayTasksProvider = CompanyDayTasksFamily._();
 /// Owner: every task of one company on one day.
 
 final class CompanyDayTasksProvider
-    extends $FunctionalProvider<AsyncValue<List<VisitTask>>, List<VisitTask>, FutureOr<List<VisitTask>>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<VisitTask>>,
+          List<VisitTask>,
+          FutureOr<List<VisitTask>>
+        >
     with $FutureModifier<List<VisitTask>>, $FutureProvider<List<VisitTask>> {
   /// Owner: every task of one company on one day.
-  CompanyDayTasksProvider._({required CompanyDayTasksFamily super.from, required (String, DateTime) super.argument})
-    : super(
-        retry: null,
-        name: r'companyDayTasksProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  CompanyDayTasksProvider._({
+    required CompanyDayTasksFamily super.from,
+    required (String, DateTime) super.argument,
+  }) : super(
+         retry: null,
+         name: r'companyDayTasksProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$companyDayTasksHash();
@@ -87,7 +106,9 @@ final class CompanyDayTasksProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<VisitTask>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<VisitTask>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<VisitTask>> create(Ref ref) {
@@ -110,7 +131,12 @@ String _$companyDayTasksHash() => r'cdb110b08f98eb70a436f98affeb14d1d03a02b0';
 
 /// Owner: every task of one company on one day.
 
-final class CompanyDayTasksFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<VisitTask>>, (String, DateTime)> {
+final class CompanyDayTasksFamily extends $Family
+    with
+        $FunctionalFamilyOverride<
+          FutureOr<List<VisitTask>>,
+          (String, DateTime)
+        > {
   CompanyDayTasksFamily._()
     : super(
         retry: null,
@@ -137,7 +163,12 @@ final myTodayTasksProvider = MyTodayTasksProvider._();
 /// Staff: my tasks for today.
 
 final class MyTodayTasksProvider
-    extends $FunctionalProvider<AsyncValue<List<VisitTask>>, List<VisitTask>, FutureOr<List<VisitTask>>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<VisitTask>>,
+          List<VisitTask>,
+          FutureOr<List<VisitTask>>
+        >
     with $FutureModifier<List<VisitTask>>, $FutureProvider<List<VisitTask>> {
   /// Staff: my tasks for today.
   MyTodayTasksProvider._()
@@ -156,7 +187,9 @@ final class MyTodayTasksProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<VisitTask>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<VisitTask>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<VisitTask>> create(Ref ref) {
@@ -173,7 +206,13 @@ final myHistoryProvider = MyHistoryProvider._();
 
 /// Staff: my last 30 days, newest first.
 
-final class MyHistoryProvider extends $FunctionalProvider<AsyncValue<List<VisitTask>>, List<VisitTask>, FutureOr<List<VisitTask>>>
+final class MyHistoryProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<VisitTask>>,
+          List<VisitTask>,
+          FutureOr<List<VisitTask>>
+        >
     with $FutureModifier<List<VisitTask>>, $FutureProvider<List<VisitTask>> {
   /// Staff: my last 30 days, newest first.
   MyHistoryProvider._()
@@ -192,7 +231,9 @@ final class MyHistoryProvider extends $FunctionalProvider<AsyncValue<List<VisitT
 
   @$internal
   @override
-  $FutureProviderElement<List<VisitTask>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<VisitTask>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<VisitTask>> create(Ref ref) {
@@ -210,17 +251,24 @@ final staffHistoryProvider = StaffHistoryFamily._();
 /// Owner: one staff member's last 30 days.
 
 final class StaffHistoryProvider
-    extends $FunctionalProvider<AsyncValue<List<VisitTask>>, List<VisitTask>, FutureOr<List<VisitTask>>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<VisitTask>>,
+          List<VisitTask>,
+          FutureOr<List<VisitTask>>
+        >
     with $FutureModifier<List<VisitTask>>, $FutureProvider<List<VisitTask>> {
   /// Owner: one staff member's last 30 days.
-  StaffHistoryProvider._({required StaffHistoryFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'staffHistoryProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  StaffHistoryProvider._({
+    required StaffHistoryFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'staffHistoryProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$staffHistoryHash();
@@ -234,7 +282,9 @@ final class StaffHistoryProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<VisitTask>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<VisitTask>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<VisitTask>> create(Ref ref) {
@@ -257,7 +307,8 @@ String _$staffHistoryHash() => r'8b2ad90a3781a76c0e684dca2f1219505b7adffe';
 
 /// Owner: one staff member's last 30 days.
 
-final class StaffHistoryFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<VisitTask>>, String> {
+final class StaffHistoryFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<List<VisitTask>>, String> {
   StaffHistoryFamily._()
     : super(
         retry: null,
@@ -269,7 +320,8 @@ final class StaffHistoryFamily extends $Family with $FunctionalFamilyOverride<Fu
 
   /// Owner: one staff member's last 30 days.
 
-  StaffHistoryProvider call(String staffId) => StaffHistoryProvider._(argument: staffId, from: this);
+  StaffHistoryProvider call(String staffId) =>
+      StaffHistoryProvider._(argument: staffId, from: this);
 
   @override
   String toString() => r'staffHistoryProvider';
@@ -279,10 +331,23 @@ final class StaffHistoryFamily extends $Family with $FunctionalFamilyOverride<Fu
 final visitPlansProvider = VisitPlansFamily._();
 
 final class VisitPlansProvider
-    extends $FunctionalProvider<AsyncValue<List<VisitPlan>>, List<VisitPlan>, FutureOr<List<VisitPlan>>>
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<VisitPlan>>,
+          List<VisitPlan>,
+          FutureOr<List<VisitPlan>>
+        >
     with $FutureModifier<List<VisitPlan>>, $FutureProvider<List<VisitPlan>> {
-  VisitPlansProvider._({required VisitPlansFamily super.from, required String super.argument})
-    : super(retry: null, name: r'visitPlansProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+  VisitPlansProvider._({
+    required VisitPlansFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'visitPlansProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$visitPlansHash();
@@ -296,7 +361,9 @@ final class VisitPlansProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<VisitPlan>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<VisitPlan>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<VisitPlan>> create(Ref ref) {
@@ -317,11 +384,19 @@ final class VisitPlansProvider
 
 String _$visitPlansHash() => r'2e30dff931cee48651e21a4b7d31014ccd37f1de';
 
-final class VisitPlansFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<VisitPlan>>, String> {
+final class VisitPlansFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<List<VisitPlan>>, String> {
   VisitPlansFamily._()
-    : super(retry: null, name: r'visitPlansProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+    : super(
+        retry: null,
+        name: r'visitPlansProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
-  VisitPlansProvider call(String companyId) => VisitPlansProvider._(argument: companyId, from: this);
+  VisitPlansProvider call(String companyId) =>
+      VisitPlansProvider._(argument: companyId, from: this);
 
   @override
   String toString() => r'visitPlansProvider';
@@ -330,10 +405,24 @@ final class VisitPlansFamily extends $Family with $FunctionalFamilyOverride<Futu
 @ProviderFor(shopVisit)
 final shopVisitProvider = ShopVisitFamily._();
 
-final class ShopVisitProvider extends $FunctionalProvider<AsyncValue<ShopVisit?>, ShopVisit?, FutureOr<ShopVisit?>>
+final class ShopVisitProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<ShopVisit?>,
+          ShopVisit?,
+          FutureOr<ShopVisit?>
+        >
     with $FutureModifier<ShopVisit?>, $FutureProvider<ShopVisit?> {
-  ShopVisitProvider._({required ShopVisitFamily super.from, required String super.argument})
-    : super(retry: null, name: r'shopVisitProvider', isAutoDispose: true, dependencies: null, $allTransitiveDependencies: null);
+  ShopVisitProvider._({
+    required ShopVisitFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'shopVisitProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$shopVisitHash();
@@ -347,7 +436,8 @@ final class ShopVisitProvider extends $FunctionalProvider<AsyncValue<ShopVisit?>
 
   @$internal
   @override
-  $FutureProviderElement<ShopVisit?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<ShopVisit?> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
 
   @override
   FutureOr<ShopVisit?> create(Ref ref) {
@@ -368,11 +458,19 @@ final class ShopVisitProvider extends $FunctionalProvider<AsyncValue<ShopVisit?>
 
 String _$shopVisitHash() => r'798f64a5b0ab8d1cff3bb14860b87a8772d3e99d';
 
-final class ShopVisitFamily extends $Family with $FunctionalFamilyOverride<FutureOr<ShopVisit?>, String> {
+final class ShopVisitFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<ShopVisit?>, String> {
   ShopVisitFamily._()
-    : super(retry: null, name: r'shopVisitProvider', dependencies: null, $allTransitiveDependencies: null, isAutoDispose: true);
+    : super(
+        retry: null,
+        name: r'shopVisitProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
-  ShopVisitProvider call(String visitId) => ShopVisitProvider._(argument: visitId, from: this);
+  ShopVisitProvider call(String visitId) =>
+      ShopVisitProvider._(argument: visitId, from: this);
 
   @override
   String toString() => r'shopVisitProvider';
@@ -382,16 +480,25 @@ final class ShopVisitFamily extends $Family with $FunctionalFamilyOverride<Futur
 final failedAttemptsProvider = FailedAttemptsFamily._();
 
 final class FailedAttemptsProvider
-    extends $FunctionalProvider<AsyncValue<List<FailedAttempt>>, List<FailedAttempt>, FutureOr<List<FailedAttempt>>>
-    with $FutureModifier<List<FailedAttempt>>, $FutureProvider<List<FailedAttempt>> {
-  FailedAttemptsProvider._({required FailedAttemptsFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'failedAttemptsProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<FailedAttempt>>,
+          List<FailedAttempt>,
+          FutureOr<List<FailedAttempt>>
+        >
+    with
+        $FutureModifier<List<FailedAttempt>>,
+        $FutureProvider<List<FailedAttempt>> {
+  FailedAttemptsProvider._({
+    required FailedAttemptsFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'failedAttemptsProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$failedAttemptsHash();
@@ -405,7 +512,9 @@ final class FailedAttemptsProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<FailedAttempt>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<FailedAttempt>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<FailedAttempt>> create(Ref ref) {
@@ -426,7 +535,8 @@ final class FailedAttemptsProvider
 
 String _$failedAttemptsHash() => r'a96a65c73ec107d89abdb77342c664d0155aacb8';
 
-final class FailedAttemptsFamily extends $Family with $FunctionalFamilyOverride<FutureOr<List<FailedAttempt>>, String> {
+final class FailedAttemptsFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<List<FailedAttempt>>, String> {
   FailedAttemptsFamily._()
     : super(
         retry: null,
@@ -436,7 +546,8 @@ final class FailedAttemptsFamily extends $Family with $FunctionalFamilyOverride<
         isAutoDispose: true,
       );
 
-  FailedAttemptsProvider call(String taskId) => FailedAttemptsProvider._(argument: taskId, from: this);
+  FailedAttemptsProvider call(String taskId) =>
+      FailedAttemptsProvider._(argument: taskId, from: this);
 
   @override
   String toString() => r'failedAttemptsProvider';

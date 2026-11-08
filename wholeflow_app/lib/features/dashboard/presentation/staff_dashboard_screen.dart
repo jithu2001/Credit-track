@@ -83,7 +83,7 @@ class _StaffDashboardBody extends ConsumerWidget {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(Insets.l),
+      padding: const EdgeInsets.all(Insets.l).withNavBar(context),
       children: [
         FreshnessBanner(company: company),
         const SizedBox(height: Insets.l),

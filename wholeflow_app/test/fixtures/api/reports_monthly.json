@@ -1,0 +1,81 @@
+{
+  "company_id": "c0000000-0000-0000-0000-00000000a001",
+  "from": "2026-04-01",
+  "months": [
+    {
+      "bills": 0,
+      "buyers": 0,
+      "collections": "0.00",
+      "month": "2026-04-01",
+      "purchase_bills": 0,
+      "purchases": "0.00",
+      "returns": "0.00",
+      "sales": "0.00"
+    },
+    {
+      "bills": 1,
+      "buyers": 1,
+      "collections": "0.00",
+      "month": "2026-05-01",
+      "purchase_bills": 0,
+      "purchases": "0.00",
+      "returns": "0.00",
+      "sales": "500.00"
+    },
+    {
+      "bills": 1,
+      "buyers": 1,
+      "collections": "0.00",
+      "month": "2026-06-01",
+      "purchase_bills": 0,
+      "purchases": "0.00",
+      "returns": "0.00",
+      "sales": "800.00"
+    },
+    {
+      "bills": 1,
+      "buyers": 1,
+      "collections": "1200.00",
+      "month": "2026-07-01",
+      "purchase_bills": 0,
+      "purchases": "0.00",
+      "returns": "0.00",
+      "sales": "150.00"
+    }
+  ],
+  "same_days_last_month": {
+    "collections": "0.00",
+    "from": "2026-06-01",
+    "purchases": "0.00",
+    "sales": "800.00",
+    "to": "2026-06-20"
+  },
+  "same_days_last_year": {
+    "collections": "0.00",
+    "from": "2025-07-01",
+    "purchases": "0.00",
+    "sales": "0.00",
+    "to": "2025-07-20"
+  },
+  "through_day": 20,
+  "to": "2026-07-01",
+  "top_buyers": [
+    {
+      "bills": 2,
+      "name": "Alpha Stores",
+      "receivable": "1100.00",
+      "sales": "1300.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a001",
+      "site_name": "Town"
+    },
+    {
+      "bills": 1,
+      "name": "Beta Traders",
+      "receivable": "-50.00",
+      "sales": "150.00",
+      "shop_id": "d0000000-0000-0000-0000-00000000a002",
+      "site_name": null
+    }
+  ]
+}
+

@@ -464,7 +464,8 @@ async function renderSyncMain() {
         <label class="check"><input type="checkbox" id="syncPurchases" ${s.sync.purchases ? "checked" : ""}> Purchase bills with item lines (incremental)</label>
         <label class="check"><input type="checkbox" id="syncInventory" ${s.sync.inventory ? "checked" : ""}> Inventory (stock items, qty &amp; value)</label>
         <p class="small muted">Suppliers, purchases and inventory need the purchasing tables on the WholeFlow server. If they are missing, shops still sync and these show a warning.</p>
-        <label><span class="l">Check for deleted vouchers every (hours)</span><input id="reconcile" type="number" min="1" max="720" value="${s.sync.fullReconcileHours}"></label>
+        <label><span class="l">Daily full check (finds vouchers deleted in Tally) from</span><select id="reconcileHour">${[...Array(24).keys()].map((h) => `<option value="${h}" ${(s.sync.reconcileHour ?? 13) === h ? "selected" : ""}>${hourLabel(h)}</option>`).join("")}</select></label>
+        <p class="small muted">This check reads every voucher once a day, and Tally may stop responding for a few seconds while it runs. Pick a quiet time, such as lunch.</p>
         <label class="check"><input type="checkbox" id="enabled" ${s.sync.enabled ? "checked" : ""}> <strong>Background synchronisation enabled</strong></label>
         <div class="row"><button id="save" class="primary">Save settings</button><span id="saveResult" class="small"></span></div>
         ${env.length ? `<p class="small muted">Overridden by environment: ${esc(env.join(", "))} (changes to those fields are ignored).</p>` : ""}
@@ -569,9 +570,14 @@ async function syncTallyTest(interactive) {
   renderSyncCompanies(t.connected ? t.companies : null);
 }
 
+// 13 -> "1:00 pm"
+function hourLabel(h) {
+  return `${h % 12 === 0 ? 12 : h % 12}:00 ${h < 12 ? "am" : "pm"}`;
+}
+
 function collectSyncSettings() {
   return {
-    sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, fullReconcileHours: +$("#reconcile").value,
+    sync: { enabled: $("#enabled").checked, intervalSeconds: +$("#interval").value, transactions: $("#txns").checked, reconcileHour: +$("#reconcileHour").value,
             suppliers: $("#syncSuppliers").checked, purchases: $("#syncPurchases").checked, inventory: $("#syncInventory").checked },
     companies: [...document.querySelectorAll("input.cmp")].map((el) => ({ tallyId: el.dataset.id, name: el.dataset.name, enabled: el.checked })),
   };

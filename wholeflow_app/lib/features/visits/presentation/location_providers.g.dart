@@ -15,17 +15,25 @@ final shopLocationProvider = ShopLocationFamily._();
 
 /// A shop's pin, or null when it has none.
 
-final class ShopLocationProvider extends $FunctionalProvider<AsyncValue<ShopLocation?>, ShopLocation?, FutureOr<ShopLocation?>>
+final class ShopLocationProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<ShopLocation?>,
+          ShopLocation?,
+          FutureOr<ShopLocation?>
+        >
     with $FutureModifier<ShopLocation?>, $FutureProvider<ShopLocation?> {
   /// A shop's pin, or null when it has none.
-  ShopLocationProvider._({required ShopLocationFamily super.from, required String super.argument})
-    : super(
-        retry: null,
-        name: r'shopLocationProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
+  ShopLocationProvider._({
+    required ShopLocationFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'shopLocationProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$shopLocationHash();
@@ -39,7 +47,9 @@ final class ShopLocationProvider extends $FunctionalProvider<AsyncValue<ShopLoca
 
   @$internal
   @override
-  $FutureProviderElement<ShopLocation?> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<ShopLocation?> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<ShopLocation?> create(Ref ref) {
@@ -62,7 +72,8 @@ String _$shopLocationHash() => r'4e621c0593ccf482a3009e64d52146b3efd8f306';
 
 /// A shop's pin, or null when it has none.
 
-final class ShopLocationFamily extends $Family with $FunctionalFamilyOverride<FutureOr<ShopLocation?>, String> {
+final class ShopLocationFamily extends $Family
+    with $FunctionalFamilyOverride<FutureOr<ShopLocation?>, String> {
   ShopLocationFamily._()
     : super(
         retry: null,
@@ -74,7 +85,8 @@ final class ShopLocationFamily extends $Family with $FunctionalFamilyOverride<Fu
 
   /// A shop's pin, or null when it has none.
 
-  ShopLocationProvider call(String shopId) => ShopLocationProvider._(argument: shopId, from: this);
+  ShopLocationProvider call(String shopId) =>
+      ShopLocationProvider._(argument: shopId, from: this);
 
   @override
   String toString() => r'shopLocationProvider';
@@ -89,8 +101,14 @@ final pendingSuggestionsProvider = PendingSuggestionsProvider._();
 
 final class PendingSuggestionsProvider
     extends
-        $FunctionalProvider<AsyncValue<List<LocationSuggestion>>, List<LocationSuggestion>, FutureOr<List<LocationSuggestion>>>
-    with $FutureModifier<List<LocationSuggestion>>, $FutureProvider<List<LocationSuggestion>> {
+        $FunctionalProvider<
+          AsyncValue<List<LocationSuggestion>>,
+          List<LocationSuggestion>,
+          FutureOr<List<LocationSuggestion>>
+        >
+    with
+        $FutureModifier<List<LocationSuggestion>>,
+        $FutureProvider<List<LocationSuggestion>> {
   /// Staff suggestions waiting for the owner.
   PendingSuggestionsProvider._()
     : super(
@@ -108,7 +126,9 @@ final class PendingSuggestionsProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<LocationSuggestion>> $createElement($ProviderPointer pointer) => $FutureProviderElement(pointer);
+  $FutureProviderElement<List<LocationSuggestion>> $createElement(
+    $ProviderPointer pointer,
+  ) => $FutureProviderElement(pointer);
 
   @override
   FutureOr<List<LocationSuggestion>> create(Ref ref) {
@@ -116,4 +136,5 @@ final class PendingSuggestionsProvider
   }
 }
 
-String _$pendingSuggestionsHash() => r'2c4cbe23b25b248248545f6ae2ad5faad09d16a8';
+String _$pendingSuggestionsHash() =>
+    r'2c4cbe23b25b248248545f6ae2ad5faad09d16a8';

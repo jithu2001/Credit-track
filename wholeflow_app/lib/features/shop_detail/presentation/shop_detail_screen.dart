@@ -109,7 +109,7 @@ class _DetailsTab extends StatelessWidget {
     return ContentWidth(
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(Insets.l),
+        padding: const EdgeInsets.all(Insets.l).withNavBar(context),
         children: [
           _BalanceCard(shop: shop),
           const SizedBox(height: Insets.l),
@@ -121,7 +121,7 @@ class _DetailsTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Insets.l),
-          ShopLocationCard(shopId: shop.id),
+          ShopLocationCard(shopId: shop.id, shopName: shop.name),
           const SizedBox(height: Insets.l),
           Card.outlined(
             child: Column(

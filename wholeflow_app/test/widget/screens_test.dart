@@ -1,7 +1,9 @@
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:wholeflow_app/core/connection/business_connection.dart';
 import 'package:wholeflow_app/core/errors/app_failure.dart';
 import 'package:wholeflow_app/core/money/money.dart';
 import 'package:wholeflow_app/features/shop_detail/domain/statement.dart';
@@ -42,8 +44,10 @@ import 'package:wholeflow_app/features/visits/presentation/check_in_screen.dart'
 import 'package:wholeflow_app/features/visits/presentation/plans_screen.dart';
 import 'package:wholeflow_app/features/visits/presentation/staff_visits_screen.dart';
 import 'package:wholeflow_app/core/location/location_service.dart';
+import 'package:wholeflow_app/features/staff/data/staff_repository.dart';
 import 'package:wholeflow_app/features/staff/domain/staff.dart';
 import 'package:wholeflow_app/features/staff/presentation/staff_providers.dart';
+import 'package:wholeflow_app/features/staff/presentation/staff_detail_screen.dart';
 import 'package:wholeflow_app/features/staff/presentation/staff_form_screen.dart';
 
 import 'helpers.dart';
@@ -174,6 +178,53 @@ void main() {
       expect(find.text(inactiveAccountMessage), findsOneWidget);
       expect(repo.signedIn, isFalse);
     });
+
+    group('back to the reference key', () {
+      Future<List<String>> open(WidgetTester tester) async {
+        final switched = <String>[];
+        await pumpScreen(
+          tester,
+          const LoginScreen(),
+          overrides: [
+            authRepositoryProvider.overrideWithValue(FakeAuthRepository()),
+            businessConnectionProvider.overrideWithValue(
+              const BusinessConnection(businessName: 'JMJ Marketing', baseUrl: 'https://x', anonKey: 'k', referenceKey: 'R'),
+            ),
+            switchBusinessProvider.overrideWithValue(() async => switched.add('switch')),
+          ],
+          size: const Size(400, 1000),
+        );
+        return switched;
+      }
+
+      testWidgets('the sign-in screen names the business and can change it', (tester) async {
+        final switched = await open(tester);
+        expect(find.text('Connected to JMJ Marketing'), findsOneWidget);
+        await tester.ensureVisible(find.byKey(const Key('login-change-business')));
+        await tester.tap(find.byKey(const Key('login-change-business')));
+        await tester.pumpAndSettle();
+        expect(find.text('Change business?'), findsOneWidget);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(switched, isEmpty, reason: 'cancel keeps the business');
+
+        await tester.tap(find.byKey(const Key('login-change-business')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(FilledButton, 'Change'));
+        await tester.pumpAndSettle();
+        expect(switched, ['switch']);
+      });
+
+      testWidgets('Android back asks to change business instead of closing', (tester) async {
+        final switched = await open(tester);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('Change business?'), findsOneWidget);
+        await tester.tap(find.widgetWithText(FilledButton, 'Change'));
+        await tester.pumpAndSettle();
+        expect(switched, ['switch']);
+      });
+    });
   });
 
   group('shops list', () {
@@ -290,11 +341,12 @@ void main() {
       receivable: Money(12345600),
     );
 
-    Future<List<Override>> overrides(AppUser user, List<CompanyAccess> access) async => [
+    Future<List<Override>> overrides(AppUser user, List<CompanyAccess> access, {FakeShopLocationRepository? pins}) async => [
       ...await baseOverrides(
         user: user,
         access: access,
         shopRepo: FakeShopRepository(detailShop: detail),
+        locationRepo: pins,
       ),
       transactionRepositoryProvider.overrideWithValue(FakeTransactionRepository()),
     ];
@@ -311,6 +363,21 @@ void main() {
       expect(find.byKey(const Key('edit-location')), findsOneWidget);
     });
 
+    testWidgets('staff get directions to a pinned shop; no button without a pin', (tester) async {
+      final pins = FakeShopLocationRepository(
+        pins: {'s1': const ShopLocation(shopId: 's1', latitude: 9.85, longitude: 76.97, radiusM: 100)},
+      );
+      await pumpScreen(
+        tester,
+        const ShopDetailScreen(shopId: 's1'),
+        overrides: await overrides(staffUser, const [CompanyAccess(userId: 'staff-1', companyId: 'co-a')], pins: pins),
+        size: const Size(400, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('shop-directions')), findsOneWidget);
+      expect(find.byKey(const Key('edit-location')), findsNothing);
+    });
+
     testWidgets('staff see no location card while the shop has no pin', (tester) async {
       await pumpScreen(
         tester,
@@ -320,6 +387,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Shop location'), findsNothing);
+      expect(find.byKey(const Key('shop-directions')), findsNothing);
     });
 
     testWidgets('owner sees the Statement tab', (tester) async {
@@ -756,6 +824,83 @@ void main() {
     });
   });
 
+  group('staff delete', () {
+    const ravi = StaffMember(
+      id: 'staff-1',
+      role: UserRole.staff,
+      name: 'Ravi Kumar',
+      email: 'ravi@example.com',
+      companies: [CompanyAccess(userId: 'staff-1', companyId: 'co-a')],
+    );
+
+    Future<_FakeStaffRepository> open(WidgetTester tester) async {
+      final repo = _FakeStaffRepository();
+      await pumpRoutedScreen(
+        tester,
+        const StaffDetailScreen(userId: 'staff-1'),
+        overrides: [
+          ...await baseOverrides(companies: const [companyA]),
+          staffMembersProvider.overrideWith((ref) async => const [ravi]),
+          staffRepositoryProvider.overrideWithValue(repo),
+        ],
+        size: const Size(400, 1200),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Delete account'));
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      return repo;
+    }
+
+    testWidgets('asks twice and needs the name typed before deleting', (tester) async {
+      final repo = await open(tester);
+      expect(find.text('Delete Ravi Kumar?'), findsOneWidget);
+      expect(find.text('Disable instead'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      FilledButton deleteButton() => tester.widget(find.widgetWithText(FilledButton, 'Delete'));
+      expect(deleteButton().onPressed, isNull, reason: 'nothing typed yet');
+      await tester.enterText(find.byType(TextField), 'ravi kumar');
+      await tester.pump();
+      expect(deleteButton().onPressed, isNull, reason: 'must match exactly');
+      await tester.enterText(find.byType(TextField), 'Ravi Kumar ');
+      await tester.pump();
+      expect(deleteButton().onPressed, isNotNull);
+      expect(repo.deleted, isEmpty, reason: 'nothing deleted before the last tap');
+      await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, ['staff-1']);
+      expect(find.text('base page'), findsOneWidget, reason: 'went back to the list');
+    });
+
+    testWidgets('cancelling either step deletes nothing; Disable instead disables', (tester) async {
+      final repo = await open(tester);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Ravi Kumar');
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, isEmpty);
+
+      await tester.tap(find.text('Delete account'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Disable instead'));
+      await tester.pumpAndSettle();
+      expect(find.text('Disable Ravi Kumar?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Disable'));
+      await tester.pumpAndSettle();
+      expect(repo.active, {'staff-1': false});
+      expect(repo.deleted, isEmpty);
+    });
+  });
+
   testWidgets('staff with no company see the not-assigned screen', (tester) async {
     await pumpScreen(tester, const NoCompanyView(isOwner: false), overrides: await baseOverrides(user: staffUser));
     await tester.pump();
@@ -820,9 +965,61 @@ void main() {
       expect(find.text('₹10,000.00 overdue'), findsOneWidget);
     });
 
+    testWidgets('owner dashboard: monthly trend and top customers instead of top dues', (tester) async {
+      final dashboard = FakeDashboardRepository(topDues: shops);
+      await pumpScreen(
+        tester,
+        const DashboardScreen(),
+        overrides: await baseOverrides(dashboard: dashboard),
+        size: const Size(400, 2600),
+      );
+      await tester.pumpAndSettle();
+      final now = DateTime.now();
+      String mon(int back) => DateFormat('MMM').format(DateTime(now.year, now.month - back));
+
+      expect(find.text('Top dues'), findsNothing);
+      expect(find.text('Monthly trend'), findsOneWidget);
+      expect(dashboard.trendCalls, [6]);
+      // Fake: month i sells ₹10,000 × (i + 1) → this month ₹60,000, last month ₹50,000.
+      expect(find.text('Sales · ${DateFormat('MMMM y').format(now)} (so far)'), findsOneWidget);
+      expect(find.byKey(const Key('trend-value')), findsOneWidget);
+      expect(find.text('₹60,000.00'), findsOneWidget);
+      // This month so far is compared with the same days of last month and of a year ago.
+      expect(find.text('20% vs 1–8 ${mon(1)}'), findsOneWidget);
+      expect(find.text('100% vs 1–8 ${mon(0)} ${now.year - 1}'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsNWidgets(2));
+      expect(find.textContaining('Collected 50% of sales'), findsOneWidget);
+      expect(find.text('Top customers · last 6 months'), findsOneWidget);
+      expect(find.text('Alpha Stores'), findsOneWidget);
+
+      // The oldest month: no month before it to compare with.
+      await tester.tap(find.byKey(const Key('trend-bar-0')));
+      await tester.pumpAndSettle();
+      expect(find.text('₹10,000.00'), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward_rounded), findsNothing);
+
+      // A whole past month is compared with the whole month before it.
+      await tester.tap(find.byKey(const Key('trend-bar-2')));
+      await tester.pumpAndSettle();
+      expect(find.text('50% vs ${mon(4)}'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('trend-bar-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Collections'));
+      await tester.pumpAndSettle();
+      expect(find.text('₹5,000.00'), findsOneWidget);
+
+      await tester.tap(find.text('12 mo'));
+      await tester.pumpAndSettle();
+      expect(dashboard.trendCalls, [6, 12]);
+      expect(find.text('₹60,000.00'), findsOneWidget, reason: 'back on this month: 12 × ₹5,000 collected');
+      expect(find.text('Top customers · last 12 months'), findsOneWidget);
+    });
+
     testWidgets('staff dashboard has no overdue card', (tester) async {
       await pumpScreen(tester, const DashboardScreen(), overrides: await baseOverrides(user: staffUser));
       await tester.pumpAndSettle();
+      expect(find.text('Monthly trend'), findsNothing);
       expect(find.textContaining('overdue'), findsNothing);
       // Staff without transaction access for the company don't get the sales tile.
       expect(find.text('Sales this month'), findsNothing);
@@ -933,6 +1130,7 @@ void main() {
           overrides: await baseOverrides(
             dashboard: FakeDashboardRepository(
               topDues: shops,
+              today: DateTime(2026, 6, 15),
               summaryRow: const CompanySummary(
                 companyId: 'co-a',
                 companyName: 'JMJ Marketing',
@@ -956,4 +1154,18 @@ void main() {
       });
     }
   });
+}
+
+class _FakeStaffRepository implements StaffRepository {
+  final deleted = <String>[];
+  final active = <String, bool>{};
+
+  @override
+  Future<void> delete(String userId) async => deleted.add(userId);
+
+  @override
+  Future<void> setActive(String userId, bool isActive) async => active[userId] = isActive;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

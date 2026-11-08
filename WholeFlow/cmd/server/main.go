@@ -35,6 +35,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -56,6 +57,23 @@ const (
 	serviceDesc    = "Shop outstanding web app for TallyPrime and background synchronisation of selected companies to the cloud."
 	defaultTimeout = "180" // seconds; a full voucher fetch of ~6,000 vouchers takes ~11 s
 )
+
+// memoryLimit keeps the process small on a 4 GB PC: reading a big company's
+// vouchers peaks near 300 MB, and above this soft limit Go collects garbage
+// harder instead of growing. GOMEMLIMIT in the environment overrides it.
+const memoryLimit = 384 << 20
+
+// limitResources makes the long-running app a polite neighbour of TallyPrime:
+// lower CPU priority and a memory limit (after each sync the scheduler also
+// hands freed memory back to Windows).
+func limitResources() {
+	if err := yieldToTally(); err != nil {
+		fmt.Fprintln(os.Stderr, "could not lower the process priority:", err)
+	}
+	if os.Getenv("GOMEMLIMIT") == "" {
+		debug.SetMemoryLimit(memoryLimit)
+	}
+}
 
 func main() {
 	args := os.Args[1:]
@@ -79,6 +97,7 @@ func main() {
 	var code int
 	switch cmd {
 	case "run":
+		limitResources()
 		switch {
 		case isWindowsService():
 			code = runService()
