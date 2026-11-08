@@ -413,15 +413,19 @@ class FakeTransactionRepository implements TransactionRepository {
 }
 
 class FakeDashboardRepository implements DashboardRepository {
-  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const []});
+  FakeDashboardRepository({this.summaryRow, this.state, this.topDues = const [], this.today});
 
   final CompanySummary? summaryRow;
   final SyncState? state;
   final List<ShopSummary> topDues;
 
+  /// The day the figures are for (default: today). Golden tests fix it, so
+  /// month names in the picture don't change from month to month.
+  final DateTime? today;
+
   @override
   Future<Dashboard> load(String companyId) async {
-    final now = DateTime.now();
+    final now = today ?? DateTime.now();
     return Dashboard(
       summary: summaryRow,
       syncState: state,
@@ -438,7 +442,7 @@ class FakeDashboardRepository implements DashboardRepository {
   @override
   Future<BusinessTrend> trend(String companyId, {int months = 12}) async {
     trendCalls.add(months);
-    final now = DateTime.now();
+    final now = today ?? DateTime.now();
     return BusinessTrend(
       months: [
         for (var i = 0; i < months; i++)

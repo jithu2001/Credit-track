@@ -118,7 +118,7 @@ the app works at every step and old app versions keep working.
 |---|---------|--------------------|-----|
 | 1 | Payment insights (owner) | downloads every transaction of the company, then FIFO bill matching, ageing, habits (`payment_analysis.dart`, 441 lines) | `GET /analytics?company=` (business summary), `GET /shops/{id}/payments` |
 | 2 | Shop statement + share | all transactions of the shop, running balances, period statement | `GET /shops/{id}/statement?from=&to=` |
-| 3 | Dashboard | 3 queries + month sales | `GET /dashboard?company=` (one call) |
+| 3 | Dashboard | 3 queries + month sales | `GET /dashboard?company=` (one call); owner trend `GET /reports/monthly?company=&months=` (sales, collections, purchases per month, same days last month/year, top buyers) |
 | 4 | Shops list, dues, outstanding report | paging, grouping by site, totals | `GET /shops`, `GET /reports/outstanding`, `GET /reports/overdue` |
 | 5 | Stock, purchases, suppliers | status, minimum stock, alerts, filters | `GET /stock`, `PUT /stock/minimum`, … |
 | 6 | Sites, visits, staff | mostly database functions already | thin wrappers; fold the Deno staff service into the API |

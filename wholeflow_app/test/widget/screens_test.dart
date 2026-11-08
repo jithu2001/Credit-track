@@ -1130,6 +1130,7 @@ void main() {
           overrides: await baseOverrides(
             dashboard: FakeDashboardRepository(
               topDues: shops,
+              today: DateTime(2026, 6, 15),
               summaryRow: const CompanySummary(
                 companyId: 'co-a',
                 companyName: 'JMJ Marketing',

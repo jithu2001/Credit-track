@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
-import '../../../core/errors/app_failure.dart';
+import '../../../core/widgets/states.dart';
 import '../../../core/format.dart';
 import '../../../core/money/money.dart';
 import '../../../core/theme/app_theme.dart';
@@ -85,9 +85,9 @@ class _BusinessTrendCardState extends ConsumerState<BusinessTrendCard> {
                 padding: EdgeInsets.all(Insets.l),
                 child: Text('No figures yet.', textAlign: TextAlign.center),
               ),
-              AsyncValue(:final error?) => Text(
-                AppFailure.from(error).message,
-                style: context.text.bodySmall?.copyWith(color: context.colors.error),
+              AsyncValue(:final error?) => ErrorState(
+                error: error,
+                onRetry: () => ref.invalidate(businessTrendProvider(widget.companyId)),
               ),
               _ => const SizedBox(height: 220, child: Center(child: CircularProgressIndicator())),
             },

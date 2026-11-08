@@ -42,8 +42,7 @@ class NavBarSliverSpace extends StatelessWidget {
   final double extra;
 
   @override
-  Widget build(BuildContext context) =>
-      SliverToBoxAdapter(child: SizedBox(height: extra + MediaQuery.paddingOf(context).bottom));
+  Widget build(BuildContext context) => SliverToBoxAdapter(child: SizedBox(height: extra + MediaQuery.paddingOf(context).bottom));
 }
 
 /// Colours with a business meaning: amount owed (Dr), in credit (Cr), and

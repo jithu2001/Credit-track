@@ -69,6 +69,14 @@ for n in "${new_migs[@]}"; do
   fi
 done
 
+# The binaries are built from this folder as it is: say so if it has
+# changes that are not committed (they would go to production unrecorded).
+if [[ -n $(git status --porcelain -- . 2>/dev/null) ]]; then
+  echo "warning: WholeFlow/ has uncommitted changes; they will be part of this build:" >&2
+  git status --short -- . >&2
+  [[ $yes = 1 ]] || ask "Deploy with these uncommitted changes?" || exit 1
+fi
+
 echo
 echo "Will update: ${services[*]}"
 if [[ ${#new_migs[@]} -gt 0 ]]; then echo "New migrations: ${new_migs[*]} (each business database is dumped first)"; else echo "Migrations: none new"; fi

@@ -384,6 +384,30 @@ APP_ADDR=127.0.0.1:18080 go run ./cmd/server run -data /tmp/wf-data
 
 Then open http://127.0.0.1:18080.
 
+**Trying the phone apps against this computer (before anything is deployed)**:
+the real app API runs on the laptop against a throwaway database with an
+invented business, and a separate "WF Local" app build reaches it over USB.
+The real server and its data are never touched.
+
+```bash
+cd WholeFlow
+WF_DB=wf_local db/tests/run_local.sh                       # throwaway Postgres + every migration
+PGPASSWORD=pw psql -h 127.0.0.1 -p 55432 -U postgres -d wf_local -f db/local/seed.sql
+LOCAL_PASSWORD=<any 8+ characters> go run ./cmd/localapi    # serves 127.0.0.1:8100
+
+adb reverse tcp:8100 tcp:8100                               # the phone's 127.0.0.1:8100 → this computer
+cd ../wholeflow_app
+flutter build apk --debug --flavor owner -t lib/main_owner.dart \
+  --dart-define-from-file=env/local.json --android-project-arg wfLocal=true   # or: --flavor staff -t lib/main_staff.dart
+adb install -r build/app/outputs/flutter-apk/app-owner-debug.apk
+```
+
+Connect with any reference key (e.g. `LOCA-TEST-0000-0001`) and sign in as
+`owner@local.test` (Owner app) or `staff@local.test` (Staff app) with
+`LOCAL_PASSWORD`. The WF Local apps install beside the real ones, so their
+sign-ins stay untouched. Re-running `seed.sql` recreates the business (and
+signs the local apps out).
+
 ---
 
 ## 5. Running the service

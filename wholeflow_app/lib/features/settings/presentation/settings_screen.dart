@@ -165,7 +165,12 @@ class _ChangePasswordSheetState extends ConsumerState<ChangePasswordSheet> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        Insets.xl,
+        0,
+        Insets.xl,
+        Insets.xl + MediaQuery.viewInsetsOf(context).bottom + MediaQuery.paddingOf(context).bottom,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
